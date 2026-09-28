@@ -1,0 +1,7 @@
+{
+  "enabled": [
+    "checkpoint_handler",
+    "forge_edit",
+    "forge_ui"
+  ]
+}
