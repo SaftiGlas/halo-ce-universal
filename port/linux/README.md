@@ -72,6 +72,58 @@ further gamepads become controllers 2-4.
 | \` | opens the developer console (typing then goes to the console) |
 | F12 | releases or recaptures the mouse |
 
+### Dev tools
+
+`HALO_FORGE=1` turns on in-game dev tools (`game/forge.c`), a first step
+towards modding. Without it the game plays as usual.
+
+| Keyboard and mouse | Controller | Effect |
+| --- | --- | --- |
+| F2 | D-pad left | detach the camera from the player to fly freely, through walls, with a crosshair; again moves the player (or the vehicle they ride) to the camera, facing its way, and returns the camera to the player |
+| F3 | D-pad right | open or close the spawn menu |
+| F4, and flying also enter or left click | flying, A | pick up the object under the crosshair |
+
+Flying, W A S D (the left stick) move, the mouse (the right stick) looks,
+space and left ctrl or C (the triggers) go straight up and down, shift
+(left stick click) is 4 times faster, and the up and down arrows (the
+D-pad) change the speed. The player stands still meanwhile. Z (right stick
+click) hands the controls back to the player and leaves the camera where
+it is. This is the game's own debug flying camera (holding black, X,
+cycles first person, flying and following cameras), faster and with
+keyboard and mouse added.
+
+The spawn menu lists the map's vehicles, weapons, equipment, bipeds and
+scenery by tag name: up and down choose, left and right change the
+category, enter, the left mouse button or A take the object, escape,
+backspace, the right mouse button or B close the menu. Only the map's own
+tags can be spawned, as the cache file holds nothing else.
+
+A taken or picked up object (anything but projectiles, sound scenery and
+placeholders; the player's own unit, vehicle and weapons excepted) is held
+where the crosshair (or, not flying, the view) points, standing on the
+surface there, up to 200 world units away, until it is placed:
+
+| Keyboard and mouse | Controller | Effect |
+| --- | --- | --- |
+| left, right | D-pad left, right | turn about the chosen axis |
+| up, down | D-pad up, down | raise, lower |
+| T | X | choose the axis: yaw, pitch, roll |
+| V | Y | choose the step: free (turns while held), 15, 45, 90 or 180 degrees |
+| enter, left click | A | put it down |
+| escape, backspace, right click | B | cancel: a spawned object goes, a picked up one returns to its place |
+| delete | back | remove it from the map |
+
+With the tools on, the D-pad's left and right open them instead of
+strafing, and while the menu is open or an object is held, the arrows
+(D-pad), enter and A, escape and start, backspace and B, X, Y, back and
+the mouse's buttons (triggers) work only the tools.
+
+The tools act on local player 0. Spawning, moving and removing objects
+and moving the player are refused in system link games, where every
+machine must compute the same game, and when the camera is outside the map
+(the camera then returns without the player). The camera cannot be taken
+over while a cutscene has it.
+
 ### Settings
 
 | Variable | Effect |
@@ -82,6 +134,7 @@ further gamepads become controllers 2-4.
 | `HALO_MOUSE_INVERT` | set to invert vertical mouse aim |
 | `HALO_VOLUME` | master volume (default 1.0) |
 | `HALO_NO_AUDIO` | do not open an audio device (sound still runs, silently) |
+| `HALO_FORGE` | in-game dev tools (see Dev tools) |
 | `HALO_LANGUAGE` | dashboard language: `en`, `ja`, `de`, `fr`, `es`, `it` |
 | `HALO_INTERPOLATION=0` | the original 30 frames per second (see Frame rate) |
 | `HALO_NO_VSYNC` | do not wait for the display between frames |
@@ -305,9 +358,10 @@ prefix header, never by the matching build):
 | --- | --- |
 | `scenario/scenario.c` | the structure BSP connection tables are named directly instead of being addressed at MSVC's offsets from `global_structure_bsp_index` |
 | `rasterizer/xbox/rasterizer_xbox_environment_fog.c` | a local pointer initialized from the file-scope array of the same name; MSVC resolved the name in the initializer to the array, standard C to the new local |
-| `game/player_control.c` | adds direct mouse aim (`halo_linux_mouse_look`) to the facing change of the player on controller 1 |
+| `game/player_control.c` | adds direct mouse aim (`halo_linux_mouse_look`) to the facing change of the player on controller 1, except while the director has the facing (the dev tools' flying camera then takes the mouse) |
 | `sound/game_sound.c` | `compute_sound_obstruction` (a collision test from the camera to each audible sound) runs once per game tick and its result is reused by the tick's other frames: the sound manager refreshes sounds every frame, which on the Xbox was once per tick |
 | `networking/`, `game/` (players, player queues, game engine and its game types), `interface/` (lobby, HUD, motion sensor), `bungie_net/network/`, and the pools in `objects/`, `effects/`, `render/`, `sound/`, `hs/`, `structures/`, `cache/physical_memory_map.c` and `saved games/` | the system link limits and the memory they need (see System link); sizes and offsets that followed from the Xbox limits come from `include/halo_port_limits.h` and `include/halo_port_capacity.h` |
+| `camera/director.c`, `camera/director.h`, `main/main.c`, `interface/interface.c` | the dev tools (see Dev tools): `director_forge_set_flying` and keyboard and mouse controls for the debug flying camera, `forge_update` once a frame and `forge_render` over the other overlays. The flying camera is also kept inside the +/-5000 world unit bound its camera command asserts, whether the dev tools are on or not |
 | `cseries/errors.c` | `debug.txt` stays open between lines (opening and closing it for each line took milliseconds on Windows, and a large session logs thousands of lines at once) |
 
 The game's x86 inline assembly is also replaced under `#ifdef HALO_LINUX`,

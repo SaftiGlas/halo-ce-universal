@@ -35,6 +35,9 @@ void render_interpolation_first_person(short local_player_index, struct real_mat
 	short node_count, struct render_camera const *camera);
 float render_interpolation_game_time_sec(long ticks);
 
+/* in-game dev tools (port/linux/game/forge.c) */
+#include "halo_forge.h"
+
 #ifdef HALO_ANDROID
 /* the screen at the device's aspect ratio (port/linux/src/d3d8_gl.c) */
 long halo_android_screen_width(void);

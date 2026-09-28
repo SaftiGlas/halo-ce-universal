@@ -17,6 +17,11 @@ Keyboard and mouse (port 0):
 	escape           start               F1               back
 	F12              release or recapture the mouse
 
+With HALO_FORGE set, the dev tools read their own keys and buttons
+(halo_linux_forge_read_keys), take the D-pad's left and right from
+controller 1, and while their menu is open or they hold an object also the
+D-pad, A, B, X, Y, start, back and the triggers (forge_filter_gamepad).
+
 Mouse aim does not go through the right stick: the game's look code asks
 halo_linux_mouse_look for the motion since its last call and adds it to the
 stick's facing change, so aiming is direct rather than rate based.
@@ -30,6 +35,7 @@ drive the controller.
 
 #include "platform.h"
 #include "sdl_platform.h"
+#include "../include/halo_forge.h"
 
 #include <SDL3/SDL.h>
 #include <math.h>
@@ -132,6 +138,49 @@ static void mouse_poll(const struct platform_input_state *input)
 		mouse_wheel_accumulated += input->mouse_wheel;
 	}
 	pthread_mutex_unlock(&mouse_lock);
+}
+
+/* ---------- dev tools (see halo_linux_forge_read_keys) */
+
+static int forge_enabled(void)
+{
+	static int enabled = -1;
+
+	if (enabled < 0)
+	{
+		const char *text = getenv("HALO_FORGE");
+
+		enabled = text && *text && strcmp(text, "0") != 0;
+	}
+	return enabled;
+}
+
+/* while the dev tools' menu is open or they place an object, the buttons
+that work them belong to them rather than to controller 1 */
+static volatile int forge_menu_keys_captured = FALSE;
+
+void halo_linux_forge_capture_menu_keys(int capture)
+{
+	forge_menu_keys_captured = capture;
+}
+
+/* the D-pad's left and right always open the dev tools (it only doubles the
+stick in the game); while they are captured, the D-pad, A, B, X, Y, start,
+back and the triggers too */
+static void forge_filter_gamepad(XINPUT_GAMEPAD *pad)
+{
+	pad->wButtons &= ~(XINPUT_GAMEPAD_DPAD_LEFT | XINPUT_GAMEPAD_DPAD_RIGHT);
+	if (forge_menu_keys_captured)
+	{
+		pad->wButtons &= ~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_DOWN |
+			XINPUT_GAMEPAD_START | XINPUT_GAMEPAD_BACK);
+		pad->bAnalogButtons[XINPUT_GAMEPAD_A] = 0;
+		pad->bAnalogButtons[XINPUT_GAMEPAD_B] = 0;
+		pad->bAnalogButtons[XINPUT_GAMEPAD_X] = 0;
+		pad->bAnalogButtons[XINPUT_GAMEPAD_Y] = 0;
+		pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] = 0;
+		pad->bAnalogButtons[XINPUT_GAMEPAD_RIGHT_TRIGGER] = 0;
+	}
 }
 
 /* ---------- keyboard and mouse as a controller */
@@ -323,6 +372,50 @@ static void sdl_gamepad_state(SDL_Gamepad *gamepad, XINPUT_GAMEPAD *pad)
 	if (abs(value) > abs(pad->sThumbRY)) pad->sThumbRY = value;
 }
 
+/* the dev tools' keys and buttons (port/linux/game/forge.c): the keyboard,
+the mouse's buttons and the first SDL gamepad, which is merged into
+controller 1 */
+int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
+{
+	struct platform_input_state input;
+	const unsigned char *k = input.keys;
+	const unsigned char *m = input.mouse_buttons;
+	SDL_Gamepad *gamepads[PORT_COUNT];
+	SDL_Gamepad *gamepad;
+	BOOL mouse;
+	BOOL captured = forge_menu_keys_captured;
+
+	memset(keys, 0, sizeof(*keys));
+	if (!forge_enabled() || console_is_active())
+		return FALSE;
+	platform_input_read(&input, FALSE);
+	mouse = !input.mouse_released;
+	gamepad = sdl_gamepads(gamepads) > 0 ? gamepads[0] : NULL;
+
+#define PAD_BUTTON(button) (gamepad && SDL_GetGamepadButton(gamepad, (button)))
+#define PAD_TRIGGER(axis) (gamepad && SDL_GetGamepadAxis(gamepad, (axis)) > 8192)
+	keys->toggle_flying = k[SDL_SCANCODE_F2] || (!captured && PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_LEFT));
+	keys->menu = k[SDL_SCANCODE_F3] || (!captured && PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_RIGHT));
+	keys->up = k[SDL_SCANCODE_SPACE] || PAD_TRIGGER(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+	keys->down = k[SDL_SCANCODE_LCTRL] || k[SDL_SCANCODE_C] || PAD_TRIGGER(SDL_GAMEPAD_AXIS_LEFT_TRIGGER);
+	keys->fast = k[SDL_SCANCODE_LSHIFT] || k[SDL_SCANCODE_RSHIFT] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_LEFT_STICK);
+	keys->menu_up = k[SDL_SCANCODE_UP] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_UP);
+	keys->menu_down = k[SDL_SCANCODE_DOWN] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_DOWN);
+	keys->menu_left = k[SDL_SCANCODE_LEFT] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_LEFT);
+	keys->menu_right = k[SDL_SCANCODE_RIGHT] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
+	keys->menu_select = k[SDL_SCANCODE_RETURN] || k[SDL_SCANCODE_KP_ENTER] ||
+		(mouse && m[SDL_BUTTON_LEFT]) || PAD_BUTTON(SDL_GAMEPAD_BUTTON_SOUTH);
+	keys->menu_close = k[SDL_SCANCODE_ESCAPE] || k[SDL_SCANCODE_BACKSPACE] ||
+		(mouse && m[SDL_BUTTON_RIGHT]) || PAD_BUTTON(SDL_GAMEPAD_BUTTON_EAST);
+	keys->grab = k[SDL_SCANCODE_F4] != 0;
+	keys->rotation_axis = k[SDL_SCANCODE_T] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_WEST);
+	keys->rotation_snap = k[SDL_SCANCODE_V] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_NORTH);
+	keys->remove_object = k[SDL_SCANCODE_DELETE] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_BACK);
+#undef PAD_BUTTON
+#undef PAD_TRIGGER
+	return TRUE;
+}
+
 /* ---------- XAPI */
 
 VOID WINAPI XInitDevices(DWORD preallocation_type_count, PXDEVICE_PREALLOC_TYPE preallocation_types)
@@ -430,6 +523,8 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 			keyboard_gamepad(&input, &state->Gamepad);
 		if (count > 0)
 			sdl_gamepad_state(gamepads[0], &state->Gamepad);
+		if (forge_enabled())
+			forge_filter_gamepad(&state->Gamepad);
 	}
 	else if (port < count)
 	{

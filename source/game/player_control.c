@@ -1234,7 +1234,10 @@ static void get_local_player_input_blob(
 						real mouse_yaw;
 						real mouse_pitch;
 
-						if (halo_linux_mouse_look(gamepad_index, &mouse_yaw, &mouse_pitch))
+						/* while the director has the facing (its debug flying
+						camera), leave the motion to it */
+						if (!director_inhibited_facing(local_player_index) &&
+							halo_linux_mouse_look(gamepad_index, &mouse_yaw, &mouse_pitch))
 						{
 							if (player->unit_index != NONE && control->zoom_level != NONE)
 							{

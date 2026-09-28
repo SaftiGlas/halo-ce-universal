@@ -162,6 +162,13 @@ void director_initialize_for_saved_game(
 	void);
 void director_update(
 	real time_delta_sec);
+#ifdef HALO_LINUX
+boolean director_forge_flying(
+	short local_player_index);
+void director_forge_set_flying(
+	short local_player_index,
+	boolean flying);
+#endif
 
 /* ---------- globals */
 

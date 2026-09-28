@@ -494,6 +494,10 @@ void interface_draw_fullscreen_overlays(
 	interface_splitscreen_render();
 	hud_render_timer();
 	terminal_draw();
+#ifdef HALO_LINUX
+	/* dev tools, when HALO_FORGE is set (port/linux/game/forge.c) */
+	forge_render();
+#endif
 	main_framerate_render();
 	render_debug_profile();
 
