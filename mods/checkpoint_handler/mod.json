@@ -1,0 +1,5 @@
+{
+  "name": "Checkpoint handler",
+  "version": "1.0.0",
+  "description": "F5 takes a checkpoint by hand, F9 returns to the latest checkpoint (the game's own: position, health, shields, ammunition and the rest of the level)."
+}

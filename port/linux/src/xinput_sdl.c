@@ -36,6 +36,7 @@ drive the controller.
 #include "platform.h"
 #include "sdl_platform.h"
 #include "../include/halo_forge.h"
+#include "../include/halo_mod.h"
 
 #include <SDL3/SDL.h>
 #include <math.h>
@@ -180,6 +181,82 @@ static void forge_filter_gamepad(XINPUT_GAMEPAD *pad)
 		pad->bAnalogButtons[XINPUT_GAMEPAD_Y] = 0;
 		pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] = 0;
 		pad->bAnalogButtons[XINPUT_GAMEPAD_RIGHT_TRIGGER] = 0;
+	}
+}
+
+/* ---------- source mods' keys (halo_mod.h) */
+
+_Static_assert(HALO_MOD_KEY_A == SDL_SCANCODE_A && HALO_MOD_KEY_Z == SDL_SCANCODE_Z &&
+	HALO_MOD_KEY_1 == SDL_SCANCODE_1 && HALO_MOD_KEY_0 == SDL_SCANCODE_0 &&
+	HALO_MOD_KEY_SPACE == SDL_SCANCODE_SPACE && HALO_MOD_KEY_F1 == SDL_SCANCODE_F1 &&
+	HALO_MOD_KEY_F12 == SDL_SCANCODE_F12 && HALO_MOD_KEY_INSERT == SDL_SCANCODE_INSERT &&
+	HALO_MOD_KEY_UP == SDL_SCANCODE_UP && HALO_MOD_KEY_LEFT_CTRL == SDL_SCANCODE_LCTRL &&
+	HALO_MOD_KEY_RIGHT_ALT == SDL_SCANCODE_RALT,
+	"halo_mod.h's keys are SDL scancodes");
+
+/* keys kept from controller 1 and the dev tools while Ctrl is held */
+static volatile unsigned char mod_ctrl_shortcuts[SDL_SCANCODE_COUNT];
+
+void halo_mod_ctrl_shortcut(int key)
+{
+	if (key > SDL_SCANCODE_UNKNOWN && key < SDL_SCANCODE_COUNT)
+		mod_ctrl_shortcuts[key] = TRUE;
+}
+
+static BOOL ctrl_down(const unsigned char *keys)
+{
+	return keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL];
+}
+
+/* the keys as the game and the dev tools see them: without the mods' Ctrl
+shortcuts while Ctrl is held */
+static void mod_filter_keys(struct platform_input_state *input)
+{
+	int scancode;
+
+	if (!ctrl_down(input->keys))
+		return;
+	for (scancode = 0; scancode < SDL_SCANCODE_COUNT; scancode++)
+	{
+		if (mod_ctrl_shortcuts[scancode])
+			input->keys[scancode] = 0;
+	}
+}
+
+int halo_mod_key_down(int key)
+{
+	struct platform_input_state input;
+
+	if (console_is_active())
+		return FALSE;
+	platform_input_read(&input, FALSE);
+	switch (key)
+	{
+	case HALO_MOD_KEY_CTRL:
+		return ctrl_down(input.keys);
+	case HALO_MOD_KEY_SHIFT:
+		return input.keys[SDL_SCANCODE_LSHIFT] || input.keys[SDL_SCANCODE_RSHIFT];
+	case HALO_MOD_KEY_ALT:
+		return input.keys[SDL_SCANCODE_LALT] || input.keys[SDL_SCANCODE_RALT];
+	default:
+		return key > SDL_SCANCODE_UNKNOWN && key < SDL_SCANCODE_COUNT && input.keys[key];
+	}
+}
+
+const char *halo_mod_key_name(int key)
+{
+	switch (key)
+	{
+	case HALO_MOD_KEY_CTRL:
+		return "Ctrl";
+	case HALO_MOD_KEY_SHIFT:
+		return "Shift";
+	case HALO_MOD_KEY_ALT:
+		return "Alt";
+	default:
+		if (key > SDL_SCANCODE_UNKNOWN && key < SDL_SCANCODE_COUNT && *SDL_GetScancodeName((SDL_Scancode)key))
+			return SDL_GetScancodeName((SDL_Scancode)key);
+		return "?";
 	}
 }
 
@@ -389,6 +466,7 @@ int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
 	if (!forge_enabled() || console_is_active())
 		return FALSE;
 	platform_input_read(&input, FALSE);
+	mod_filter_keys(&input);
 	mouse = !input.mouse_released;
 	gamepad = sdl_gamepads(gamepads) > 0 ? gamepads[0] : NULL;
 
@@ -517,6 +595,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		struct platform_input_state input;
 
 		platform_input_read(&input, TRUE);
+		mod_filter_keys(&input);
 		mouse_poll(&input);
 		wheel_update();
 		if (!console_is_active())

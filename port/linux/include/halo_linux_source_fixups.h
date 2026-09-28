@@ -37,6 +37,8 @@ float render_interpolation_game_time_sec(long ticks);
 
 /* in-game dev tools (port/linux/game/forge.c) */
 #include "halo_forge.h"
+/* what source mods can use (port/linux/game/mods.c) */
+#include "halo_mod.h"
 
 #ifdef HALO_ANDROID
 /* the screen at the device's aspect ratio (port/linux/src/d3d8_gl.c) */

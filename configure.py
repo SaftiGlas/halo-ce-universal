@@ -115,6 +115,21 @@ parser.add_argument(
     type=str,
     help="clang with the arm64_32 target for the Android guest (default: clang)",
 )
+parser.add_argument(
+    "--mods",
+    metavar="MOD",
+    nargs="*",
+    help="native Linux build with these source mods from mods/, in this order: writes only "
+    "build/mods/<key>/build.ninja (run it with `ninja -f`), which builds build/mods/<key>/halo; "
+    "build.ninja is left alone (see tools/mod_overlay.py)",
+)
+parser.add_argument(
+    "--mods-dir",
+    metavar="DIR",
+    type=Path,
+    default=Path("mods"),
+    help="where --mods finds the mods (default: mods)",
+)
 if not is_windows():
     parser.add_argument(
         "--wrapper",
@@ -211,7 +226,18 @@ for build_project in build_config["projects"]:
 
 # build file generation
 
-if args.mode == "configure":
+if args.mode == "configure" and args.mods is not None:
+    # Source mod build: its own ninja file, never the root build.ninja
+    from tools.mod_overlay import ModError, generate_mod_build
+
+    try:
+        plan = generate_mod_build(sln, args.mods, args.mods_dir)
+    except ModError as error:
+        sys.exit(f"error: {error}")
+    for warning in plan.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    print(f"ninja -f {plan.ninja_file}  ->  {plan.output}")
+elif args.mode == "configure":
     if any(
         obj["status"] != "MISSING" and obj["name"].startswith("libs/d3d8/")
         for project in build_config["projects"]

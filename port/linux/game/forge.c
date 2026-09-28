@@ -1020,6 +1020,9 @@ void forge_update(
 	/* at most a tenth of a second, so a hitch does not fling a held object */
 	real seconds = MIN((real)(milliseconds - forge_globals.milliseconds) / MILLISECONDS_PER_SECOND, 0.1f);
 
+	/* source mods first (game/mods.c), whether or not the tools are on */
+	halo_mods_update();
+
 	forge_globals.milliseconds = milliseconds;
 	forge_globals.active = halo_linux_forge_read_keys(&keys) &&
 		local_player_get_player_index(FORGE_LOCAL_PLAYER_INDEX) != NONE;
@@ -1035,6 +1038,8 @@ void forge_render(
 	void)
 {
 	long font_tag_index = interface_get_tag_index(_interface_font_terminal);
+
+	halo_mods_render();
 
 	if (forge_globals.active && font_tag_index != NONE)
 	{
@@ -1064,4 +1069,49 @@ void forge_render(
 	forge_globals.active = FALSE;
 
 	return;
+}
+
+/* ---------- what source mods may ask the tools (halo_forge.h) */
+
+int forge_busy(
+	void)
+{
+	return forge_globals.menu_open || forge_globals.held_object_index != NONE;
+}
+
+long forge_object_at_crosshair(
+	void)
+{
+	long object_index = NONE;
+
+	if (local_player_get_player_index(FORGE_LOCAL_PLAYER_INDEX) != NONE &&
+		observer_get_camera(FORGE_LOCAL_PLAYER_INDEX)->location.cluster_index != NONE)
+	{
+		object_index = forge_pick(FORGE_LOCAL_PLAYER_INDEX);
+	}
+
+	return object_index;
+}
+
+int forge_placement_at_crosshair(
+	long definition_index,
+	float position[3])
+{
+	real_point3d point;
+	real_vector3d normal;
+	boolean placed = FALSE;
+
+	if (local_player_get_player_index(FORGE_LOCAL_PLAYER_INDEX) != NONE &&
+		forge_aim(FORGE_LOCAL_PLAYER_INDEX, NONE, &point, &normal))
+	{
+		real_point3d result;
+
+		forge_held_position(definition_index, &point, &normal, 0.f, &result);
+		position[0] = result.x;
+		position[1] = result.y;
+		position[2] = result.z;
+		placed = TRUE;
+	}
+
+	return placed;
 }

@@ -26,6 +26,84 @@ ninja linux
 The game is built as 32-bit code because its data formats (tag data, cache
 files, saved games) embed 32-bit pointers, exactly as on the Xbox.
 
+### Source mods
+
+A source mod changes the game's code without touching `source/`. It is a
+directory `mods/<name>/` with:
+
+- `mod.json` (required): `{"name": ..., "version": ..., "description": ...}`,
+  and optionally `"env"`, environment variables the launcher sets when it
+  runs the game (for example `{"HALO_FORGE": "1"}`)
+- `source/...` and `port/linux/game/...`: a file at the same path as one of
+  the game's sources or of the ports' game units (such as the dev tools'
+  `forge.c`) replaces it; a file at a new path is added (a new `.c` is
+  compiled in)
+- `patches/*.patch`: unified diffs (`git diff`, `diff -u`) against the
+  original files, `-p1` paths `a/source/...` or `a/port/linux/game/...`,
+  applied in name order
+
+The launcher turns mods on and off (kept in `mods/enabled.json`), builds
+with them and runs the game:
+
+```sh
+python -m tools.mod_launcher                     # interactive: toggle, b(uild), r(un)
+python -m tools.mod_launcher enable a b          # or: disable, list
+python -m tools.mod_launcher build               # "Build with mods"
+python -m tools.mod_launcher run                 # build, then run (SDL_VIDEODRIVER=x11)
+```
+
+Underneath, it runs:
+
+```sh
+python configure.py --mods first second    # enabled mods
+ninja -f build/mods/<key>/build.ninja      # the path configure.py prints
+```
+
+This builds `build/mods/<key>/halo`, with `<key>` a hash of the ordered mod
+list, using the same rules as `ninja linux`, including `linux_link_check`.
+The root `build.ninja` is not changed, and the matching build never sees
+mods. Only units affected by a change recompile. With no mods the binary is
+byte-identical to `build/linux/halo`. `python -m tools.mod_overlay describe
+first second` lists what each mod replaces, adds and patches.
+
+- Each file may be changed by one enabled mod only: two mods replacing,
+  adding or patching the same file is an error naming both and how each
+  changes it. Enabled mods therefore never depend on each other's order.
+- Within one mod, a whole replacement file wins over the mod's own patch of
+  it; the patch is skipped with a warning.
+- A patch that does not apply exactly (no fuzz) fails the build, naming the
+  mod, patch and file.
+- Replacing a `.c` the Linux build does not compile (`MISSING` in
+  `config/config.json`) warns that it changes nothing.
+
+Mods share code through the ports rather than through a file they all
+patch. `include/halo_mod.h` gives every mod, without changing any game
+file:
+
+- hooks: a mod adds its own unit (for example
+  `mods/x/source/mods/x/x.c`) and registers an update and a render function
+  with `HALO_MOD_REGISTER`; they run once a frame, before the dev tools'
+  own (`game/mods.c`), whether or not `HALO_FORGE` is set
+- the keyboard: `halo_mod_key_down`, `halo_mod_key_pressed` (once per
+  press, optionally with Ctrl), `halo_mod_key_name`, and
+  `halo_mod_ctrl_shortcut`, which keeps a key from the game and the dev
+  tools while Ctrl is held (so Ctrl+C does not also crouch). Keys never
+  reach mods while the console is open
+- drawing on the screen: text in the terminal font or a large font of the
+  map, and filled, blended boxes
+- the dev tools' crosshair (`include/halo_forge.h`): the object under it,
+  where an object would be placed there, and whether the tools' menu is
+  open or they hold an object
+
+`mods/` holds three examples, and `mods/TESTING.md` how to try them:
+`checkpoint_handler` (F5 and F9 take and restore checkpoints),
+`forge_edit` (Ctrl+C, Ctrl+V, Delete and Ctrl+Z on the object under the
+crosshair) and `forge_ui` (a patch of `game/forge.c`: a readable spawn menu
+that keeps its place).
+
+Source mods are native code that runs with your rights: only build mods from
+sources you trust. Removing `build/mods/` cleans every mod build.
+
 ## Running
 
 ```sh

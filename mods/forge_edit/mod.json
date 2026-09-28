@@ -1,0 +1,8 @@
+{
+  "name": "Forge edit",
+  "version": "1.0.0",
+  "description": "Ctrl+C copies the object under the crosshair, Ctrl+V places a copy there, Delete removes it and Ctrl+Z brings the last removed objects back.",
+  "env": {
+    "HALO_FORGE": "1"
+  }
+}

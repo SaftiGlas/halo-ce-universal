@@ -38,4 +38,16 @@ void halo_linux_forge_capture_menu_keys(int capture);
 void forge_update(void);
 void forge_render(void);
 
+/* for source mods (halo_mod.h), about local player 0 */
+/* TRUE while the spawn menu is open or an object is held: the tools then
+have the menu keys, delete included */
+int forge_busy(void);
+/* the object under the crosshair (flying) or in the player's view that the
+tools would pick up, or -1 (NONE): never the player, what they ride or
+carry, nor projectiles, sound scenery and placeholders */
+long forge_object_at_crosshair(void);
+/* where an object of the definition would be placed at the crosshair,
+standing on the surface there; FALSE when the camera is outside the map */
+int forge_placement_at_crosshair(long definition_index, float position[3]);
+
 #endif

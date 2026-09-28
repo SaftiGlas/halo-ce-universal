@@ -1,0 +1,511 @@
+--- a/port/linux/game/forge.c
++++ b/port/linux/game/forge.c
+@@ -26,6 +26,16 @@
+ the left mouse button or A take the object, escape, backspace, the right
+ mouse button or B close the menu.
+ 
++The menu (with the forge_ui mod, mods/forge_ui) is drawn large on a dark
++panel, with the categories as tabs, the chosen row marked and the keys
++explained at the bottom. It keeps its place while it is closed: the
++category, and in each category the chosen row (by tag name, so it carries
++over to other maps that have the same tag) and how far the list is
++scrolled. The place lasts for the whole session and is written to
++u:\forge_ui.txt (forge_ui.txt in the directory u/ of the save root,
++~/.local/share/halo-linux/u/) when the menu closes, and read back the first
++time it opens after the game starts. A closed menu does nothing else.
++
+ A taken or picked up object is held where the crosshair points (or, not
+ flying, where the player looks), standing on the surface there, until it
+ is placed:
+@@ -72,6 +82,7 @@
+ #include "text/text_group.h"
+ #include "units/units.h"
+ 
++#include <stdio.h>
+ #include <stdlib.h>
+ 
+ /* ---------- constants */
+@@ -80,8 +91,15 @@
+ {
+ 	FORGE_LOCAL_PLAYER_INDEX = 0,
+ 	FORGE_MAXIMUM_MENU_ENTRIES = 1024,
+-	FORGE_MENU_VISIBLE_ENTRIES = 14,
++	FORGE_MENU_VISIBLE_ENTRIES = 8,
+ 	FORGE_MENU_MARGIN = 24,
++	/* the menu's panel (forge_ui): padding inside it, and its width as a
++	share of the screen's */
++	FORGE_MENU_PADDING = 6,
++	FORGE_MENU_TAB_PADDING = 4,
++	FORGE_MENU_WIDTH_PERCENT = 70,
++	FORGE_CATEGORY_COUNT = 5,
++	FORGE_TAG_NAME_SIZE = 256,
+ 	FORGE_KEY_REPEAT_DELAY_MILLISECONDS = 400,
+ 	FORGE_KEY_REPEAT_INTERVAL_MILLISECONDS = 70,
+ 	/* surfaces of objects the aim passes through (the player's own vehicle,
+@@ -128,6 +146,20 @@
+ #define FORGE_TURN_SPEED _pi
+ #define FORGE_RAISE_SPEED 2.f
+ 
++/* the menu's colours (forge_ui), 0xAARRGGBB */
++#define FORGE_MENU_PANEL_COLOR 0xd0101418UL
++#define FORGE_MENU_TITLE_BAR_COLOR 0xf0203040UL
++#define FORGE_MENU_TAB_COLOR 0xff3a6ea5UL
++#define FORGE_MENU_ROW_COLOR 0xc0308050UL
++#define FORGE_MENU_RULE_COLOR 0xff506070UL
++#define FORGE_MENU_TITLE_TEXT_COLOR 0xffffe080UL
++#define FORGE_MENU_TEXT_COLOR 0xffd8d8d8UL
++#define FORGE_MENU_SELECTED_TEXT_COLOR 0xffffffffUL
++#define FORGE_MENU_DIM_TEXT_COLOR 0xff8890a0UL
++
++/* where the menu's place is kept (see above) */
++#define FORGE_MENU_STATE_FILE "u:\\forge_ui.txt"
++
+ /* ---------- structures */
+ 
+ struct forge_category
+@@ -166,6 +198,13 @@
+ 	short category_index;
+ 	short entry_count;
+ 	short selected_entry_index;
++	/* the first row shown */
++	short first_entry_index;
++	/* the menu's place in each category (see above) */
++	char category_selected_names[FORGE_CATEGORY_COUNT][FORGE_TAG_NAME_SIZE];
++	short category_first_entry_indices[FORGE_CATEGORY_COUNT];
++	boolean menu_state_loaded;
++	boolean menu_state_changed;
+ 	long entries[FORGE_MAXIMUM_MENU_ENTRIES];
+ 	long game_time;
+ 	unsigned long milliseconds;
+@@ -186,13 +225,13 @@
+ 
+ /* ---------- globals */
+ 
+-static struct forge_category const forge_categories[] =
++static struct forge_category const forge_categories[FORGE_CATEGORY_COUNT] =
+ {
+-	{ _object_type_vehicle, "vehicles" },
+-	{ _object_type_weapon, "weapons" },
+-	{ _object_type_equipment, "equipment" },
+-	{ _object_type_biped, "bipeds" },
+-	{ _object_type_scenery, "scenery" }
++	{ _object_type_vehicle, "Vehicles" },
++	{ _object_type_weapon, "Weapons" },
++	{ _object_type_equipment, "Equipment" },
++	{ _object_type_biped, "Bipeds" },
++	{ _object_type_scenery, "Scenery" }
+ };
+ 
+ static char const *const forge_axis_names[NUMBER_OF_FORGE_AXES] =
+@@ -551,6 +590,21 @@
+ 	return _stricmp(tag_get_name(*(long const *)a), tag_get_name(*(long const *)b));
+ }
+ 
++/* scrolls the list as little as it takes to show the chosen row */
++static void forge_menu_scroll_to_selection(
++	void)
++{
++	short last_first_entry_index = (short)MAX(forge_globals.entry_count - FORGE_MENU_VISIBLE_ENTRIES, 0);
++
++	if (forge_globals.selected_entry_index < forge_globals.first_entry_index)
++		forge_globals.first_entry_index = forge_globals.selected_entry_index;
++	if (forge_globals.selected_entry_index >= forge_globals.first_entry_index + FORGE_MENU_VISIBLE_ENTRIES)
++		forge_globals.first_entry_index = (short)(forge_globals.selected_entry_index - FORGE_MENU_VISIBLE_ENTRIES + 1);
++	forge_globals.first_entry_index = PIN(forge_globals.first_entry_index, 0, last_first_entry_index);
++
++	return;
++}
++
+ /* the map's objects of the menu's category, by name */
+ static void forge_menu_build(
+ 	void)
+@@ -572,7 +626,123 @@
+ 		forge_globals.entry_count,
+ 		sizeof(forge_globals.entries[0]),
+ 		forge_compare_entries);
++
++	/* back where the menu was in this category */
+ 	forge_globals.selected_entry_index = 0;
++	{
++		char const *selected_name = forge_globals.category_selected_names[forge_globals.category_index];
++		short entry_index;
++
++		for (entry_index = 0; *selected_name && entry_index < forge_globals.entry_count; entry_index++)
++		{
++			if (_stricmp(tag_get_name(forge_globals.entries[entry_index]), selected_name) == 0)
++			{
++				forge_globals.selected_entry_index = entry_index;
++				break;
++			}
++		}
++	}
++	forge_globals.first_entry_index = forge_globals.category_first_entry_indices[forge_globals.category_index];
++	forge_menu_scroll_to_selection();
++
++	return;
++}
++
++/* keeps the menu's place in its category, for when it opens again */
++static void forge_menu_remember(
++	void)
++{
++	short category_index = forge_globals.category_index;
++	char const *selected_name = forge_globals.entry_count > 0
++		? tag_get_name(forge_globals.entries[forge_globals.selected_entry_index])
++		: "";
++
++	if (strcmp(forge_globals.category_selected_names[category_index], selected_name) != 0 ||
++		forge_globals.category_first_entry_indices[category_index] != forge_globals.first_entry_index)
++	{
++		_snprintf(
++			forge_globals.category_selected_names[category_index],
++			FORGE_TAG_NAME_SIZE,
++			"%s",
++			selected_name);
++		forge_globals.category_first_entry_indices[category_index] = forge_globals.first_entry_index;
++		forge_globals.menu_state_changed = TRUE;
++	}
++
++	return;
++}
++
++/* reads the menu's place from the last session, once */
++static void forge_menu_state_load(
++	void)
++{
++	FILE *file;
++
++	forge_globals.menu_state_loaded = TRUE;
++	if ((file = fopen(FORGE_MENU_STATE_FILE, "r")) != NULL)
++	{
++		char line[FORGE_TAG_NAME_SIZE + 64];
++
++		while (fgets(line, sizeof(line), file))
++		{
++			int category_index;
++			int first_entry_index;
++			int name_offset = 0;
++
++			line[strcspn(line, "\r\n")] = 0;
++			if (sscanf(line, "category %d", &category_index) == 1)
++			{
++				if (category_index >= 0 && category_index < FORGE_CATEGORY_COUNT)
++					forge_globals.category_index = (short)category_index;
++			}
++			else if (sscanf(line, "place %d %d %n", &category_index, &first_entry_index, &name_offset) >= 2 &&
++				name_offset > 0 &&
++				category_index >= 0 && category_index < FORGE_CATEGORY_COUNT &&
++				first_entry_index >= 0 && first_entry_index < FORGE_MAXIMUM_MENU_ENTRIES)
++			{
++				_snprintf(
++					forge_globals.category_selected_names[category_index],
++					FORGE_TAG_NAME_SIZE,
++					"%s",
++					line + name_offset);
++				forge_globals.category_first_entry_indices[category_index] = (short)first_entry_index;
++			}
++		}
++		fclose(file);
++	}
++
++	return;
++}
++
++/* writes the menu's place for the next session */
++static void forge_menu_state_save(
++	void)
++{
++	FILE *file;
++
++	forge_globals.menu_state_changed = FALSE;
++	if ((file = fopen(FORGE_MENU_STATE_FILE, "w")) != NULL)
++	{
++		short category_index;
++
++		fprintf(file, "# the forge menu's place (mods/forge_ui): its category, and in each\n");
++		fprintf(file, "# category the first row shown and the chosen tag\n");
++		fprintf(file, "category %d\n", forge_globals.category_index);
++		for (category_index = 0; category_index < FORGE_CATEGORY_COUNT; category_index++)
++		{
++			fprintf(
++				file,
++				"place %d %d %s\n",
++				category_index,
++				forge_globals.category_first_entry_indices[category_index],
++				forge_globals.category_selected_names[category_index]);
++		}
++		fclose(file);
++	}
++	else
++	{
++		terminal_printf(global_real_argb_orange, "forge: could not write %s", FORGE_MENU_STATE_FILE);
++	}
+ 
+ 	return;
+ }
+@@ -819,6 +989,7 @@
+ 				{
+ 					forge_globals.category_index =
+ 						(forge_globals.category_index + (right ? 1 : category_count - 1)) % category_count;
++					forge_globals.menu_state_changed = TRUE;
+ 					forge_menu_build();
+ 				}
+ 				if (forge_globals.entry_count > 0)
+@@ -833,6 +1004,11 @@
+ 						forge_globals.selected_entry_index =
+ 							(forge_globals.selected_entry_index + 1) % forge_globals.entry_count;
+ 					}
++					if (up || down)
++					{
++						forge_menu_scroll_to_selection();
++						forge_menu_remember();
++					}
+ 					if (select)
+ 					{
+ 						forge_globals.menu_open = FALSE;
+@@ -845,6 +1021,8 @@
+ 		}
+ 		else if (menu)
+ 		{
++			if (!forge_globals.menu_state_loaded)
++				forge_menu_state_load();
+ 			forge_globals.menu_open = TRUE;
+ 			forge_menu_build();
+ 		}
+@@ -854,6 +1032,10 @@
+ 		}
+ 	}
+ 
++	/* a closed menu's place is written once, whichever way it closed */
++	if (!forge_globals.menu_open && forge_globals.menu_state_changed)
++		forge_menu_state_save();
++
+ 	/* the keys stay away from the game until they are released, so the
+ 	escape that closes the menu does not also pause the game */
+ 	forge_globals.keys_captured =
+@@ -948,63 +1130,173 @@
+ 	return;
+ }
+ 
++/* the last part of a tag's name, and its folder shortened from the left
++("...\") to fit the width in the font */
++static void forge_split_tag_name(
++	char const *tag_name,
++	long font,
++	short width,
++	char *folder,
++	short folder_size,
++	char const **name)
++{
++	char const *separator = strrchr(tag_name, '\\');
++	char const *start = tag_name;
++
++	*name = separator ? separator + 1 : tag_name;
++	_snprintf(folder, folder_size, "%.*s", separator ? (int)(separator - tag_name) : 0, tag_name);
++	while (*folder && halo_mod_text_width(font, folder) > width)
++	{
++		char const *next = separator ? strchr(start, '\\') : NULL;
++
++		if (!next || next >= separator)
++		{
++			*folder = 0;
++		}
++		else
++		{
++			start = next + 1;
++			_snprintf(folder, folder_size, "...\\%.*s", (int)(separator - start), start);
++		}
++	}
++
++	return;
++}
++
++/* the spawn menu (forge_ui): a panel at the left of the screen with a
++title, the categories as tabs, the rows of the category and the keys */
+ static void forge_render_menu(
+-	long font_tag_index,
+-	rectangle2d const *window,
+-	short line_height)
++	rectangle2d const *window)
+ {
+-	char line[256];
+-	rectangle2d bounds;
+-	short first_entry_index = PIN(
+-		forge_globals.selected_entry_index - FORGE_MENU_VISIBLE_ENTRIES / 2,
+-		0,
+-		MAX(forge_globals.entry_count - FORGE_MENU_VISIBLE_ENTRIES, 0));
++	long font = halo_mod_font(TRUE);
++	long small_font = halo_mod_font(FALSE);
++	short line_height = halo_mod_line_height(font);
++	short small_line_height = halo_mod_line_height(small_font);
++	short row_height = (short)(line_height + 2);
++	short x0 = (short)(window->x0 + FORGE_MENU_MARGIN);
++	short x1 = (short)(x0 + (window->x1 - window->x0) * FORGE_MENU_WIDTH_PERCENT / 100);
++	short text_x0 = (short)(x0 + FORGE_MENU_PADDING);
++	short text_x1 = (short)(x1 - FORGE_MENU_PADDING);
++	/* the rows: the name at the left, the folder from here to the right */
++	short folder_x0 = (short)(x0 + (x1 - x0) * 11 / 20);
++	short y = (short)(window->y0 + FORGE_MENU_MARGIN);
++	short panel_y1 = (short)(y + FORGE_MENU_PADDING + row_height + FORGE_MENU_PADDING + row_height +
++		small_line_height + FORGE_MENU_VISIBLE_ENTRIES * row_height + small_line_height +
++		FORGE_MENU_PADDING + 2 * small_line_height + FORGE_MENU_PADDING);
++	char line[FORGE_TAG_NAME_SIZE + 64];
++	long tab_font = font;
++	short tabs_width = 0;
++	short category_index;
+ 	short entry_index;
+ 
+-	forge_first_line_bounds(window, line_height, &bounds);
+-	_snprintf(
+-		line,
+-		NUMBEROF(line),
+-		"spawn: < %s >  %d of %d",
+-		forge_categories[forge_globals.category_index].name,
++	halo_mod_draw_box(x0, y, x1, panel_y1, FORGE_MENU_PANEL_COLOR);
++
++	/* title bar: what the menu is, and where in the list the choice is */
++	halo_mod_draw_box(x0, y, x1, (short)(y + FORGE_MENU_PADDING + row_height), FORGE_MENU_TITLE_BAR_COLOR);
++	y += FORGE_MENU_PADDING / 2;
++	halo_mod_draw_text(font, text_x0, y, text_x1, (short)(y + line_height),
++		HALO_MOD_TEXT_LEFT, FORGE_MENU_TITLE_TEXT_COLOR, "Spawn");
++	_snprintf(line, sizeof(line), "%d / %d",
+ 		forge_globals.entry_count ? forge_globals.selected_entry_index + 1 : 0,
+ 		forge_globals.entry_count);
+-	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_yellow, line);
+-	offset_rectangle2d(&bounds, 0, line_height);
++	halo_mod_draw_text(font, text_x0, y, text_x1, (short)(y + line_height),
++		HALO_MOD_TEXT_RIGHT, FORGE_MENU_TEXT_COLOR, line);
++	y += row_height + FORGE_MENU_PADDING;
++
++	/* the categories as tabs, the chosen one lit; in the small font when
++	the large one does not fit */
++	for (category_index = 0; category_index < FORGE_CATEGORY_COUNT; category_index++)
++		tabs_width += halo_mod_text_width(font, forge_categories[category_index].name) + 3 * FORGE_MENU_TAB_PADDING;
++	if (tabs_width > text_x1 - text_x0)
++		tab_font = small_font;
++	{
++		short tab_x = text_x0;
++		short tab_text_y = (short)(y + (row_height - halo_mod_line_height(tab_font)) / 2);
++
++		for (category_index = 0; category_index < FORGE_CATEGORY_COUNT; category_index++)
++		{
++			char const *name = forge_categories[category_index].name;
++			short tab_width = (short)(halo_mod_text_width(tab_font, name) + 2 * FORGE_MENU_TAB_PADDING);
++			boolean chosen = category_index == forge_globals.category_index;
+ 
++			if (chosen)
++			{
++				halo_mod_draw_box(tab_x, (short)(y - 1), (short)(tab_x + tab_width), (short)(y + row_height),
++					FORGE_MENU_TAB_COLOR);
++			}
++			halo_mod_draw_text(tab_font, (short)(tab_x + FORGE_MENU_TAB_PADDING), tab_text_y,
++				(short)(tab_x + tab_width), (short)(tab_text_y + halo_mod_line_height(tab_font)),
++				HALO_MOD_TEXT_LEFT, chosen ? FORGE_MENU_SELECTED_TEXT_COLOR : FORGE_MENU_DIM_TEXT_COLOR, name);
++			tab_x += tab_width + FORGE_MENU_TAB_PADDING;
++		}
++	}
++	y += row_height;
++	halo_mod_draw_box(x0, y, x1, (short)(y + 1), FORGE_MENU_RULE_COLOR);
++
++	/* more above than is shown */
++	if (forge_globals.first_entry_index > 0)
++	{
++		halo_mod_draw_text(small_font, text_x0, y, text_x1, (short)(y + small_line_height),
++			HALO_MOD_TEXT_CENTER, FORGE_MENU_DIM_TEXT_COLOR, "^ more ^");
++	}
++	y += small_line_height;
++
++	/* the rows: the tag's name, its folder smaller at the right */
+ 	if (forge_globals.entry_count == 0)
+ 	{
+-		forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_grey, "  (none in this map)");
+-		offset_rectangle2d(&bounds, 0, line_height);
++		halo_mod_draw_text(font, text_x0, y, text_x1, (short)(y + line_height),
++			HALO_MOD_TEXT_LEFT, FORGE_MENU_DIM_TEXT_COLOR, "(none in this map)");
+ 	}
+-	for (entry_index = first_entry_index;
++	for (entry_index = forge_globals.first_entry_index;
+ 		entry_index < forge_globals.entry_count &&
+-			entry_index < first_entry_index + FORGE_MENU_VISIBLE_ENTRIES;
++			entry_index < forge_globals.first_entry_index + FORGE_MENU_VISIBLE_ENTRIES;
+ 		entry_index++)
+ 	{
+ 		boolean selected = entry_index == forge_globals.selected_entry_index;
+-
+-		_snprintf(
+-			line,
+-			NUMBEROF(line),
+-			"%s %s",
+-			selected ? ">" : " ",
+-			tag_get_name(forge_globals.entries[entry_index]));
+-		forge_draw_line(
+-			font_tag_index,
+-			&bounds,
+-			_text_justification_left,
+-			selected ? global_real_argb_green : global_real_argb_white,
+-			line);
+-		offset_rectangle2d(&bounds, 0, line_height);
+-	}
+-
+-	forge_draw_line(
+-		font_tag_index,
+-		&bounds,
+-		_text_justification_left,
+-		global_real_argb_grey,
+-		"up/down choose, left/right category, enter/click/A take, esc/right click/B close");
++		short row_y = (short)(y + (entry_index - forge_globals.first_entry_index) * row_height);
++		char folder[FORGE_TAG_NAME_SIZE];
++		char const *name;
++
++		/* (with room to spare: the font's measure runs a little short) */
++		forge_split_tag_name(
++			tag_get_name(forge_globals.entries[entry_index]),
++			small_font,
++			(short)(text_x1 - folder_x0 - 2 * FORGE_MENU_PADDING),
++			folder,
++			sizeof(folder),
++			&name);
++		if (selected)
++		{
++			halo_mod_draw_box((short)(x0 + 2), row_y, (short)(x1 - 2), (short)(row_y + row_height),
++				FORGE_MENU_ROW_COLOR);
++		}
++		_snprintf(line, sizeof(line), "%s %s", selected ? ">" : " ", name);
++		halo_mod_draw_text(font, text_x0, (short)(row_y + 1), folder_x0, (short)(row_y + 1 + line_height),
++			HALO_MOD_TEXT_LEFT, selected ? FORGE_MENU_SELECTED_TEXT_COLOR : FORGE_MENU_TEXT_COLOR, line);
++		halo_mod_draw_text(small_font, folder_x0, (short)(row_y + 1 + line_height - small_line_height),
++			text_x1, (short)(row_y + 1 + line_height),
++			HALO_MOD_TEXT_RIGHT, FORGE_MENU_DIM_TEXT_COLOR, folder);
++	}
++	y += FORGE_MENU_VISIBLE_ENTRIES * row_height;
++
++	/* more below than is shown */
++	if (forge_globals.first_entry_index + FORGE_MENU_VISIBLE_ENTRIES < forge_globals.entry_count)
++	{
++		halo_mod_draw_text(small_font, text_x0, y, text_x1, (short)(y + small_line_height),
++			HALO_MOD_TEXT_CENTER, FORGE_MENU_DIM_TEXT_COLOR, "v more v");
++	}
++	y += small_line_height + FORGE_MENU_PADDING / 2;
++
++	/* the keys */
++	halo_mod_draw_box(x0, y, x1, (short)(y + 1), FORGE_MENU_RULE_COLOR);
++	y += FORGE_MENU_PADDING / 2;
++	halo_mod_draw_text(small_font, text_x0, y, text_x1, (short)(y + small_line_height),
++		HALO_MOD_TEXT_LEFT, FORGE_MENU_TEXT_COLOR,
++		"Up/Down: choose    Left/Right: category");
++	y += small_line_height;
++	halo_mod_draw_text(small_font, text_x0, y, text_x1, (short)(y + small_line_height),
++		HALO_MOD_TEXT_LEFT, FORGE_MENU_TEXT_COLOR,
++		"Enter, click, A: take    F3, Esc, B: close");
+ 
+ 	return;
+ }
+@@ -1060,7 +1352,7 @@
+ 		}
+ 		else if (forge_globals.menu_open)
+ 		{
+-			forge_render_menu(font_tag_index, &window, line_height);
++			forge_render_menu(&window);
+ 		}
+ 	}
+ 

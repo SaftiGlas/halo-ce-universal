@@ -1,0 +1,247 @@
+/*
+MODS.C
+
+The hooks of source mods (mods/, tools/mod_overlay.py; see
+port/linux/README.md, "Source mods"): each mod's unit registers a struct
+halo_mod (halo_mod.h) before the game starts, and the dev tools' own hooks
+in main/main.c and interface/interface.c (forge_update, forge_render) call
+every mod's first, in registration order. Without mods nothing is
+registered and this does nothing.
+*/
+
+#include "cseries.h"
+#include "cache/cache_files.h"
+#include "cutscene/cinematics.h"
+#include "game/players.h"
+#include "interface/interface.h"
+#include "math/integer_math.h"
+#include "rasterizer/rasterizer.h"
+#include "render/render.h"
+#include "scenario/scenario.h"
+#include "tag_files/tag_files.h"
+#include "tag_files/tag_groups.h"
+#include "text/draw_string.h"
+#include "text/font_group.h"
+#include "text/text_group.h"
+
+#include <stdio.h>
+
+/* ---------- constants */
+
+/* the large font leaves room for this many lines on a 480 line screen */
+#define HALO_MOD_LARGE_FONT_LINES 18
+#define HALO_MOD_SCREEN_HEIGHT 480
+
+/* ---------- globals */
+
+static struct
+{
+	short count;
+	struct halo_mod const *mods[HALO_MOD_MAXIMUM_COUNT];
+} halo_mod_globals;
+
+/* the large font of the map it was chosen in */
+static struct
+{
+	char map_name[256];
+	long font_tag_index;
+} halo_mod_font_globals = { "", NONE };
+
+/* ---------- private code */
+
+static boolean halo_mod_font_holds_text(
+	long font_tag_index)
+{
+	struct font_header *font = font_definition_get(font_tag_index);
+
+	return font_get_character_by_ascii_code(font, 'a') != NULL &&
+		font_get_character_by_ascii_code(font, 'Z') != NULL &&
+		font_get_character_by_ascii_code(font, '0') != NULL &&
+		font_get_character_by_ascii_code(font, '>') != NULL;
+}
+
+static void halo_mod_set_font(
+	long font,
+	int justification,
+	unsigned long argb)
+{
+	real_argb_color color;
+
+	color.alpha = (real)((argb >> 24) & 0xff) / 255.f;
+	color.red = (real)((argb >> 16) & 0xff) / 255.f;
+	color.green = (real)((argb >> 8) & 0xff) / 255.f;
+	color.blue = (real)(argb & 0xff) / 255.f;
+	draw_string_set_draw_mode(font, _text_style_plain, (short)justification, 0, &color);
+
+	return;
+}
+
+/* ---------- public code */
+
+void halo_mod_register(
+	struct halo_mod const *mod)
+{
+	if (halo_mod_globals.count < HALO_MOD_MAXIMUM_COUNT)
+	{
+		halo_mod_globals.mods[halo_mod_globals.count++] = mod;
+	}
+	else
+	{
+		fprintf(stderr, "halo-linux: more than %d mods, %s does not run\n", HALO_MOD_MAXIMUM_COUNT, mod->name);
+	}
+
+	return;
+}
+
+void halo_mods_update(
+	void)
+{
+	short mod_index;
+
+	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
+	{
+		if (halo_mod_globals.mods[mod_index]->update)
+			halo_mod_globals.mods[mod_index]->update();
+	}
+
+	return;
+}
+
+void halo_mods_render(
+	void)
+{
+	short mod_index;
+
+	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
+	{
+		if (halo_mod_globals.mods[mod_index]->render)
+			halo_mod_globals.mods[mod_index]->render();
+	}
+
+	return;
+}
+
+int halo_mod_key_pressed(
+	struct halo_mod_key_state *state,
+	int key,
+	int ctrl)
+{
+	int down = halo_mod_key_down(key) && (!ctrl || halo_mod_key_down(HALO_MOD_KEY_CTRL));
+	int pressed = down && !state->down;
+
+	state->down = down;
+
+	return pressed;
+}
+
+int halo_mod_screen(
+	short *x0,
+	short *y0,
+	short *x1,
+	short *y1)
+{
+	rectangle2d window = render.camera.window_bounds;
+
+	if (local_player_get_player_index(0) == NONE)
+		return FALSE;
+	offset_rectangle2d(&window, -render.camera.viewport_bounds.x0, -render.camera.viewport_bounds.y0);
+	*x0 = window.x0;
+	*y0 = window.y0;
+	*x1 = window.x1;
+	*y1 = window.y1;
+
+	return TRUE;
+}
+
+long halo_mod_font(
+	int large)
+{
+	long terminal = interface_get_tag_index(_interface_font_terminal);
+	char const *map_name;
+
+	if (!large || global_scenario_index == NONE || terminal == NONE)
+		return terminal;
+
+	map_name = tag_get_name(global_scenario_index);
+	if (strcmp(map_name, halo_mod_font_globals.map_name) != 0)
+	{
+		struct tag_iterator iterator;
+		long font_tag_index;
+		short best_height = halo_mod_line_height(terminal);
+
+		halo_mod_font_globals.font_tag_index = terminal;
+		tag_iterator_new(&iterator, FONT_GROUP_TAG);
+		while ((font_tag_index = tag_iterator_next(&iterator)) != NONE)
+		{
+			short height = halo_mod_line_height(font_tag_index);
+
+			if (height > best_height &&
+				height <= HALO_MOD_SCREEN_HEIGHT / HALO_MOD_LARGE_FONT_LINES &&
+				halo_mod_font_holds_text(font_tag_index))
+			{
+				best_height = height;
+				halo_mod_font_globals.font_tag_index = font_tag_index;
+			}
+		}
+		_snprintf(halo_mod_font_globals.map_name, sizeof(halo_mod_font_globals.map_name), "%s", map_name);
+	}
+
+	return halo_mod_font_globals.font_tag_index;
+}
+
+short halo_mod_line_height(
+	long font)
+{
+	struct font_header *header = font_definition_get(font);
+
+	return (short)(header->ascending_height + header->descending_height + header->leading_height);
+}
+
+short halo_mod_text_width(
+	long font,
+	char const *text)
+{
+	rectangle2d bounds;
+	rectangle2d text_bounds;
+	rectangle2d cursor_bounds;
+
+	set_rectangle2d(&bounds, 0, 0, SHORT_MAX, SHORT_MAX);
+	halo_mod_set_font(font, HALO_MOD_TEXT_LEFT, 0xffffffff);
+	draw_string_compute_bounds(&bounds, text, &text_bounds, &cursor_bounds);
+
+	return (short)(text_bounds.x1 - text_bounds.x0);
+}
+
+void halo_mod_draw_text(
+	long font,
+	short x0,
+	short y0,
+	short x1,
+	short y1,
+	int justification,
+	unsigned long argb,
+	char const *text)
+{
+	rectangle2d bounds;
+
+	set_rectangle2d(&bounds, x0, y0, x1, y1);
+	halo_mod_set_font(font, justification, argb);
+	rasterizer_draw_string(&bounds, NULL, NULL, 0, text);
+
+	return;
+}
+
+void halo_mod_draw_box(
+	short x0,
+	short y0,
+	short x1,
+	short y1,
+	unsigned long argb)
+{
+	rectangle2d bounds;
+
+	set_rectangle2d(&bounds, x0, y0, x1, y1);
+	draw_quad(&bounds, (pixel32)argb);
+
+	return;
+}

@@ -1,0 +1,8 @@
+{
+  "name": "Forge UI",
+  "version": "1.0.0",
+  "description": "A readable spawn menu for the dev tools: large text on a dark panel, category tabs, a marked row, the keys at the bottom, and a menu that keeps its place when closed and across restarts (u:\\forge_ui.txt in the save root).",
+  "env": {
+    "HALO_FORGE": "1"
+  }
+}
