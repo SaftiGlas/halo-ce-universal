@@ -276,6 +276,42 @@ symbols in this file:
 #include "units/vehicle_definitions.h"
 #include "units/vehicles.h"
 
+#ifdef HALO_LINUX
+/* network_game_globals.c's */
+boolean network_game_distributed_client(void);
+/* port/linux/game/network_distributed.c's */
+void network_distributed_player_picked_up(long player_index, short kind, long definition_index, short count);
+/* game_sound.c's */
+long unspatialized_impulse_sound_new(long sound_definition_index, real scale);
+
+/* what a player picked up, for the distributed netcode's client whose
+player it is: the host decides the pickup, the client shows it
+(network_player_show_pickup) */
+enum
+{
+	_network_pickup_weapon,
+	_network_pickup_ammunition,
+	_network_pickup_grenade,
+	_network_pickup_equipment,
+	_network_pickup_powerup,
+};
+
+#define player_network_picked_up(player, player_index, kind, definition_index, count) \
+	if ((player)->local_player_index == NONE) \
+		network_distributed_player_picked_up(player_index, kind, definition_index, count)
+
+static void network_player_log_idle_action(long player_index, unsigned long control_flags);
+boolean network_game_distributed(void);
+
+/* whether this machine decides pickups: not a client of the distributed
+netcode, whose players' weapons, grenades and power-ups are the host's
+(port/linux/game/network_distributed.c) */
+#define players_decide_pickups() (!network_game_distributed_client())
+#else
+#define player_network_picked_up(player, player_index, kind, definition_index, count)
+#define players_decide_pickups() TRUE
+#endif
+
 /* ---------- constants */
 
 enum
@@ -430,6 +466,9 @@ static void player_teleport_on_bsp_switch(
 	long player_index,
 	long source_unit_index,
 	real_point3d const *position);
+static void player_handle_powerup_equipment(
+	long player_index,
+	long equipment_index);
 
 /* ---------- globals */
 
@@ -1381,6 +1420,160 @@ static void player_spawn(
 	return;
 }
 
+#ifdef HALO_LINUX
+/* the distributed netcode (port/linux/game/network_distributed.c): a
+client's player takes the unit the host spawned it with (the host's object,
+at the host's index, with the host's weapons), as player_spawn gives a
+player the unit it makes */
+void network_player_attach_unit(
+	long player_index,
+	long unit_index)
+{
+	struct player_datum *player = player_get(player_index);
+	struct unit_datum *unit = unit_get(unit_index);
+
+	unit->object.owner_player_index = player_index;
+	unit->object.owner_team_index = (short)player->team_index;
+	unit->unit.player_index = player_index;
+	player->unit_index = unit_index;
+	unit_set_actively_controlled(unit_index, TRUE);
+	if (player->local_player_index != NONE)
+		player_control_new_unit(player->local_player_index, unit_index);
+	csmemset(player->powerup_durations, 0, sizeof(player->powerup_durations));
+	player->action_result = _player_action_result_reload;
+	player->action_object_index = NONE;
+	if (player->local_player_index != NONE)
+		observer_obsolete_position(player->local_player_index);
+}
+
+/* ... and shows what the host says its player picked up (the host decides
+pickups): the HUD's message, the pickup's sound, a powerup's screen flash */
+void network_player_show_pickup(
+	long player_index,
+	short kind,
+	long definition_index,
+	short count)
+{
+	struct player_datum *player = player_get(player_index);
+	boolean tag_index_is_group(long tag_index, long group_tag);
+
+	if (player->local_player_index == NONE)
+		return;
+	switch (kind)
+	{
+	case _network_pickup_weapon:
+		if (tag_index_is_group(definition_index, WEAPON_DEFINITION_TAG))
+		{
+			hud_picked_up_weapon(player->local_player_index, definition_index);
+			if (player->unit_index != NONE)
+				player_control_unzoom(player->unit_index);
+		}
+		break;
+	case _network_pickup_ammunition:
+		if (tag_index_is_group(definition_index, WEAPON_DEFINITION_TAG))
+		{
+			struct weapon_definition *weapon_definition = weapon_definition_get(definition_index);
+
+			hud_picked_up_ammunition(player->local_player_index, definition_index, count);
+			if (weapon_definition->weapon.pickup_sound.index != NONE)
+				unspatialized_impulse_sound_new(weapon_definition->weapon.pickup_sound.index, 1.0f);
+		}
+		break;
+	case _network_pickup_grenade:
+		if (tag_index_is_group(definition_index, EQUIPMENT_DEFINITION_TAG))
+		{
+			hud_picked_up_grenade(player->local_player_index, definition_index);
+			equipment_definition_handle_pickup(definition_index);
+		}
+		break;
+	case _network_pickup_equipment:
+		if (tag_index_is_group(definition_index, EQUIPMENT_DEFINITION_TAG))
+			hud_picked_up_powerup(player->local_player_index, definition_index);
+		break;
+	case _network_pickup_powerup:
+		if (tag_index_is_group(definition_index, EQUIPMENT_DEFINITION_TAG))
+		{
+			/* (as player_handle_powerup_equipment shows its player) */
+			switch (equipment_definition_get(definition_index)->equipment.powerup_type)
+			{
+			case _equipment_powerup_overshield: player_over_shield_screen_effect(player_index); break;
+			case _equipment_powerup_health: player_health_pack_screen_effect(player_index); break;
+			case _equipment_powerup_active_camouflage: player_active_camo_screen_effect(player_index); break;
+			}
+			hud_picked_up_powerup(player->local_player_index, definition_index);
+			equipment_definition_handle_pickup(definition_index);
+		}
+		break;
+	}
+}
+
+/* the host: a player on another machine presses the action button with
+nothing here to do (to pick up, swap for, enter): what the host has around
+them, to the log, at most every few seconds (a client sees what to pick up
+where the host has nothing) */
+static void network_player_log_idle_action(
+	long player_index,
+	unsigned long control_flags)
+{
+	static long logged_times[HALO_PORT_MAXIMUM_NETWORK_PLAYERS];
+	struct player_datum *player = player_get(player_index);
+	long absolute_index = DATUM_INDEX_TO_ABSOLUTE_INDEX(player_index);
+	struct object_iterator iterator;
+	struct unit_datum *unit;
+	long nearest_index = NONE;
+	real nearest_distance = 0.0f;
+
+	if (!network_game_distributed() || game_connection() != _game_connection_network_server ||
+		player->local_player_index != NONE || player->action_result != _player_action_result_reload ||
+		!(control_flags & (FLAG(_unit_control_action_bit) | FLAG(_unit_control_swap_weapons_bit))) ||
+		absolute_index >= HALO_PORT_MAXIMUM_NETWORK_PLAYERS ||
+		(logged_times[absolute_index] && game_time_get() - logged_times[absolute_index] < 3 * TICKS_PER_SECOND))
+	{
+		return;
+	}
+	logged_times[absolute_index] = game_time_get();
+	unit = unit_get(player->unit_index);
+	object_iterator_new(&iterator, _object_mask_weapon | _object_mask_equipment, 0);
+	while (object_iterator_next(&iterator))
+	{
+		struct object_datum *object = object_get(iterator.index);
+		real distance;
+
+		if (object->object.parent_object_index != NONE || !TEST_FLAG(object->object.flags, _object_connected_to_map_bit))
+			continue;
+		distance = distance3d(&unit->object.position, &object->object.position);
+		if (nearest_index == NONE || distance < nearest_distance)
+		{
+			nearest_index = iterator.index;
+			nearest_distance = distance;
+		}
+	}
+	error(2, "distributed: player %ld pressed action with nothing to pick up here: unit %lx at %.2f %.2f %.2f, "
+		"nearest item %lx %s at %.2f",
+		absolute_index, player->unit_index, unit->object.position.x, unit->object.position.y, unit->object.position.z,
+		nearest_index, nearest_index != NONE ? tag_get_name(object_get(nearest_index)->definition_index) : "",
+		nearest_distance);
+}
+
+/* ... and gives up the one it has (the host's unit for it is another) */
+void network_player_detach_unit(
+	long player_index)
+{
+	struct player_datum *player = player_get(player_index);
+	struct unit_datum *unit = player->unit_index != NONE ?
+		(struct unit_datum *)object_try_and_get_and_verify_type(player->unit_index, _object_mask_unit) : NULL;
+
+	if (unit)
+	{
+		unit->unit.player_index = NONE;
+		unit_set_actively_controlled(player->unit_index, FALSE);
+	}
+	player->unit_index = NONE;
+	if (player->local_player_index != NONE)
+		player_control_new_unit(player->local_player_index, NONE);
+}
+#endif
+
 /* Exact: January emits this private dead-unit replacement helper from the
    reconstructed player_teleport_internal caller below. */
 static void player_pseudo_kill(
@@ -1558,6 +1751,7 @@ static boolean player_handle_action(
 			hud_picked_up_powerup(
 				player->local_player_index,
 				equipment->definition_index);
+			player_network_picked_up(player, player_index, _network_pickup_equipment, equipment->definition_index, 0);
 		}
 		result = TRUE;
 		break;
@@ -1630,74 +1824,52 @@ static boolean player_handle_action(
 }
 
 /* Matching status is tracked in the Players object log. */
-boolean player_teleport_internal(
+static boolean player_teleport_internal(
 	long player_index,
 	long source_unit_index,
 	real_point3d const *position)
 {
-	struct player_datum *player;
-	struct biped_datum *source_biped;
-	struct
+	struct player_datum *player = player_get(player_index);
+	long player_unit_index = player->unit_index;
+	struct biped_datum *biped = biped_get(player_unit_index);
+	boolean result = FALSE;
+
+	match_assert(
+		"c:\\halo\\SOURCE\\game\\players.c",
+		0x4FB,
+		source_unit_index==NONE || local_player_count()>1);
+	if (source_unit_index != NONE &&
+		object_get_ultimate_parent(source_unit_index) != source_unit_index)
 	{
+		long source_root_object_index = object_get_ultimate_parent(source_unit_index);
 		struct object_datum *source_root_object;
-		struct biped_datum *biped;
-	} pointers;
-	struct scenario *scenario;
-	struct scenario_bsp_switch_trigger_volume *bsp_switch_trigger_volume;
-	struct game_globals_player_information *player_information;
-	real_vector3d const *adjustment_vector;
-	real_matrix4x3 placement_matrix;
-	real_vector3d best_adjustment_vector;
-	real_vector3d random_adjustment_vector;
-	real_point3d adjusted_position;
-	real_point3d random_adjusted_position;
-	long player_unit_index;
-	long source_root_object_index;
-	long respawn_effect_index;
-	short adjustment_index;
-	short random_adjustment_index;
-	boolean result;
+		real_vector3d best_adjustment_vector;
+		real collision_radius;
+		real_matrix4x3 adjustment_matrix;
+		real scale;
+		short adjustment_index;
+		real_point3d anchor_point;
 
-	player = player_get(player_index);
-	player_unit_index = player->unit_index;
-	pointers.biped = biped_get(player_unit_index);
-	result = FALSE;
-
-	if (source_unit_index != NONE)
-	{
-		match_vassert(
-			"c:\\halo\\SOURCE\\game\\players.c",
-			0x4FB,
-			local_player_count()>1,
-			"source_unit_index==NONE || local_player_count()>1");
-		if (object_get_ultimate_parent(source_unit_index) != source_unit_index)
+		unit_get(source_unit_index);
+		source_root_object = object_get(source_root_object_index);
+		best_adjustment_vector = source_root_object->object.translational_velocity;
+		best_adjustment_vector.k = 0.f;
+		source_unit_index = source_root_object_index;
+		if (!(magnitude_squared3d(&best_adjustment_vector) > 0.f))
 		{
-			real scale;
-			real collision_height;
-
-			source_root_object_index =
-				object_get_ultimate_parent(source_unit_index);
-			unit_get(source_unit_index);
-			pointers.source_root_object = object_get(source_root_object_index);
-
-			best_adjustment_vector =
-				pointers.source_root_object->object.translational_velocity;
-			best_adjustment_vector.k = 0.f;
-			source_unit_index = source_root_object_index;
-			if (!(magnitude_squared3d(&best_adjustment_vector) > 0.f))
+			if (source_root_object->object.forward.k < 0.70710677f)
 			{
-				adjustment_vector =
-					pointers.source_root_object->object.forward.k < 0.70710677f
-						? &pointers.source_root_object->object.forward
-						: &pointers.source_root_object->object.up;
-				best_adjustment_vector = *adjustment_vector;
-				best_adjustment_vector.k = 0.f;
+				best_adjustment_vector = source_root_object->object.forward;
 			}
+			else
+			{
+				best_adjustment_vector = source_root_object->object.up;
+			}
+		}
+		best_adjustment_vector.k = 0.f;
 
-			collision_height = biped_definition_get(
-				pointers.biped->definition_index)->biped.collision_radius;
-			scale = collision_height * 3.f +
-				pointers.source_root_object->object.bounding_sphere_radius;
+		collision_radius = biped_definition_get(biped->definition_index)->biped.collision_radius;
+		scale = collision_radius * 3.f + source_root_object->object.bounding_sphere_radius;
 		match_assert(
 			"c:\\halo\\SOURCE\\game\\players.c",
 			0x525,
@@ -1711,27 +1883,25 @@ boolean player_teleport_internal(
 			&best_adjustment_vector,
 			&best_adjustment_vector);
 		normalize3d(&best_adjustment_vector);
-			matrix4x3_from_point_and_vectors(
-				&placement_matrix,
-				&pointers.source_root_object->object.bounding_sphere_center,
-				&best_adjustment_vector,
+		matrix4x3_from_point_and_vectors(
+			&adjustment_matrix,
+			&source_root_object->object.bounding_sphere_center,
+			&best_adjustment_vector,
 			global_up3d);
-		placement_matrix.scale = scale;
+		adjustment_matrix.scale = scale;
 
-		adjustment_index = 0;
-		do
+		for (adjustment_index = 0;
+			adjustment_index < NUMBEROF(adjustment_weights) && !result;
+			adjustment_index++)
 		{
-			if (result)
-				break;
-
 			matrix4x3_transform_point(
-				&placement_matrix,
+				&adjustment_matrix,
 				&adjustment_weights[adjustment_index],
-				&adjusted_position);
+				&anchor_point);
 			result = biped_fix_position(
 				player_unit_index,
 				source_unit_index,
-				&adjusted_position,
+				&anchor_point,
 				NULL,
 				2.f,
 				FALSE,
@@ -1740,53 +1910,32 @@ boolean player_teleport_internal(
 
 			if (!result)
 			{
-				random_adjustment_index = 0;
-				do
-				{
-					if (result)
-						break;
+				short random_adjustment_index;
+				real_point3d new_position;
+				real_vector3d random_offset;
 
-					random_adjustment_vector = *global_zero_vector3d;
-					random_direction3d(&random_adjustment_vector);
-					random_adjusted_position.x = adjusted_position.x +
-						random_adjustment_vector.i *
-						collision_height;
-					random_adjusted_position.y = adjusted_position.y +
-						random_adjustment_vector.j *
-						collision_height;
-					random_adjusted_position.z = adjusted_position.z +
-						random_adjustment_vector.k *
-						collision_height;
+				for (random_adjustment_index = 0;
+					random_adjustment_index < 8 && !result;
+					random_adjustment_index++)
+				{
+					random_offset = *global_zero_vector3d;
+					random_direction3d(&random_offset);
+					point_from_line3d(
+						&anchor_point,
+						&random_offset,
+						collision_radius,
+						&new_position);
 					result = biped_fix_position(
 						player_unit_index,
 						source_unit_index,
-						&random_adjusted_position,
+						&new_position,
 						NULL,
 						2.f,
 						FALSE,
 						FALSE,
 						TRUE);
-					random_adjustment_index++;
 				}
-				while (random_adjustment_index < 8);
 			}
-
-			adjustment_index++;
-		}
-	while (adjustment_index < NUMBEROF(adjustment_weights));
-			goto placement_complete;
-		}
-		else
-		{
-			result = biped_fix_position(
-				player_unit_index,
-				source_unit_index,
-				(real_point3d *)position,
-				NULL,
-				2.f,
-				FALSE,
-				FALSE,
-				TRUE);
 		}
 	}
 	else
@@ -1802,88 +1951,94 @@ boolean player_teleport_internal(
 			TRUE);
 	}
 
-placement_complete:
-
 	player->cluster_index = NONE;
-	if (!result)
-		goto failure;
-
-	scenario = global_scenario_get();
-	match_assert(
-		"c:\\halo\\SOURCE\\game\\players.c",
-		0x56A,
-		player->unit_index!=NONE);
-	for (adjustment_index = 0;
-		adjustment_index < scenario->bsp_switch_trigger_volumes.count;
-		adjustment_index++)
+	if (result)
 	{
-		bsp_switch_trigger_volume = TAG_BLOCK_GET_ELEMENT(
-			&scenario->bsp_switch_trigger_volumes,
-			adjustment_index,
-			struct scenario_bsp_switch_trigger_volume);
-		if (bsp_switch_trigger_volume->source_structure_bsp_index ==
-			global_structure_bsp_index &&
-			scenario_trigger_volume_test_object(
-				bsp_switch_trigger_volume->trigger_volume_index,
-				player->unit_index))
+		struct scenario *scenario = global_scenario_get();
+		short bsp_switch_trigger_volume_index;
+
+		match_assert(
+			"c:\\halo\\SOURCE\\game\\players.c",
+			0x56A,
+			player->unit_index!=NONE);
+		for (bsp_switch_trigger_volume_index = 0;
+			bsp_switch_trigger_volume_index < scenario->bsp_switch_trigger_volumes.count;
+			bsp_switch_trigger_volume_index++)
 		{
-			result = FALSE;
-			goto failure;
+			struct scenario_bsp_switch_trigger_volume *bsp_switch_trigger_volume = TAG_BLOCK_GET_ELEMENT(
+				&scenario->bsp_switch_trigger_volumes,
+				bsp_switch_trigger_volume_index,
+				struct scenario_bsp_switch_trigger_volume);
+
+			if (bsp_switch_trigger_volume->source_structure_bsp_index ==
+				global_structure_bsp_index &&
+				scenario_trigger_volume_test_object(
+					bsp_switch_trigger_volume->trigger_volume_index,
+					player->unit_index))
+			{
+				result = FALSE;
+				break;
+			}
 		}
 	}
 
-	pointers.biped->object.translational_velocity = *global_zero_vector3d;
-	if (source_unit_index != NONE)
+	if (result)
 	{
-		source_biped = biped_get(source_unit_index);
-		best_adjustment_vector = source_biped->object.forward;
-		source_biped = biped_try_and_get(source_unit_index);
-		if (source_biped && source_biped->biped.elevator_object_index != NONE)
+		biped->object.translational_velocity = *global_zero_vector3d;
+		if (source_unit_index != NONE)
 		{
-			pointers.biped->biped.elevator_object_index =
-				source_biped->biped.elevator_object_index;
-			pointers.biped->biped.elevator_ticks = source_biped->biped.elevator_ticks;
+			real_vector3d forward = unit_get(source_unit_index)->object.forward;
+			struct biped_datum *source_biped = biped_try_and_get(source_unit_index);
+
+			if (source_biped && source_biped->biped.elevator_object_index != NONE)
+			{
+				biped->biped.elevator_object_index =
+					source_biped->biped.elevator_object_index;
+				biped->biped.elevator_ticks = source_biped->biped.elevator_ticks;
+			}
+
+			biped->unit.desired_facing_vector = forward;
+			biped->unit.desired_aiming_vector = forward;
+			biped->unit.desired_looking_vector = forward;
+			if (player->local_player_index != NONE)
+			{
+				player_control_set_facing(
+					player->local_player_index,
+					&forward);
+			}
 		}
 
-		pointers.biped->unit.desired_facing_vector = best_adjustment_vector;
-		pointers.biped->unit.desired_aiming_vector = best_adjustment_vector;
-		pointers.biped->unit.desired_looking_vector = best_adjustment_vector;
-		if (player->local_player_index != NONE)
+		if (source_unit_index != NONE)
 		{
-			player_control_set_facing(
-				player->local_player_index,
-				&best_adjustment_vector);
-		}
+			long respawn_effect_index = TAG_BLOCK_GET_ELEMENT(
+				&scenario_get_game_globals()->player_information,
+				0,
+				struct game_globals_player_information)->coop_respawn_effect.index;
 
-		player_information = TAG_BLOCK_GET_ELEMENT(
-			&scenario_get_game_globals()->player_information,
-			0,
-			struct game_globals_player_information);
-		respawn_effect_index = player_information->coop_respawn_effect.index;
-		if (respawn_effect_index != NONE)
-		{
-			players_compute_combined_pvs(players_globals->combined_pvs, FALSE);
-			effect_new_from_object(
-				respawn_effect_index,
-				player_unit_index,
-				player_unit_index,
-				NONE,
-				0.f,
-				0.f,
-				NULL,
-				NULL);
+			if (respawn_effect_index != NONE)
+			{
+				players_compute_combined_pvs(players_globals->combined_pvs, FALSE);
+				effect_new_from_object(
+					respawn_effect_index,
+					player_unit_index,
+					player_unit_index,
+					NONE,
+					0.f,
+					0.f,
+					NULL,
+					NULL);
+			}
 		}
 	}
-
-	return result;
-
-failure:
-	error(2, "couldn't teleport player into a valid location");
-	match_assert(
-		"c:\\halo\\SOURCE\\game\\players.c",
-		0x5AB,
-		player->local_player_index!=NONE);
-	player_pseudo_kill(player_index, source_unit_index);
+	else
+	{
+		error(2, "couldn't teleport player into a valid location");
+		match_assert(
+			"c:\\halo\\SOURCE\\game\\players.c",
+			0x5AB,
+			player->local_player_index!=NONE);
+		player_pseudo_kill(player_index, source_unit_index);
+	}
 
 	return result;
 }
@@ -2448,6 +2603,8 @@ static boolean player_handle_weapon_swap(
 	player = player_get(player_index);
 	unit = unit_get(player->unit_index);
 	result = FALSE;
+	if (!players_decide_pickups())
+		return result;
 	switch (player->action_result)
 	{
 	case _player_action_result_swap_for_weapon:
@@ -2461,6 +2618,7 @@ static boolean player_handle_weapon_swap(
 			hud_picked_up_weapon(
 				player->local_player_index,
 				weapon->definition_index);
+			player_network_picked_up(player, player_index, _network_pickup_weapon, weapon->definition_index, 0);
 			player_control_unzoom(player->unit_index);
 		}
 		result = TRUE;
@@ -2476,6 +2634,7 @@ static boolean player_handle_weapon_swap(
 			hud_picked_up_weapon(
 				player->local_player_index,
 				weapon->definition_index);
+			player_network_picked_up(player, player_index, _network_pickup_weapon, weapon->definition_index, 0);
 		}
 		break;
 	}
@@ -2872,7 +3031,7 @@ static void player_examine_nearby_item(
 		{
 			inventory_item_index =
 				unit->unit.weapon_object_indices[inventory_index];
-			if (inventory_item_index != NONE &&
+			if (inventory_item_index != NONE && players_decide_pickups() &&
 				weapon_handle_potential_inventory_item(
 					inventory_item_index,
 					item_index,
@@ -2885,6 +3044,8 @@ static void player_examine_nearby_item(
 						player->local_player_index,
 						weapon_get(inventory_item_index)->definition_index,
 						ammunition_count);
+					player_network_picked_up(player, player_index, _network_pickup_ammunition,
+						weapon_get(inventory_item_index)->definition_index, ammunition_count);
 				}
 				break;
 			}
@@ -2897,11 +3058,12 @@ static void player_examine_nearby_item(
 		equipment_definition = equipment_definition_get(equipment->definition_index);
 		if (equipment_definition->equipment.powerup_type == _equipment_powerup_grenade)
 		{
-			if (unit_add_grenade_to_inventory(player->unit_index, item_index))
+			if (players_decide_pickups() && unit_add_grenade_to_inventory(player->unit_index, item_index))
 			{
 				hud_picked_up_grenade(
 					player->local_player_index,
 					equipment->definition_index);
+				player_network_picked_up(player, player_index, _network_pickup_grenade, equipment->definition_index, 0);
 			}
 		}
 		else if (equipment_definition->equipment.powerup_type != _equipment_powerup_none)
@@ -2909,7 +3071,8 @@ static void player_examine_nearby_item(
 			current_equipment_index = unit_get_current_equipment(player->unit_index);
 			if (current_equipment_index == NONE)
 			{
-				player_handle_powerup_equipment(player_index, item_index);
+				if (players_decide_pickups())
+					player_handle_powerup_equipment(player_index, item_index);
 			}
 			else
 			{
@@ -2986,7 +3149,8 @@ static void player_examine_nearby_item(
 
 		if (unit_should_autopick_weapon(player->unit_index, weapon_item_index))
 		{
-			if (unit_add_weapon_to_inventory(
+			if (players_decide_pickups() &&
+				unit_add_weapon_to_inventory(
 				player->unit_index,
 				weapon_item_index,
 				TRUE))
@@ -2994,6 +3158,8 @@ static void player_examine_nearby_item(
 				hud_picked_up_weapon(
 					player->local_player_index,
 					weapon_get(weapon_item_index)->definition_index);
+				player_network_picked_up(player, player_index, _network_pickup_weapon,
+					weapon_get(weapon_item_index)->definition_index, 0);
 				player_control_unzoom(player->unit_index);
 			}
 		}
@@ -3056,7 +3222,7 @@ static void player_examine_nearby_device(
 	return;
 }
 
-void player_handle_powerup_equipment(
+static void player_handle_powerup_equipment(
 	long player_index,
 	long equipment_index)
 {
@@ -3104,6 +3270,10 @@ void player_handle_powerup_equipment(
 			powerup_index = 1;
 			break;
 
+		/* powerup_index is left unassigned only by this default arm. Not reached unassigned: the
+		 * arm's assertion failure calls system_exit, which does not return in January
+		 * (0x47c960 jumps to halt_and_catch_fire 0x4f21c0, which loops or calls exit).
+		 * Source-policy approval pending (2026-09-27 audit). */
 		default:
 			display_assert(
 				NULL,
@@ -3123,6 +3293,7 @@ void player_handle_powerup_equipment(
 	hud_picked_up_powerup(
 		(unsigned short)player->local_player_index,
 		equipment->definition_index);
+	player_network_picked_up(player, player_index, _network_pickup_powerup, equipment->definition_index, 0);
 	if (player->local_player_index != NONE)
 		equipment_handle_pickup(equipment_index);
 	object_delete(equipment_index);
@@ -3444,7 +3615,13 @@ void players_update_before_game(
 			{
 				if (game_engine_running())
 				{
-					if (game_engine_should_spawn_player(iterator.datum_index))
+					/* (a client of the distributed netcode's players take the units
+					the host spawns them with, network_player_attach_unit) */
+					if (
+#ifdef HALO_LINUX
+						!network_game_distributed_client() &&
+#endif
+						game_engine_should_spawn_player(iterator.datum_index))
 					{
 						game_engine_prespawn_player_update(iterator.datum_index);
 						player_spawn(iterator.datum_index);
@@ -3468,6 +3645,9 @@ void players_update_before_game(
 				unit = unit_get(player->unit_index);
 				if (!players_globals->input_disabled)
 				{
+#ifdef HALO_LINUX
+					network_player_log_idle_action(iterator.datum_index, action->control_flags);
+#endif
 					if (TEST_FLAG(action->control_flags, _unit_control_action_bit) &&
 						unit->object.parent_object_index == NONE &&
 						!player_handle_action(iterator.datum_index))

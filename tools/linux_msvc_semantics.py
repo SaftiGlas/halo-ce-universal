@@ -47,13 +47,6 @@ def source_files(roots: Iterable[Path]) -> List[Path]:
             path
             for path in sorted(root.rglob("*"))
             if path.suffix.lower() in SOURCE_SUFFIXES and path.is_file()
-            # the SDK overlay lists each header under several spellings;
-            # other symlinks (a source mod build's tree) are files of their own
-            and not (
-                path.is_symlink()
-                and path.name != path.name.lower()
-                and path.with_name(path.name.lower()).exists()
-            )
         )
     return files
 

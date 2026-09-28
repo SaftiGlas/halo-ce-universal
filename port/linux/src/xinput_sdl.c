@@ -22,6 +22,10 @@ With HALO_FORGE set, the dev tools read their own keys and buttons
 controller 1, and while their menu is open or they hold an object also the
 D-pad, A, B, X, Y, start, back and the triggers (forge_filter_gamepad).
 
+In the menus the mouse is free and drives a pointer instead
+(port/linux/include/halo_ui_pointer.h, source/interface/ui_widget.c): its
+motion, buttons and wheel do not reach the controller then.
+
 Mouse aim does not go through the right stick: the game's look code asks
 halo_linux_mouse_look for the motion since its last call and adds it to the
 stick's facing change, so aiming is direct rather than rate based.
@@ -37,6 +41,7 @@ drive the controller.
 #include "sdl_platform.h"
 #include "../include/halo_forge.h"
 #include "../include/halo_mod.h"
+#include "port_config.h"
 
 #include <SDL3/SDL.h>
 #include <math.h>
@@ -75,7 +80,11 @@ static pthread_mutex_t mouse_lock = PTHREAD_MUTEX_INITIALIZER;
 static float mouse_pending_x, mouse_pending_y;
 static unsigned long mouse_polls_unconsumed = 0;
 static float mouse_wheel_accumulated = 0.0f;
-static int wheel_press_polls = 0;
+/* the wheel's switch (wheel_update): when the wheel last moved, until when
+Y is held, and whether a scroll is under way */
+static Uint64 wheel_moved_ms = 0;
+static Uint64 wheel_press_until_ms = 0;
+static BOOL wheel_scrolling = FALSE;
 
 static float mouse_sensitivity(void)
 {
@@ -83,9 +92,7 @@ static float mouse_sensitivity(void)
 
 	if (sensitivity < 0.0f)
 	{
-		const char *text = getenv("HALO_MOUSE_SENSITIVITY");
-
-		sensitivity = text ? (float)atof(text) : 1.0f;
+		sensitivity = (float)config_real("input.mouse_sensitivity");
 		if (sensitivity <= 0.0f)
 			sensitivity = 1.0f;
 	}
@@ -106,7 +113,7 @@ int halo_linux_mouse_look(short gamepad_index, float *yaw, float *pitch)
 	if (gamepad_index != 0)
 		return FALSE;
 	if (invert < 0)
-		invert = getenv("HALO_MOUSE_INVERT") != NULL;
+		invert = config_boolean("input.invert_mouse");
 	pthread_mutex_lock(&mouse_lock);
 	x = mouse_pending_x;
 	y = mouse_pending_y;
@@ -137,6 +144,8 @@ static void mouse_poll(const struct platform_input_state *input)
 		mouse_pending_x += input->mouse_dx;
 		mouse_pending_y += input->mouse_dy;
 		mouse_wheel_accumulated += input->mouse_wheel;
+		if (input->mouse_wheel != 0.0f)
+			wheel_moved_ms = SDL_GetTicks();
 	}
 	pthread_mutex_unlock(&mouse_lock);
 }
@@ -305,31 +314,93 @@ static void keyboard_gamepad(const struct platform_input_state *input, XINPUT_GA
 	pad->bAnalogButtons[XINPUT_GAMEPAD_B] |= analog(k[SDL_SCANCODE_AC_BACK]);
 #endif
 	pad->bAnalogButtons[XINPUT_GAMEPAD_X] |= analog(k[SDL_SCANCODE_E] || k[SDL_SCANCODE_R]);
-	pad->bAnalogButtons[XINPUT_GAMEPAD_Y] |= analog(k[SDL_SCANCODE_TAB] || wheel_press_polls > 0);
+	pad->bAnalogButtons[XINPUT_GAMEPAD_Y] |= analog(k[SDL_SCANCODE_TAB] || SDL_GetTicks() < wheel_press_until_ms);
 	pad->bAnalogButtons[XINPUT_GAMEPAD_WHITE] |= analog(k[SDL_SCANCODE_Q]);
 	pad->bAnalogButtons[XINPUT_GAMEPAD_BLACK] |= analog(k[SDL_SCANCODE_X]);
 	pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] |= analog(k[SDL_SCANCODE_G] || (mouse && m[SDL_BUTTON_RIGHT]));
 	pad->bAnalogButtons[XINPUT_GAMEPAD_RIGHT_TRIGGER] |= analog(mouse && m[SDL_BUTTON_LEFT]);
 }
 
-/* a wheel notch presses Y for two polls, then leaves it up for two */
+/* A scroll of the wheel switches weapons once: it holds Y for WHEEL_PRESS_MS
+once the wheel has turned a notch, and the scroll lasts until the wheel has
+been still for WHEEL_SCROLL_GAP_MS. One notch often arrives as several events
+over a few tens of milliseconds (high-resolution and smooth-scrolling
+wheels), and one flick turns several notches; switching for each would bring
+the same weapon straight back. Timed in milliseconds, not polls: polls come
+once a frame, at the display's refresh rate. */
+#define WHEEL_PRESS_MS 50
+#define WHEEL_SCROLL_GAP_MS 200
+
+/* debug.test_input "bot:<seed>": a scripted player for the automated
+network tests (port/linux/game/network_test.c), different for each seed:
+it walks and strafes in circles, turns, fires every few seconds and jumps
+now and then */
+static int test_input_holding_action;
+static Uint64 test_input_holding_action_since;
+
+/* the automated tests (port/linux/game/network_test.c): the scripted player
+stands still, holding the action button (X: picking up, swapping weapons)
+after a second */
+void test_input_hold_action(int hold)
+{
+	if (hold && !test_input_holding_action)
+		test_input_holding_action_since = SDL_GetTicks();
+	test_input_holding_action = hold;
+}
+
+static void test_input_gamepad(XINPUT_GAMEPAD *pad)
+{
+	static int checked;
+	static int seed = -1;
+	double t;
+
+	if (!checked)
+	{
+		const char *setting = config_string("debug.test_input");
+
+		checked = 1;
+		if (!strncmp(setting, "bot:", 4))
+			seed = atoi(setting + 4);
+		else if (!strcmp(setting, "bot"))
+			seed = 0;
+	}
+	if (seed < 0)
+		return;
+	if (test_input_holding_action)
+	{
+		/* (standing still, the button held from a second on) */
+		if (SDL_GetTicks() - test_input_holding_action_since >= 1000)
+			pad->bAnalogButtons[XINPUT_GAMEPAD_X] = 255;
+		return;
+	}
+	t = (double)SDL_GetTicks() / 1000.0 + seed * 1.7;
+	pad->sThumbLY = (SHORT)(sin(t * 0.9) * 32000.0);
+	pad->sThumbLX = (SHORT)(cos(t * 0.6 + seed) * 20000.0);
+	pad->sThumbRX = (SHORT)(sin(t * 0.4) * 14000.0);
+	if (fmod(t, 3.0) < 0.3)
+		pad->bAnalogButtons[XINPUT_GAMEPAD_RIGHT_TRIGGER] = 255;
+	if (fmod(t, 5.0) < 0.1)
+		pad->bAnalogButtons[XINPUT_GAMEPAD_A] = 255;
+}
+
 static void wheel_update(void)
 {
-	float wheel;
+	Uint64 now = SDL_GetTicks();
 
 	pthread_mutex_lock(&mouse_lock);
-	wheel = mouse_wheel_accumulated;
-	if (wheel_press_polls > -2)
+	if (!wheel_scrolling)
 	{
-		wheel_press_polls--;
+		if (fabsf(mouse_wheel_accumulated) >= 1.0f)
+		{
+			wheel_scrolling = TRUE;
+			wheel_press_until_ms = now + WHEEL_PRESS_MS;
+		}
 	}
-	else if (wheel != 0.0f)
+	else if (now >= wheel_press_until_ms && now - wheel_moved_ms >= WHEEL_SCROLL_GAP_MS)
 	{
-		wheel_press_polls = 2;
+		wheel_scrolling = FALSE;
 		mouse_wheel_accumulated = 0.0f;
 	}
-	if (fabsf(mouse_wheel_accumulated) > 4.0f)
-		mouse_wheel_accumulated = 0.0f;
 	pthread_mutex_unlock(&mouse_lock);
 }
 
@@ -604,6 +675,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 			sdl_gamepad_state(gamepads[0], &state->Gamepad);
 		if (forge_enabled())
 			forge_filter_gamepad(&state->Gamepad);
+		test_input_gamepad(&state->Gamepad);
 	}
 	else if (port < count)
 	{

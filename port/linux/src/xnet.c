@@ -12,9 +12,10 @@ real address, key exchange keys are random but unused, and XNADDR to
 IN_ADDR translation is the identity. That is enough for system link play on
 a LAN.
 
-Two settings adjust the addressing:
+Two settings in config.toml's [network] (port_config.c) adjust the
+addressing:
 
-- HALO_NET_ADDRESS=a.b.c.d binds the game's sockets to that local address
+- address = "a.b.c.d" binds the game's sockets to that local address
   instead of every interface, and reports it as this machine's system link
   address. Several instances can then share one computer, each on its own
   loopback address (127.0.0.2, 127.0.0.3, ...), or system link can be
@@ -23,32 +24,47 @@ Two settings adjust the addressing:
   through it, and admits only it to a split screen game): connections and
   datagrams to 127.0.0.1 go to the address, and traffic from the address
   is reported as coming from 127.0.0.1.
-- HALO_NET_BROADCAST=a.b.c.d[,e.f.g.h...] sends the game's broadcasts (a
+- broadcast = "a.b.c.d[,e.f.g.h...]" sends the game's broadcasts (a
   client's system link game search, a host's game advertisement) to those
   addresses instead of 255.255.255.255, to reach machines that broadcasts
   do not: other loopback addresses, or machines across a VPN (listing
   255.255.255.255 too still broadcasts). A socket bound to one address
-  receives no broadcasts, so machines with HALO_NET_ADDRESS find each
+  receives no broadcasts, so machines with an address find each
   other only through these lists: each must list the others.
 
 Both are read once, when the game starts its networking; a value that is
 not an IPv4 address is reported and ignored.
+
+Internet play (p2p.c) adds machines that shared an invite to this LAN: an
+XNADDR's abEnet carries its machine's identifier, which XNetXnAddrToInAddr
+maps to the peer's virtual address, and traffic to and from those addresses
+is rewritten to and from p2p.c's local stand-ins here. Broadcasts also go to
+every peer.
 */
 
 #include "platform.h"
 #include "posix.h"
+#include "port_config.h"
+#include "p2p.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 /* ---------- address settings */
 
+/* Winsock's, which the SDK headers here leave out */
+#ifndef SO_TYPE
+#define SO_TYPE 0x1008
+#endif
+
 enum
 {
 	MAXIMUM_BROADCAST_TARGETS = 256,
+	/* a system link game's other machines (include/halo_port_limits.h) */
+	P2P_BROADCAST_PEERS = 127,
 };
 
-/* HALO_NET_ADDRESS and HALO_NET_BROADCAST, read once (net_settings_read),
+/* network.address and network.broadcast, read once (net_settings_read),
 in network byte order */
 static struct
 {
@@ -102,7 +118,7 @@ static void net_settings_read(void)
 
 	if (net_settings.read)
 		return;
-	text = getenv("HALO_NET_ADDRESS");
+	text = config_string("network.address");
 	if (text && *text)
 	{
 		unsigned long address;
@@ -115,10 +131,10 @@ static void net_settings_read(void)
 		}
 		else
 		{
-			platform_log("HALO_NET_ADDRESS=%s is not a usable IPv4 address: ignored", text);
+			platform_log("network.address \"%s\" is not a usable IPv4 address: ignored", text);
 		}
 	}
-	text = getenv("HALO_NET_BROADCAST");
+	text = config_string("network.broadcast");
 	while (text && *text)
 	{
 		const char *end = text + strcspn(text, ",");
@@ -129,11 +145,11 @@ static void net_settings_read(void)
 			if (net_settings.broadcast_count < MAXIMUM_BROADCAST_TARGETS)
 				net_settings.broadcast_targets[net_settings.broadcast_count++] = address;
 			else if (net_settings.broadcast_count++ == MAXIMUM_BROADCAST_TARGETS)
-				platform_log("HALO_NET_BROADCAST: only the first %d addresses are used", MAXIMUM_BROADCAST_TARGETS);
+				platform_log("network.broadcast: only the first %d addresses are used", MAXIMUM_BROADCAST_TARGETS);
 		}
 		else if (end > text)
 		{
-			platform_log("HALO_NET_BROADCAST: %.*s is not an IPv4 address: ignored", (int)(end - text), text);
+			platform_log("network.broadcast: %.*s is not an IPv4 address: ignored", (int)(end - text), text);
 		}
 		text = *end ? end + 1 : end;
 	}
@@ -141,14 +157,14 @@ static void net_settings_read(void)
 		net_settings.broadcast_count = MAXIMUM_BROADCAST_TARGETS;
 	if (net_settings.has_local_address && !net_settings.broadcast_count)
 	{
-		platform_log("HALO_NET_ADDRESS without HALO_NET_BROADCAST: sockets bound to one address "
+		platform_log("network.address without network.broadcast: sockets bound to one address "
 			"receive no broadcasts, so this machine sees other machines' games and searches only if "
-			"they list its address in their HALO_NET_BROADCAST");
+			"they list its address in their network.broadcast");
 	}
 	net_settings.read = 1;
 }
 
-/* the address to use in place of INADDR_ANY, if HALO_NET_ADDRESS is set */
+/* the address to use in place of INADDR_ANY, if network.address is set */
 static int local_address_setting(unsigned long *address)
 {
 	net_settings_read();
@@ -164,7 +180,7 @@ static unsigned long loopback_address(void)
 	return halo_ws_htonl(0x7F000001);
 }
 
-/* a destination of 127.0.0.1 means the HALO_NET_ADDRESS address */
+/* a destination of 127.0.0.1 means the network.address address */
 static const struct sockaddr *outgoing_address(const struct sockaddr *address, int address_length,
 	struct sockaddr_in *storage)
 {
@@ -181,7 +197,7 @@ static const struct sockaddr *outgoing_address(const struct sockaddr *address, i
 	return address;
 }
 
-/* traffic from the HALO_NET_ADDRESS address comes from 127.0.0.1 */
+/* traffic from the network.address address comes from 127.0.0.1 */
 static void incoming_address(struct sockaddr *address, const int *address_length)
 {
 	unsigned long local;
@@ -194,7 +210,47 @@ static void incoming_address(struct sockaddr *address, const int *address_length
 	}
 }
 
-/* the addresses to send broadcasts to instead, if HALO_NET_BROADCAST is
+/* a destination that is an internet play peer's goes to its stand-in */
+static const struct sockaddr *peer_outgoing_address(int stream, const struct sockaddr *address,
+	int address_length, struct sockaddr_in *storage)
+{
+	unsigned long ip;
+	unsigned short port;
+
+	if (!address || address->sa_family != AF_INET || address_length < (int)sizeof(*storage))
+		return NULL;
+	ip = ((const struct sockaddr_in *)address)->sin_addr.s_addr;
+	port = ((const struct sockaddr_in *)address)->sin_port;
+	if (!p2p_outgoing(stream, &ip, &port))
+		return NULL;
+	memcpy(storage, address, sizeof(*storage));
+	storage->sin_addr.s_addr = ip;
+	storage->sin_port = port;
+	return (const struct sockaddr *)storage;
+}
+
+/* traffic from an internet play peer's stand-in comes from the peer, and
+from the network.address address from 127.0.0.1 */
+static void peer_incoming_address(int stream, struct sockaddr *address, const int *address_length)
+{
+	if (address && address_length && *address_length >= (int)sizeof(struct sockaddr_in) &&
+		address->sa_family == AF_INET)
+	{
+		struct sockaddr_in *in = (struct sockaddr_in *)address;
+		unsigned long ip = in->sin_addr.s_addr;
+		unsigned short port = in->sin_port;
+
+		if (p2p_incoming(stream, &ip, &port))
+		{
+			in->sin_addr.s_addr = ip;
+			in->sin_port = port;
+			return;
+		}
+	}
+	incoming_address(address, address_length);
+}
+
+/* the addresses to send broadcasts to instead, if network.broadcast is
 set (255.255.255.255 among them sends a real broadcast too); returns their
 count */
 static int broadcast_targets(unsigned long *targets, int maximum_count)
@@ -233,8 +289,11 @@ void WSAAPI WSASetLastError(int error)
 
 int WSAAPI WSAStartup(WORD version_requested, LPWSADATA data)
 {
+	unsigned long local;
+
 	/* here, before the game's network threads start */
 	net_settings_read();
+	p2p_initialize(local_address_setting(&local) ? local : loopback_address());
 	if (data)
 	{
 		memset(data, 0, sizeof(*data));
@@ -265,6 +324,7 @@ SOCKET WSAAPI halo_ws_socket(int family, int type, int protocol)
 
 int WSAAPI halo_ws_closesocket(SOCKET socket)
 {
+	p2p_socket_closed((int)socket);
 	return winsock_result(posix_socket_close((int)socket));
 }
 
@@ -288,10 +348,20 @@ int WSAAPI halo_ws_connect(SOCKET socket, const struct sockaddr *address, int ad
 {
 	struct sockaddr_in target;
 	unsigned long override;
+	const struct sockaddr *peer;
+	int type = SOCK_STREAM;
+	int type_length = sizeof(type);
 
-	address = outgoing_address(address, address_length, &target);
+	/* an internet play peer's TCP or UDP port */
+	if (address && address->sa_family == AF_INET &&
+		(halo_ws_ntohl(((const struct sockaddr_in *)address)->sin_addr.s_addr) & 0xFFC00000) == 0x64400000)
+	{
+		posix_socket_getsockopt((int)socket, SOL_SOCKET, SO_TYPE, &type, &type_length);
+	}
+	peer = peer_outgoing_address(type == SOCK_STREAM, address, address_length, &target);
+	address = peer ? peer : outgoing_address(address, address_length, &target);
 	/* a connection from an unbound socket would leave from whichever address
-	the route picks; with HALO_NET_ADDRESS it leaves from that address */
+	the route picks; with network.address it leaves from that address */
 	if (address && address->sa_family == AF_INET && local_address_setting(&override))
 	{
 		struct sockaddr_in bound;
@@ -311,7 +381,12 @@ int WSAAPI halo_ws_connect(SOCKET socket, const struct sockaddr *address, int ad
 
 int WSAAPI halo_ws_listen(SOCKET socket, int backlog)
 {
-	return winsock_result(posix_socket_listen((int)socket, backlog));
+	int result = posix_socket_listen((int)socket, backlog);
+
+	/* the game listens for connections while it hosts */
+	if (result == 0)
+		p2p_socket_listening((int)socket);
+	return winsock_result(result);
 }
 
 SOCKET WSAAPI halo_ws_accept(SOCKET socket, struct sockaddr *address, int *address_length)
@@ -323,7 +398,7 @@ SOCKET WSAAPI halo_ws_accept(SOCKET socket, struct sockaddr *address, int *addre
 		WSASetLastError(posix_socket_last_error());
 		return INVALID_SOCKET;
 	}
-	incoming_address(address, address_length);
+	peer_incoming_address(1, address, address_length);
 	return (SOCKET)result;
 }
 
@@ -342,15 +417,17 @@ int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int fla
 		((const struct sockaddr_in *)address)->sin_addr.s_addr == INADDR_BROADCAST)
 	{
 		unsigned long targets[MAXIMUM_BROADCAST_TARGETS];
+		unsigned short ports[P2P_BROADCAST_PEERS];
 		int target_count = broadcast_targets(targets, MAXIMUM_BROADCAST_TARGETS);
+		int peer_count;
+		int index;
+		int result;
 
+		/* one datagram per target; the broadcast counts as sent if any is */
+		memcpy(&target, address, sizeof(target));
 		if (target_count)
 		{
-			int index;
-			int result = 0;
-
-			/* one datagram per target; the broadcast counts as sent if any is */
-			memcpy(&target, address, sizeof(target));
+			result = 0;
 			for (index = 0; index < target_count; index++)
 			{
 				int sent;
@@ -360,28 +437,194 @@ int WSAAPI halo_ws_sendto(SOCKET socket, const char *buffer, int length, int fla
 				if (sent >= 0 || index == 0)
 					result = sent;
 			}
-			return winsock_result(result);
 		}
+		else
+		{
+			result = posix_socket_sendto((int)socket, buffer, length, flags, address, address_length);
+		}
+		/* and to every internet play peer (after the send above, which binds
+		the socket if it was not) */
+		peer_count = p2p_broadcast_targets(((const struct sockaddr_in *)address)->sin_port, targets, ports,
+			P2P_BROADCAST_PEERS);
+		for (index = 0; index < peer_count; index++)
+		{
+			int sent;
+
+			target.sin_addr.s_addr = targets[index];
+			target.sin_port = ports[index];
+			sent = posix_socket_sendto((int)socket, buffer, length, flags, &target, sizeof(target));
+			if (result < 0 && sent >= 0)
+				result = sent;
+		}
+		return winsock_result(result);
 	}
-	else
 	{
-		address = outgoing_address(address, address_length, &target);
+		const struct sockaddr *peer = peer_outgoing_address(0, address, address_length, &target);
+
+		address = peer ? peer : outgoing_address(address, address_length, &target);
 	}
 	return winsock_result(posix_socket_sendto((int)socket, buffer, length, flags, address, address_length));
 }
 
+/* debug.network_latency and debug.network_loss: what this machine receives
+is held back that many milliseconds (both ways between two machines: a
+round trip of twice it) and that share of its datagrams lost, to test the
+netcode as over the internet */
+#define DELAYED_PACKET_SIZE 1500
+#define MAXIMUM_DELAYED_PACKETS 4096
+
+struct delayed_packet
+{
+	int socket;
+	int length;
+	int offset;
+	int address_length;
+	DWORD time;
+	/* (large enough for any address the sockets give) */
+	char address[128];
+	char data[DELAYED_PACKET_SIZE];
+};
+
+static struct
+{
+	int checked;
+	DWORD latency;
+	int loss_percent;
+	struct delayed_packet *packets;
+	int first;
+	int count;
+} delayed;
+
+static int delayed_enabled(void)
+{
+	if (!delayed.checked)
+	{
+		delayed.checked = 1;
+		delayed.latency = (DWORD)config_real("debug.network_latency");
+		delayed.loss_percent = (int)config_real("debug.network_loss");
+		if (delayed.latency || delayed.loss_percent)
+		{
+			delayed.packets = calloc(MAXIMUM_DELAYED_PACKETS, sizeof(*delayed.packets));
+			platform_log("network: receiving %lu ms late, losing %d%% of datagrams (testing)",
+				(unsigned long)delayed.latency, delayed.loss_percent);
+		}
+	}
+	return delayed.packets != NULL;
+}
+
+/* whether something held back for the socket is due */
+static int delayed_due(int socket)
+{
+	int index;
+
+	for (index = 0; index < delayed.count; index++)
+	{
+		struct delayed_packet const *packet = &delayed.packets[(delayed.first + index) % MAXIMUM_DELAYED_PACKETS];
+
+		if (packet->socket == socket)
+			return GetTickCount() - packet->time >= delayed.latency;
+	}
+	return 0;
+}
+
+/* what the socket has now, held back; then the oldest of the socket's that
+has waited long enough, or would-block */
+static int delayed_receive(SOCKET socket, char *buffer, int length, int flags,
+	struct sockaddr *address, int *address_length, int datagram)
+{
+	int index;
+
+	while (delayed.count < MAXIMUM_DELAYED_PACKETS)
+	{
+		struct delayed_packet *packet = &delayed.packets[(delayed.first + delayed.count) % MAXIMUM_DELAYED_PACKETS];
+		int address_size = (int)sizeof(packet->address);
+		int readable = (int)socket;
+		int readable_count = 1;
+		int result;
+
+		/* (only what is there now: some of the game's sockets block) */
+		if (posix_socket_select(&readable, &readable_count, NULL, NULL, NULL, NULL, 0, 0, 0) <= 0 ||
+			readable_count == 0)
+		{
+			break;
+		}
+		result = datagram ?
+			posix_socket_recvfrom((int)socket, packet->data, DELAYED_PACKET_SIZE, flags,
+				(struct sockaddr *)&packet->address, &address_size) :
+			posix_socket_recv((int)socket, packet->data, DELAYED_PACKET_SIZE, flags);
+
+		if (result < 0)
+		{
+			/* (an error but would-block is the caller's now) */
+			if (posix_socket_last_error() != WSAEWOULDBLOCK)
+				return winsock_result(result);
+			break;
+		}
+		/* (a stream closing is at once) */
+		if (!datagram && result == 0)
+			return 0;
+		if (datagram && rand() % 100 < delayed.loss_percent)
+			continue;
+		packet->socket = (int)socket;
+		packet->length = result;
+		packet->offset = 0;
+		packet->address_length = address_size;
+		packet->time = GetTickCount();
+		delayed.count++;
+	}
+	for (index = 0; index < delayed.count; index++)
+	{
+		struct delayed_packet *packet = &delayed.packets[(delayed.first + index) % MAXIMUM_DELAYED_PACKETS];
+		int size;
+
+		if (packet->socket != (int)socket)
+			continue;
+		if (GetTickCount() - packet->time < delayed.latency)
+			break;
+		size = packet->length - packet->offset;
+		if (size > length)
+			size = length;
+		memcpy(buffer, packet->data + packet->offset, (size_t)size);
+		if (datagram && address && address_length)
+		{
+			int copied = packet->address_length < *address_length ? packet->address_length : *address_length;
+
+			memcpy(address, &packet->address, (size_t)copied);
+			*address_length = copied;
+			peer_incoming_address(0, address, address_length);
+		}
+		packet->offset += size;
+		if (datagram || packet->offset >= packet->length)
+			packet->socket = -1;
+		/* (the spent ones at the front go) */
+		while (delayed.count > 0 && delayed.packets[delayed.first].socket == -1)
+		{
+			delayed.first = (delayed.first + 1) % MAXIMUM_DELAYED_PACKETS;
+			delayed.count--;
+		}
+		return size;
+	}
+	WSASetLastError(WSAEWOULDBLOCK);
+	return SOCKET_ERROR;
+}
+
 int WSAAPI halo_ws_recv(SOCKET socket, char *buffer, int length, int flags)
 {
+	if (delayed_enabled())
+		return delayed_receive(socket, buffer, length, flags, NULL, NULL, 0);
 	return winsock_result(posix_socket_recv((int)socket, buffer, length, flags));
 }
 
 int WSAAPI halo_ws_recvfrom(SOCKET socket, char *buffer, int length, int flags,
 	struct sockaddr *address, int *address_length)
 {
-	int result = posix_socket_recvfrom((int)socket, buffer, length, flags, address, address_length);
+	int result;
 
+	if (delayed_enabled())
+		return delayed_receive(socket, buffer, length, flags, address, address_length, 1);
+	result = posix_socket_recvfrom((int)socket, buffer, length, flags, address, address_length);
 	if (result >= 0)
-		incoming_address(address, address_length);
+		peer_incoming_address(0, address, address_length);
 	return winsock_result(result);
 }
 
@@ -424,7 +667,7 @@ int WSAAPI halo_ws_getpeername(SOCKET socket, struct sockaddr *address, int *add
 	int result = posix_socket_getpeername((int)socket, address, address_length);
 
 	if (result >= 0)
-		incoming_address(address, address_length);
+		peer_incoming_address(1, address, address_length);
 	return winsock_result(result);
 }
 
@@ -456,8 +699,11 @@ int WSAAPI halo_ws_select(int descriptor_count, halo_ws_fd_set *read_set, halo_w
 	int write_count = write_set ? descriptors_from_set(write_set, write) : 0;
 	int error_count = error_set ? descriptors_from_set(error_set, error) : 0;
 	int result;
+	int asked[FD_SETSIZE];
+	int asked_count = read_count;
 
 	(void)descriptor_count;
+	memcpy(asked, read, sizeof(int) * (size_t)read_count);
 	result = posix_socket_select(
 		read_set ? read : NULL, &read_count,
 		write_set ? write : NULL, &write_count,
@@ -465,6 +711,25 @@ int WSAAPI halo_ws_select(int descriptor_count, halo_ws_fd_set *read_set, halo_w
 		timeout ? timeout->tv_sec : 0, timeout ? timeout->tv_usec : 0, timeout == NULL);
 	if (result < 0)
 		return winsock_result(result);
+	/* (debug.network_latency: what is held back and due is there to read) */
+	if (read_set && delayed_enabled())
+	{
+		int asked_index;
+
+		for (asked_index = 0; asked_index < asked_count; asked_index++)
+		{
+			int index;
+			int present = 0;
+
+			for (index = 0; index < read_count; index++)
+				present |= read[index] == asked[asked_index];
+			if (!present && read_count < FD_SETSIZE && delayed_due(asked[asked_index]))
+			{
+				read[read_count++] = asked[asked_index];
+				result++;
+			}
+		}
+	}
 	if (read_set)
 		set_from_descriptors(read_set, read, read_count);
 	if (write_set)
@@ -577,12 +842,18 @@ INT WSAAPI XNetUnregisterKey(const XNKID *key_identifier)
 
 INT WSAAPI XNetXnAddrToInAddr(const XNADDR *address, const XNKID *key_identifier, IN_ADDR *result)
 {
+	unsigned long peer;
+
 	(void)key_identifier;
-	*result = address->ina;
+	/* an internet play peer's XNADDR carries its identifier */
+	if (p2p_peer_address(address->abEnet, &peer))
+		result->s_addr = peer;
+	else
+		*result = address->ina;
 	return 0;
 }
 
-/* this machine's system link address: HALO_NET_ADDRESS, else the first
+/* this machine's system link address: network.address, else the first
 non-loopback IPv4 address */
 static unsigned long title_address(void)
 {
@@ -600,6 +871,7 @@ DWORD WSAAPI XNetGetTitleXnAddr(XNADDR *address)
 	memset(address, 0, sizeof(*address));
 	address->bSizeOfStruct = sizeof(*address);
 	address->ina.s_addr = ip;
+	memcpy(address->abEnet, p2p_identifier(), sizeof(address->abEnet));
 	return ip ? (XNET_GET_XNADDR_ETHERNET | XNET_GET_XNADDR_DHCP) : XNET_GET_XNADDR_ETHERNET;
 }
 

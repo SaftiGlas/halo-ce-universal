@@ -177,7 +177,10 @@ def main() -> None:
             "HALO_SAVE_ROOT": str(saves.resolve()),
             "HALO_EXIT_AFTER": str(seconds),
             "HALO_NO_VSYNC": "1",
+            "HALO_FULLSCREEN": "0",
             "HALO_VOLUME": "0",
+            # no internet play (nor its registering of invite links)
+            "HALO_NET_ONLINE": "0",
             "LLVM_PROFILE_FILE": str((raw / f"{name}-%p.profraw").resolve()),
         }
         print(f"pgo: {name} ({seconds} s)", flush=True)
