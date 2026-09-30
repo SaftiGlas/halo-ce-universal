@@ -370,8 +370,7 @@ def resolve(
             if rel.endswith(".c") and compiled and rel not in compiled:
                 plan.warnings.append(
                     f"mod {mod}: {rel} is not compiled by the Linux build "
-                    "(its object is MISSING in config/config.json or excluded in "
-                    "port/linux/port.json), so replacing it changes nothing"
+                    "(it is excluded in port/linux/port.json), so replacing it changes nothing"
                 )
         else:
             plan.changes[mod].added.append(rel)
@@ -466,18 +465,10 @@ def sync_tree(plan: Plan, repo_root: Path = Path(".")) -> List[str]:
 
 def _game_units(sln: Any) -> List[str]:
     """the source/... and port/linux/game/... units `ninja linux` compiles"""
-    from .linux_build import PORT_CONFIG
+    from .linux_build import PORT_CONFIG, game_sources
 
     config = json.loads(PORT_CONFIG.read_text(encoding="utf-8"))
-    excluded = set(config.get("exclude_sources", []))
-    units: List[str] = []
-    for proj in sln.projects:
-        if proj.name not in config["projects"]:
-            continue
-        for obj in proj.objects:
-            name = obj.file_path.as_posix()
-            if obj.status.name != "Missing" and name not in excluded and name.endswith(".c"):
-                units.append(name)
+    units = [source.as_posix() for source in game_sources(config)]
     units += [_rel(p) for p in sorted(Path(config["game_sources"]).glob("*.c"))]
     return units
 
@@ -556,7 +547,6 @@ def generate_mod_build(sln: Any, mods: Sequence[str], mods_dir: Path = MODS_DIR)
     # files, or a patch changes the files it touches
     watched: List[Path] = [
         Path("configure.py"),
-        Path("config/config.json"),
         Path("tools/mod_overlay.py"),
         Path("tools/linux_build.py"),
         Path("port/linux/port.json"),

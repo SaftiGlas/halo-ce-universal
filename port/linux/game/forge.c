@@ -70,7 +70,6 @@ system link game must compute alike, so they work only in local games.
 #include "cseries/cseries_windows.h"
 #include "game/game.h"
 #include "game/game_engine.h"
-#include "game/player_control.h"
 #include "game/players.h"
 #include "interface/interface.h"
 #include "interface/terminal.h"
@@ -570,7 +569,7 @@ static void forge_toggle_flying(
 	{
 		forge_return_to_player(local_player_index);
 	}
-	else if (director_camera_scripted->camera_scripted)
+	else if (*director_camera_scripted)
 	{
 		terminal_printf(global_real_argb_orange, "forge: the camera is scripted");
 	}

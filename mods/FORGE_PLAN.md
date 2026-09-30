@@ -61,9 +61,8 @@ saved**. Anything placed is gone when the map reloads.
 4. **Lightmaps are baked.** New geometry and moved scenery get no radiosity;
    the engine lights objects from the lightmap below them, which is fine for
    objects but not for new BSP.
-5. Byte-matching: everything here goes in `port/linux/game/`, `port/linux/src/`
-   or `mods/`, behind `HALO_LINUX` / `HALO_FORGE`, never in the matching
-   build.
+5. Keep Forge in `port/linux/game/`, `port/linux/src/` or `mods/` where it
+   can be, with only small hooks in `source/`.
 
 ## 1. Skybox
 

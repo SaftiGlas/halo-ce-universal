@@ -52,7 +52,7 @@ kept for other players: local games only.
 #include "math/real_math.h"
 #include "objects/objects.h"
 #include "physics/collisions.h"
-#include "rasterizer/rasterizer_debug.h"
+#include "rasterizer/rasterizer.h"
 #include "scenario/scenario.h"
 #include "scenario/scenario_definitions.h"
 #include "tag_files/tag_groups.h"

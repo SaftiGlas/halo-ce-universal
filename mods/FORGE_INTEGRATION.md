@@ -46,7 +46,8 @@ tabs to the menu through `struct halo_mod_menu`.
 
 Three layers, so the byte-matching decompilation stays untouched:
 
-1. **Base hooks** (`source/`, all inside `#ifdef HALO_LINUX`): a handful of
+1. **Base hooks** (`source/`; main no longer has a byte-matching build, so
+   they are plain code): a handful of
    one-line calls into the port. Listed in section 3.
 2. **The port** (`port/linux/`): `forge.c` (the tools), `mods.c` + `halo_mod.h`
    (the mod API and hooks), `tag_import.c`, `start_map.c`, config settings.
@@ -67,8 +68,8 @@ menu page, and `grab` (F4 interception).
 
 ## 3. Changes in the base game (`source/`)
 
-Everything is guarded by `#ifdef HALO_LINUX`, so the Xbox-matching build is
-unchanged. Only the *forge-specific* changes are listed; `git diff main...HEAD`
+Main dropped the byte-matching build and its `HALO_LINUX` guards, so these
+are ordinary code now. Only the *forge-specific* changes are listed; `git diff main...HEAD`
 also contains a big merge from `origin/main` (netcode, Android, CI, etc.) that
 is not Forge.
 
@@ -178,7 +179,7 @@ of it. Still open: printing the key help on first use.
 
 ### 6.5 Base-code changes worth making permanent
 From the POC and this branch, the following are the minimal, reviewable base
-edits; keep them, they are already `HALO_LINUX`-only:
+edits; keep them:
 - `main.c` `forge_update`, `interface.c` `forge_render`, `director.c` fly camera,
   `player_control.c` mouse-look gate (POC).
 - `game.c` tick / new-map hooks, `render.c` `render_world` hook.

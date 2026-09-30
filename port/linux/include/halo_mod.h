@@ -67,7 +67,7 @@ struct halo_mod
 	/* once a frame in each local player's view, after the game's own debug
 	drawing (render_debug, render/render.c) and before its debug geometry
 	is drawn: rasterizer_debug_triangle and rasterizer_debug_line_shaded
-	(rasterizer/rasterizer_debug.h) then draw in the world, with the
+	(rasterizer/rasterizer.h) then draw in the world, with the
 	view's camera and depth; may be NULL */
 	void (*render_world)(void);
 	/* a page in the dev tools' menu; may be NULL */
