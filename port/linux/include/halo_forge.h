@@ -13,11 +13,13 @@ halo_linux_source_fixups.h, and the platform layer, which reads their keys
 /* keyboard, mouse / first gamepad */
 struct halo_linux_forge_keys
 {
-	int toggle_flying; /* F2 / D-pad left */
-	int menu; /* F3 / D-pad right */
-	int up; /* space / right trigger */
-	int down; /* left ctrl, C / left trigger */
-	int fast; /* shift / left stick click */
+	int toggle_flying; /* F2 / D-pad up */
+	int menu; /* F3 / D-pad right, only while flying */
+	int up; /* space / right shoulder (RB) */
+	int down; /* left ctrl, C / left shoulder (LB) */
+	int fast; /* shift / left trigger (LT) */
+	int faster; /* while flying, the speed: arrow up and down */
+	int slower;
 	int menu_up; /* arrows / D-pad */
 	int menu_down;
 	int menu_left;
@@ -25,11 +27,16 @@ struct halo_linux_forge_keys
 	int menu_select; /* enter, left button / A */
 	int menu_close; /* escape, backspace, right button / B */
 	int grab; /* F4 */
-	int rotation_axis; /* T / X */
-	int rotation_snap; /* V / Y */
+	int rotation_axis; /* T */
+	int rotation_snap; /* V */
 	int remove_object; /* delete / back */
 	int tab_previous; /* page up / left shoulder (LB) */
 	int tab_next; /* page down / right shoulder (RB) */
+	int pad_menu; /* X: the menu while flying, the step while holding */
+	int pad_remove; /* Y: remove the object under the crosshair or held */
+	int pad_turn; /* right trigger (RT) held: the right stick turns what is held */
+	float pad_look_x; /* the right stick, -1 to 1, right and up positive */
+	float pad_look_y;
 };
 /* the keys as held now; FALSE, with nothing held, unless HALO_FORGE is set
 and the console is closed */
@@ -37,8 +44,25 @@ int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys);
 /* while TRUE (the menu is open, or an object is being placed), the menu's
 keys and buttons stop driving controller 1 */
 void halo_linux_forge_capture_menu_keys(int capture);
+/* while TRUE (the camera flies), the D-pad's up and the shoulder buttons
+stop driving controller 1 */
+void halo_linux_forge_set_flying(int flying);
 void forge_update(void);
 void forge_render(void);
+
+/* for the flying camera (camera/director.c), about local player 0: TRUE
+while the menu is open (the rise and sink keys are then the menu's); TRUE
+while the right stick turns a held object rather than looking; above 0,
+the distance the right stick orbits the camera at around a held object;
+forge_camera_zoom takes a step towards the held object (negative away)
+while it is turned, and returns the step allowed by the nearest and
+farthest it may be; and, after each update of the flying camera, where it
+is and looks */
+int forge_menu_is_open(void);
+int forge_camera_turning(void);
+float forge_camera_orbit_distance(void);
+float forge_camera_zoom(float step);
+void forge_flying_camera_moved(float const position[3], float const forward[3]);
 
 /* for source mods (halo_mod.h), about local player 0 */
 /* TRUE while the spawn menu is open or an object is held: the tools then
@@ -68,9 +92,9 @@ struct halo_forge_hold_input
 	int left, right, up, down;
 	/* the same, once when pressed and again while held (repeating) */
 	int left_pressed, right_pressed, up_pressed, down_pressed;
-	/* X / T, and Y / V */
+	/* T, and V or X */
 	int axis_pressed, snap_pressed;
-	/* enter, click or A; escape, right click or B; delete or Back */
+	/* enter, click or A; escape, right click or B; delete, Back or Y */
 	int place, cancel, delete_pressed;
 };
 

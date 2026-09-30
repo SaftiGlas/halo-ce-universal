@@ -171,7 +171,7 @@ menu of Halo: Reach, with the categories down its left side, that keeps its
 place), `gravity` (the map's gravity, with the tick and new map hooks) and
 `forge_zones` (kill, gravity and teleport zones placed at the crosshair).
 `forge_ai`, `forge_edit`, `gravity` and `forge_zones` are tabs of the dev tools'
-menu (F3 / D-pad right; LB / RB, Page Up / Page Down, X / Y or T / V change tab) that work with a
+menu (F3, D-pad right or, flying, X; LB / RB, Page Up / Page Down or T / V change tab) that work with a
 controller alone: a mod adds a tab with `struct halo_mod_menu` in
 `halo_mod.h`, rows of a label and a value that left and right change and
 that enter or A act on.
@@ -283,14 +283,15 @@ towards modding. Without it the game plays as usual.
 
 | Keyboard and mouse | Controller | Effect |
 | --- | --- | --- |
-| F2 | D-pad left | detach the camera from the player to fly freely, through walls, with a crosshair; again moves the player (or the vehicle they ride) to the camera, facing its way, and returns the camera to the player |
-| F3 | D-pad right | open or close the spawn menu |
+| F2 | D-pad up | forge mode: detach the camera from the player to fly freely, through walls, with a crosshair; again moves the player (or the vehicle they ride) to the camera, facing its way, and returns the camera to the player |
+| F3, flying | flying, D-pad right or X | open or close the spawn menu (only in forge mode; landing closes it) |
 | F4, and flying also enter or left click | flying, A | pick up the object under the crosshair |
+| delete (with `forge_edit`) | flying, Y | remove the object under the crosshair |
 
 Flying, W A S D (the left stick) move, the mouse (the right stick) looks,
-space and left ctrl or C (the triggers) go straight up and down, shift
-(left stick click) is 4 times faster, and the up and down arrows (the
-D-pad) change the speed. The player stands still meanwhile. Z (right stick
+space and left ctrl or C (RB and LB) go straight up and down, shift
+(LT) is 4 times faster, and the up and down arrows change
+the speed. The player stands still meanwhile. Z (right stick
 click) hands the controls back to the player and leaves the camera where
 it is. This is the game's own debug flying camera (holding black, X,
 cycles first person, flying and following cameras), faster and with
@@ -311,16 +312,20 @@ surface there, up to 200 world units away, until it is placed:
 | --- | --- | --- |
 | left, right | D-pad left, right | turn about the chosen axis |
 | up, down | D-pad up, down | raise, lower |
-| T | X | choose the axis: yaw, pitch, roll |
-| V | Y | choose the step: free (turns while held), 15, 45, 90 or 180 degrees |
+| T | | choose the axis: yaw, pitch, roll |
+| V | X | choose the step: free (turns while held), 15, 45, 90 or 180 degrees |
+| | flying, right stick | orbit the camera around the object, which then stays that far in front of the camera as it flies |
+| | flying, RT + right stick | turn the object: left and right its yaw, up and down its pitch |
+| | flying, RT + left stick | forward and back: take the camera nearer to the object and further away |
 | enter, left click | A | put it down |
 | escape, backspace, right click | B | cancel: a spawned object goes, a picked up one returns to its place |
-| delete | back | remove it from the map |
+| delete | back, Y | remove it from the map |
 
-With the tools on, the D-pad's left and right open them instead of
-strafing, and while the menu is open or an object is held, the arrows
+With the tools on, while the camera flies the D-pad's up and right, the
+shoulder buttons and the left trigger belong to them; and while the menu is open or an object is held, the arrows
 (D-pad), enter and A, escape and start, backspace and B, X, Y, back and
-the mouse's buttons (triggers) work only the tools.
+the mouse's buttons (triggers) work only the tools. In the menu X closes
+it too, and LB and RB change tab.
 
 The tools act on local player 0. Spawning, moving and removing objects
 and moving the player are refused in system link games, where every

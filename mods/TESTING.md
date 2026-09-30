@@ -191,7 +191,7 @@ what it remembers.
       when they do not fit; on the chosen row the value has `<` `>` around
       it, and **Left / Right** change it. The keys along the bottom now say
       `Left/Right Change`, `Enter/A Do` and `T/V Tab`.
-- [ ] **T / V**, **X / Y** and **LB / RB** move to the previous and next
+- [ ] **T / V** and **LB / RB** move to the previous and next
       category, through the tools and round to Vehicles.
 - [ ] With the menu closed, **W A S D**, the arrows, **Enter** and **Esc**
       work as in the game (Esc opens the pause menu): the closed menu takes
@@ -208,7 +208,7 @@ what it remembers.
 ## 3. forge_edit (only this mod on; the launcher sets `HALO_FORGE=1`)
 
 Everything is on the **Edit** tab of the dev tools' menu (F3 / D-pad right;
-**LB / RB**, Page Up / Page Down, or X / Y (T / V) change tab; up/down
+**LB / RB**, Page Up / Page Down, or T / V change tab; up/down
 choose, Enter or A act, B or Esc close). No Ctrl key is used. Messages
 appear in the terminal at the top left of the game.
 
@@ -278,7 +278,7 @@ appear in the terminal at the top left of the game.
 ## 6. gravity (the tick and new map hooks; the launcher sets `HALO_FORGE=1`)
 
 Everything is in the dev tools' menu now: **F3** (D-pad right on a
-controller) opens it, **LB / RB** (or X / Y, T / V) change tab until **Gravity**, and
+controller) opens it, **LB / RB** (or T / V) change tab until **Gravity**, and
 left/right change the row. No Ctrl key is used.
 
 - [ ] Turn on `gravity`, `b`, `r`, load a level (campaign or a local
@@ -307,7 +307,7 @@ left/right change the row. No Ctrl key is used.
 ## 7. forge_zones (kill, gravity and teleport zones; the launcher sets `HALO_FORGE=1`)
 
 All of it is on the **Zones** tab of the dev tools' menu (F3 / D-pad right;
-LB / RB, X / Y or T / V change tab; up/down choose a row, left/right change it,
+LB / RB or T / V change tab; up/down choose a row, left/right change it,
 Enter or A act, B or Esc close). No Ctrl key, and every step works with a
 controller alone. Try it in a local multiplayer game (a flat map such as
 Blood Gulch is easiest), then in a campaign level for the AI.

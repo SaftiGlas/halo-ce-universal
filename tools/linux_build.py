@@ -533,7 +533,13 @@ def generate_linux_build(n: Writer, sln: Any, layout: Optional[LinuxLayout] = No
             rule="linux_link",
             inputs=objects,
             variables={
-                "ldflags": " ".join(["--target=i686-linux-gnu", "-m32", "-no-pie", "-g", *extra_ldflags]),
+                "ldflags": " ".join([
+                    "--target=i686-linux-gnu", "-m32", "-no-pie", "-g",
+                    # where each window's sky is drawn, for the sky mod
+                    # (port/linux/game/sky_state.c)
+                    "-Wl,--wrap=render_sky",
+                    *extra_ldflags,
+                ]),
                 "libs": libs,
             },
             implicit=[Path("tools/linux_link_check.py")],

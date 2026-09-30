@@ -2,8 +2,8 @@
 FORGE_AI.C
 
 A source mod (mods/forge_ai): AI characters in any map, from the dev tools'
-menu (F3 / D-pad right), on the "AI" tab. A keyboard and a controller work
-alike.
+menu (in forge mode: F3, D-pad right or X), on the "AI" tab. A keyboard and
+a controller work alike.
 
 - Character: the actor variants the map has (tags of the group actv whose
   actor and biped are there): in a multiplayer map only those the launcher
@@ -13,8 +13,13 @@ alike.
 - Spawn at the crosshair: a character stands there as the map's own
   creatures do (the biped is made, dressed as the variant says and given an
   actor with the game's own ai_attach_free), so it sees, shoots, takes cover
-  and dies as in the campaign. It is hostile to the players by the game's own
-  teams.
+  and dies as in the campaign.
+- Team: new characters are enemies of the player, or friends (the player's
+  own team: they fight the enemies instead, the map's and these).
+- Attack on sight: patrolling characters break off to fight an enemy they
+  see or hear (the command list's initiative and targeting), and go back to
+  their patrol once the fight is over and they are idle again. Off, they
+  walk their round whatever happens.
 - Waypoints: "add a waypoint" puts a point at the crosshair; the points are
   drawn in the world. With two or more, characters walk from one to the next
   and round again, pausing at each, until something draws their attention:
@@ -24,6 +29,10 @@ alike.
   and up ramps.
 - New characters patrol along the points by themselves, or "send everyone"
   does it for the ones already there; "remove all" takes them away.
+- A waypoint is picked up like an object while the waypoints are shown:
+  aim at it and press A / enter (flying) or F4, aim to move it, A / enter
+  puts it down (on the floor there), B / escape puts it back, Y / delete
+  removes it. The characters then walk the changed round.
 
 The points and characters are forgotten when the map changes; nothing is
 kept for other players: local games only.
@@ -47,6 +56,7 @@ kept for other players: local games only.
 #include "scenario/scenario.h"
 #include "scenario/scenario_definitions.h"
 #include "tag_files/tag_groups.h"
+#include "units/units.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -70,8 +80,16 @@ enum
 	/* how far below a point the ground is looked for, and how far above it it starts */
 	FORGE_AI_GROUND_SEARCH_UP = 1,
 	FORGE_AI_GROUND_SEARCH_DOWN = 4,
-	FORGE_AI_PAUSE_SECONDS = 2
+	FORGE_AI_PAUSE_SECONDS = 2,
+	/* how often idle characters are sent back to their patrol */
+	FORGE_AI_REPATROL_MILLISECONDS = 3000,
+	/* the game's teams (game/game_allegiance.c) */
+	FORGE_AI_TEAM_COUNT = 10
 };
+
+/* a waypoint is aimed at within this far of the middle of its marker */
+#define FORGE_AI_WAYPOINT_PICK_RADIUS 0.7f
+#define FORGE_AI_WAYPOINT_PICK_HEIGHT 0.6f
 
 #define FORGE_AI_WAYPOINT_COLOR_R 1.f
 #define FORGE_AI_WAYPOINT_COLOR_G 0.75f
@@ -80,8 +98,11 @@ enum
 enum
 {
 	_forge_ai_row_character = 0,
+	_forge_ai_row_team,
+	_forge_ai_row_attack,
 	_forge_ai_row_spawn,
 	_forge_ai_row_add_waypoint,
+	_forge_ai_row_move_waypoint,
 	_forge_ai_row_show_waypoints,
 	_forge_ai_row_clear_waypoints,
 	_forge_ai_row_patrol,
@@ -104,6 +125,11 @@ static struct
 	short waypoint_count;
 	boolean show_waypoints;
 	boolean patrol_new;
+	/* new characters are the player's friends */
+	boolean friendly;
+	/* patrols break off to fight */
+	boolean attack_on_sight;
+	unsigned long repatrol_milliseconds;
 
 	/* what was spawned: the units (object indices) */
 	long units[FORGE_AI_MAXIMUM_UNITS];
@@ -114,7 +140,7 @@ static struct
 	struct ai_command_definition commands[FORGE_AI_MAXIMUM_COMMANDS];
 	struct ai_command_point_definition points[FORGE_AI_MAXIMUM_WAYPOINTS];
 	short command_list_index;
-} forge_ai_globals = { { 0 }, 0, 0, { { 0 } }, { 0 }, 0, TRUE, TRUE };
+} forge_ai_globals = { { 0 }, 0, 0, { { 0 } }, { 0 }, 0, TRUE, TRUE, FALSE, TRUE };
 
 /* ---------- private code */
 
@@ -267,6 +293,10 @@ static void forge_ai_update_command_list(
 
 	if (!list)
 		return;
+	/* with initiative and targeting the walkers stop to fight what they see */
+	list->flags = forge_ai_globals.attack_on_sight
+		? FLAG(_ai_command_list_allow_initiative_bit) | FLAG(_ai_command_list_allow_targeting_bit)
+		: 0;
 	for (index = 0; index < forge_ai_globals.waypoint_count; index++)
 	{
 		struct ai_command_definition *go_to = &forge_ai_globals.commands[command_count++];
@@ -330,6 +360,46 @@ static short forge_ai_send_patrols(
 	return sent;
 }
 
+/* the team of local player 0's unit, 0 without one */
+static short forge_ai_player_team(
+	void)
+{
+	long player_index = local_player_get_player_index(FORGE_AI_LOCAL_PLAYER_INDEX);
+	long unit_index = player_index != NONE ? player_get(player_index)->unit_index : NONE;
+	struct unit_datum *unit = unit_index != NONE ? unit_try_and_get(unit_index) : NULL;
+
+	return unit ? unit->object.owner_team_index : 0;
+}
+
+/* characters that fought and are idle again walk their patrol again */
+static void forge_ai_repatrol(
+	void)
+{
+	short index;
+
+	if (forge_ai_globals.waypoint_count < 2 || !forge_ai_globals.command_lists || !forge_ai_globals.patrol_new)
+		return;
+	for (index = 0; index < forge_ai_living_units(); index++)
+	{
+		struct unit_datum *unit = unit_try_and_get(forge_ai_globals.units[index]);
+		struct actor_datum *actor;
+		short action;
+
+		if (!unit || unit->unit.actor_index == NONE)
+			continue;
+		actor = actor_get(unit->unit.actor_index);
+		action = actor->state.action;
+		if (actor->state.combat_status <= 1 &&
+			(action == _actor_action_none || action == _actor_action_alert ||
+				action == _actor_action_guard || action == _actor_action_wait))
+		{
+			ai_scripting_command_list_by_unit(forge_ai_globals.units[index], forge_ai_globals.command_list_index);
+		}
+	}
+
+	return;
+}
+
 /* ---------- the actions */
 
 static void forge_ai_spawn(
@@ -388,11 +458,22 @@ static void forge_ai_spawn(
 		return;
 	}
 	actor_customize_unit(variant_index, unit_index);
+	{
+		/* the actor takes the unit's team when it is attached */
+		struct unit_datum *unit = unit_get(unit_index);
+		short player_team = forge_ai_player_team();
+
+		if (forge_ai_globals.friendly)
+			unit->object.owner_team_index = player_team;
+		else if (unit->object.owner_team_index == player_team)
+			unit->object.owner_team_index = (short)((player_team + 1) % FORGE_AI_TEAM_COUNT);
+	}
 	ai_scripting_attach_free(unit_index, variant_index);
 	forge_ai_globals.units[forge_ai_globals.unit_count++] = unit_index;
 	if (forge_ai_globals.patrol_new && forge_ai_globals.waypoint_count >= 2 && forge_ai_globals.command_lists)
 		ai_scripting_command_list_by_unit(unit_index, forge_ai_globals.command_list_index);
-	terminal_printf(global_real_argb_green, "forge_ai: %s", forge_ai_short_name(variant_index));
+	terminal_printf(global_real_argb_green, "forge_ai: %s (%s)", forge_ai_short_name(variant_index),
+		forge_ai_globals.friendly ? "friend" : "enemy");
 
 	return;
 }
@@ -441,6 +522,176 @@ static void forge_ai_add_waypoint(
 	return;
 }
 
+/* ---------- picking up a waypoint */
+
+static struct
+{
+	short waypoint_index;
+	real_point3d original;
+	long original_surface;
+} forge_ai_hold_globals = { NONE };
+
+/* the waypoint the crosshair points at, or NONE */
+static short forge_ai_aimed_waypoint(
+	void)
+{
+	struct observer_result const *camera = observer_get_camera(FORGE_AI_LOCAL_PLAYER_INDEX);
+	real best_along = 1000.f;
+	short best_index = NONE;
+	short index;
+
+	for (index = 0; index < forge_ai_globals.waypoint_count; index++)
+	{
+		real_point3d middle = forge_ai_globals.waypoints[index];
+		real_vector3d to_point;
+		real along;
+
+		middle.z += FORGE_AI_WAYPOINT_PICK_HEIGHT;
+		vector_from_points3d(&camera->position, &middle, &to_point);
+		along = dot_product3d(&to_point, &camera->forward);
+		if (along > 0.f && along < best_along &&
+			magnitude_squared3d(&to_point) - along * along <=
+				FORGE_AI_WAYPOINT_PICK_RADIUS * FORGE_AI_WAYPOINT_PICK_RADIUS)
+		{
+			best_along = along;
+			best_index = index;
+		}
+	}
+
+	return best_index;
+}
+
+static void forge_ai_remove_waypoint(
+	short waypoint_index)
+{
+	short index;
+
+	for (index = waypoint_index; index + 1 < forge_ai_globals.waypoint_count; index++)
+	{
+		forge_ai_globals.waypoints[index] = forge_ai_globals.waypoints[index + 1];
+		forge_ai_globals.waypoint_surfaces[index] = forge_ai_globals.waypoint_surfaces[index + 1];
+	}
+	forge_ai_globals.waypoint_count--;
+	forge_ai_update_command_list();
+	forge_ai_send_patrols();
+	terminal_printf(global_real_argb_green, "forge_ai: waypoint %d removed, %d left", waypoint_index + 1,
+		(int)forge_ai_globals.waypoint_count);
+
+	return;
+}
+
+static void forge_ai_hold_describe(
+	char *line,
+	unsigned long size)
+{
+	_snprintf(line, size, "waypoint %d of %d", forge_ai_hold_globals.waypoint_index + 1,
+		(int)forge_ai_globals.waypoint_count);
+
+	return;
+}
+
+static int forge_ai_hold_update(
+	struct halo_forge_hold_input const *input)
+{
+	short waypoint_index = forge_ai_hold_globals.waypoint_index;
+	float position[3];
+	float normal[3];
+
+	/* gone with a new map */
+	if (waypoint_index < 0 || waypoint_index >= forge_ai_globals.waypoint_count)
+		return TRUE;
+
+	if (!input || input->cancel)
+	{
+		forge_ai_globals.waypoints[waypoint_index] = forge_ai_hold_globals.original;
+		forge_ai_globals.waypoint_surfaces[waypoint_index] = forge_ai_hold_globals.original_surface;
+		forge_ai_update_command_list();
+		return TRUE;
+	}
+	if (input->delete_pressed)
+	{
+		forge_ai_remove_waypoint(waypoint_index);
+		return TRUE;
+	}
+
+	if (forge_point_at_crosshair(position, normal))
+	{
+		forge_ai_globals.waypoints[waypoint_index].x = position[0];
+		forge_ai_globals.waypoints[waypoint_index].y = position[1];
+		forge_ai_globals.waypoints[waypoint_index].z = position[2];
+	}
+
+	if (input->place)
+	{
+		real_point3d point = forge_ai_globals.waypoints[waypoint_index];
+		long surface_index = forge_ai_ground_surface(&point);
+
+		if (surface_index == NONE)
+		{
+			terminal_printf(global_real_argb_orange, "forge_ai: no floor there for a waypoint");
+			return FALSE;
+		}
+		forge_ai_globals.waypoints[waypoint_index] = point;
+		forge_ai_globals.waypoint_surfaces[waypoint_index] = surface_index;
+		forge_ai_update_command_list();
+		forge_ai_send_patrols();
+		terminal_printf(global_real_argb_green, "forge_ai: waypoint %d moved", waypoint_index + 1);
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+static struct halo_forge_hold const forge_ai_hold =
+{
+	"a waypoint",
+	forge_ai_hold_describe,
+	forge_ai_hold_update
+};
+
+static boolean forge_ai_pick_up_waypoint(
+	short waypoint_index)
+{
+	if (waypoint_index == NONE || !forge_ai_local_game())
+		return FALSE;
+	forge_ai_hold_globals.waypoint_index = waypoint_index;
+	forge_ai_hold_globals.original = forge_ai_globals.waypoints[waypoint_index];
+	forge_ai_hold_globals.original_surface = forge_ai_globals.waypoint_surfaces[waypoint_index];
+
+	return forge_mod_hold_begin(&forge_ai_hold);
+}
+
+/* the tools' pick up: a shown waypoint under the crosshair, unless an
+object is nearer */
+static int forge_ai_grab(
+	void)
+{
+	short waypoint_index;
+	long object_index;
+
+	if (!forge_ai_globals.show_waypoints || !forge_ai_local_game())
+		return FALSE;
+	waypoint_index = forge_ai_aimed_waypoint();
+	if (waypoint_index == NONE)
+		return FALSE;
+
+	object_index = forge_object_at_crosshair();
+	if (object_index != NONE && object_try_and_get(object_index))
+	{
+		struct observer_result const *camera = observer_get_camera(FORGE_AI_LOCAL_PLAYER_INDEX);
+		real_point3d middle = forge_ai_globals.waypoints[waypoint_index];
+
+		middle.z += FORGE_AI_WAYPOINT_PICK_HEIGHT;
+		if (distance3d(&camera->position, &object_get(object_index)->object.bounding_sphere_center) <
+			distance3d(&camera->position, &middle))
+		{
+			return FALSE;
+		}
+	}
+
+	return forge_ai_pick_up_waypoint(waypoint_index);
+}
+
 /* ---------- the tab */
 
 static short forge_ai_menu_row_count(
@@ -465,6 +716,14 @@ static void forge_ai_menu_row_text(
 		else
 			_snprintf(value, value_size, "none: import one");
 		break;
+	case _forge_ai_row_team:
+		_snprintf(label, label_size, "New characters are");
+		_snprintf(value, value_size, "%s", forge_ai_globals.friendly ? "friends" : "enemies");
+		break;
+	case _forge_ai_row_attack:
+		_snprintf(label, label_size, "Attack on sight");
+		_snprintf(value, value_size, "%s", forge_ai_globals.attack_on_sight ? "on" : "off (just patrol)");
+		break;
 	case _forge_ai_row_spawn:
 		_snprintf(label, label_size, "Add a character (crosshair)");
 		_snprintf(value, value_size, "%d there", (int)forge_ai_living_units());
@@ -472,6 +731,9 @@ static void forge_ai_menu_row_text(
 	case _forge_ai_row_add_waypoint:
 		_snprintf(label, label_size, "Add a waypoint (crosshair)");
 		_snprintf(value, value_size, "%d set", (int)forge_ai_globals.waypoint_count);
+		break;
+	case _forge_ai_row_move_waypoint:
+		_snprintf(label, label_size, "Pick up a waypoint (crosshair, or A on it)");
 		break;
 	case _forge_ai_row_show_waypoints:
 		_snprintf(label, label_size, "Show the waypoints");
@@ -509,6 +771,24 @@ static int forge_ai_menu_row_change(
 		{
 			forge_ai_globals.character_index = (short)((forge_ai_globals.character_index +
 				forge_ai_globals.character_count + direction) % forge_ai_globals.character_count);
+		}
+		break;
+	case _forge_ai_row_team:
+		forge_ai_globals.friendly = (boolean)!forge_ai_globals.friendly;
+		break;
+	case _forge_ai_row_attack:
+		forge_ai_globals.attack_on_sight = (boolean)!forge_ai_globals.attack_on_sight;
+		forge_ai_update_command_list();
+		/* the flags are read when a list starts */
+		forge_ai_send_patrols();
+		break;
+	case _forge_ai_row_move_waypoint:
+		if (direction == 0)
+		{
+			forge_ai_globals.show_waypoints = TRUE;
+			if (!forge_ai_pick_up_waypoint(forge_ai_aimed_waypoint()))
+				terminal_printf(global_real_argb_orange, "forge_ai: aim at a waypoint first");
+			close_menu = TRUE;
 		}
 		break;
 	case _forge_ai_row_spawn:
@@ -584,12 +864,30 @@ static struct halo_mod_menu const forge_ai_menu =
 
 /* ---------- the hooks */
 
+/* once a frame: now and then, idle characters go back to their patrol */
+static void forge_ai_update(
+	void)
+{
+	unsigned long milliseconds = system_milliseconds();
+
+	if (!forge_ai_local_game() || !forge_ai_globals.attack_on_sight ||
+		(long)(milliseconds - forge_ai_globals.repatrol_milliseconds) < FORGE_AI_REPATROL_MILLISECONDS)
+	{
+		return;
+	}
+	forge_ai_globals.repatrol_milliseconds = milliseconds;
+	forge_ai_repatrol();
+
+	return;
+}
+
 /* a new map: nothing of the last is left, and this one gets its command list */
 static void forge_ai_new_map(
 	void)
 {
 	forge_ai_globals.waypoint_count = 0;
 	forge_ai_globals.unit_count = 0;
+	forge_ai_hold_globals.waypoint_index = NONE;
 	forge_ai_globals.command_lists = NULL;
 	forge_ai_globals.command_list_index = NONE;
 	forge_ai_find_characters();
@@ -661,13 +959,13 @@ static void forge_ai_render_world(
 static struct halo_mod const forge_ai_mod =
 {
 	"forge_ai",
-	NULL,
+	forge_ai_update,
 	NULL,
 	NULL,
 	forge_ai_new_map,
 	forge_ai_render_world,
 	&forge_ai_menu,
-	NULL
+	forge_ai_grab
 };
 
 HALO_MOD_REGISTER(forge_ai_mod)

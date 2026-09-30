@@ -8,12 +8,13 @@ question: **what is there, where does it touch the base game, and what must be
 decided or changed to make Forge a normal part of the game for other users.**
 
 Scope of this branch: Forge (the tools, menu, edit, zones, AI, tag import,
-start map), `checkpoint_handler`, `gravity` and the mod tools (overlay
-build, launcher). The shader work (post-processing / screen filters, filter
-zones, per-map filter chains) and the sky mod were split off into a git
-stash, **"shaders and sky for later"** (`git stash list`), to be added back
-on top of this branch later (`git stash apply`). Nothing in this file
-depends on them.
+start map), `checkpoint_handler`, `gravity`, the `sky` mod and the mod
+tools (overlay build, launcher). The shader work (post-processing / screen
+filters and their `.frag` files, filter zones, per-map filter chains) was
+split off into a git stash, **"shaders and sky for later"** (`git stash
+list`), to be added back on top of this branch later. The sky mod has been
+brought back from it: its sky shader is built into the port
+(`port/linux/src/skyfx.c`), with no `.frag` files or post-processing chain.
 
 ## 1. What Forge is
 
@@ -35,7 +36,10 @@ maps. Local (single machine) games only.
 | Save / load layouts (placed objects, zones, gravity) | — | **not done** |
 
 Controls: everything is reachable from a keyboard **and** a controller
-(D-pad left = fly, D-pad right = menu, LB/RB or PgUp/PgDn = tab). Mods add
+(D-pad up = forge mode (fly); only then D-pad right or X = menu; LB/RB or
+PgUp/PgDn = tab; flying, LB/RB sink and rise, LT is faster and Y removes;
+holding, the right stick orbits the object, RT + right stick turns it and
+RT + left stick moves nearer or further). Mods add
 tabs to the menu through `struct halo_mod_menu`.
 
 ## 2. How it is built (architecture)
@@ -87,8 +91,12 @@ is not Forge.
 | `source/cache/cache_files.c` | `halo_tag_import()` after tags load; `halo_tag_import_release()` on unload | cross-map tags |
 | `source/cache/cache_files_windows.c` (`cache_file_read`) | `halo_tag_import_read()` serves offsets `>= 0x40000000` from memory | bitmap/sound data of imported tags |
 
-No link-time changes (`--wrap`) on this branch; those belonged to the
-stashed shader/sky work.
+One link-time change: the Linux link wraps `render_sky`
+(`-Wl,--wrap=render_sky`, `tools/linux_build.py`) so the sky mod's sky is
+drawn where the game draws its own (`port/linux/game/sky_state.c`). Windows
+and Android builds leave the wrap out and keep the map's sky (the fog of
+the sky mod's looks still changes there). The `hud_draw_screen` wrap
+belongs to the stashed post-processing.
 
 ## 4. Changes in the port (`port/linux/`, `tools/`)
 
@@ -242,4 +250,5 @@ the internet-play / netcode path without a separate design.
 5. Replace `HALO_FORGE` with a real setting and a menu entry (6.4).
 6. Windows/Android parity (6.5).
 7. Player-facing docs and CI (6.10); then cross-map import packaging (6.8).
-8. Later: bring back the stashed shader/sky work on top.
+8. Later: bring back the stashed shader work on top (the sky mod is back
+   already; when applying the stash, keep this branch's sky files).

@@ -17,12 +17,12 @@ port/linux/game/mods.c.
 
 /* ---------- hooks */
 
-/* a page of the dev tools' menu (F3 / D-pad right, HALO_FORGE) that a mod
-adds after the map's object tabs: rows of a label and a value, driven with
+/* a page of the dev tools' menu (F3, D-pad right or, flying, X; HALO_FORGE)
+that a mod adds after the map's object tabs: rows of a label and a value, driven with
 the menu's own keys and buttons, so it works on a keyboard and a
 controller alike. Up and down choose a row; left and right change its
 value; enter, the left mouse button or A select it (an action). LB / RB (Page
-Up / Page Down), and X / T and Y / V, go to the previous and next tab. */
+Up / Page Down), and T and V, go to the previous and next tab. */
 struct halo_mod_menu
 {
 	/* the tab's name */
@@ -71,6 +71,10 @@ struct halo_mod
 	press (it picks up something of its own, with forge_mod_hold_begin); may be
 	NULL */
 	int (*grab)(void);
+	/* Y while flying, with nothing held and the menu closed: return TRUE
+	when the mod removes the object under the crosshair itself (so it can
+	bring it back); else the tools remove it. May be NULL */
+	int (*remove_object)(void);
 };
 
 /* at most this many mods run; more are refused with a message on stderr */
@@ -84,6 +88,7 @@ void halo_mods_new_map(void);
 void halo_mods_render_world(void);
 /* the menu pages of every mod, in registration order (game/forge.c) */
 int halo_mods_grab(void);
+int halo_mods_remove(void);
 short halo_mods_menu_page_count(void);
 struct halo_mod_menu const *halo_mods_menu_page(short index);
 
@@ -211,6 +216,9 @@ int halo_mod_screen(short *x0, short *y0, short *x1, short *y1);
 ordinary text and still fits 18 lines on the screen; NONE (-1) when no map
 is loaded */
 long halo_mod_font(int large);
+/* the map's largest font that holds ordinary text and still fits that many
+lines on the screen (at least the terminal font) */
+long halo_mod_font_for_lines(short lines);
 short halo_mod_line_height(long font);
 short halo_mod_text_width(long font, char const *text);
 /* text in the box, colour 0xAARRGGBB */

@@ -5,19 +5,22 @@ In-game dev tools for the native ports (port/linux, port/windows,
 port/android), off unless HALO_FORGE is set (see port/linux/README.md, "Dev
 tools"). The byte-matching build never compiles this file.
 
-	F2 / D-pad left
+	F2 / D-pad up
 	        detach the camera from the player and fly it freely, through
-	        walls, with a crosshair; again moves the player to the camera
-	        and returns the camera to the player
-	F3 / D-pad right
+	        walls, with a crosshair (forge mode); again moves the player to
+	        the camera and returns the camera to the player
+	F3 / D-pad right or X, only while flying
 	        open or close the spawn menu: every vehicle, weapon, equipment,
-	        biped and scenery object of the map
+	        biped and scenery object of the map (the menu is part of forge
+	        mode: landing the camera closes it)
 	F4, and while flying also enter, the left mouse button or A
 	        pick up the object under the crosshair
+	Y, while flying
+	        remove the object under the crosshair (Delete with forge_edit)
 
 While flying: W A S D (left stick) move, the mouse (right stick) looks,
-space and left ctrl or C (the triggers) rise and sink straight up and down,
-shift (left stick click) is faster, and the D-pad's up and down change the
+space and left ctrl or C (RB and LB) rise and sink straight up and down,
+shift (the left trigger, LT) is faster, and the arrows' up and down change the
 speed. Z (right stick click) hands the controls back to the player and
 leaves the camera where it is, as the game's own debug flying camera does
 (camera/director.c).
@@ -26,21 +29,28 @@ In the menu: up and down choose, left and right change the category, enter,
 the left mouse button or A take the object, escape, backspace, the right
 mouse button or B close the menu. After the object categories come the
 pages that source mods add (halo_mod.h, struct halo_mod_menu): rows with a
-value that left and right change and that enter or A act on. T / X and V / Y
-go to the previous and next tab on every page.
+value that left and right change and that enter or A act on. T and V, or LB
+and RB, go to the previous and next tab on every page; X closes the menu too.
 
 A taken or picked up object is held where the crosshair points (or, not
 flying, where the player looks), standing on the surface there, until it
 is placed:
 	left, right     turn it about the chosen axis
 	up, down        raise and lower it
-	T / X           choose the axis: yaw, pitch or roll
-	V / Y           choose the step: free, or 15, 45, 90 or 180 degrees
+	T               choose the axis: yaw, pitch or roll
+	V / X           choose the step: free, or 15, 45, 90 or 180 degrees
 	enter, left mouse button / A
 	                put it down
 	escape, backspace, right mouse button / B
 	                cancel: a spawned object goes, a picked up one returns
-	delete / back   remove it from the map
+	delete / back, Y
+	                remove it from the map
+While flying, the right stick orbits the camera around the held object,
+which then stays that far in front of the camera wherever it flies (LB and
+RB lower and raise both), and with the right trigger (RT) held the right
+stick turns the object instead: left and right about its yaw, up and down
+about its pitch, while the left stick's forward and back take the camera
+nearer to it and further away.
 The platform layer keeps these keys and buttons from the game while the
 menu is open or an object is held.
 
@@ -130,6 +140,9 @@ up by their bounding sphere, at least this big */
 /* a held object turns half a circle, and rises two world units, a second */
 #define FORGE_TURN_SPEED _pi
 #define FORGE_RAISE_SPEED 2.f
+/* how near and far an object held in front of the flying camera may be */
+#define FORGE_ORBIT_MINIMUM_DISTANCE 1.5f
+#define FORGE_ORBIT_MAXIMUM_DISTANCE 50.f
 
 /* ---------- structures */
 
@@ -162,6 +175,12 @@ struct forge_globals
 	real_point3d held_original_position;
 	real_vector3d held_original_forward;
 	real_vector3d held_original_up;
+	/* held in front of the flying camera, this far, since the right stick
+	orbited it (rather than where the crosshair points) */
+	boolean held_anchored;
+	real held_distance;
+	/* the right trigger turns it with the right stick */
+	boolean held_turning;
 
 	boolean active;
 	boolean menu_open;
@@ -187,10 +206,17 @@ struct forge_globals
 	struct forge_key remove_object_key;
 	struct forge_key tab_previous_key;
 	struct forge_key tab_next_key;
+	struct forge_key pad_menu_key;
+	struct forge_key pad_remove_key;
 
 	/* a mod's own thing held (halo_forge.h), and when it was last updated */
 	struct halo_forge_hold const *mod_hold;
 	unsigned long mod_hold_milliseconds;
+
+	/* where the flying camera is and looks, after its last update */
+	boolean camera_valid;
+	real_point3d camera_position;
+	real_vector3d camera_forward;
 };
 
 /* ---------- globals */
@@ -650,6 +676,8 @@ static void forge_hold_begin(
 	forge_globals.held_object_index = object_index;
 	forge_globals.held_spawned = spawned;
 	forge_globals.held_height = 0.f;
+	forge_globals.held_anchored = FALSE;
+	forge_globals.held_turning = FALSE;
 	forge_globals.held_original_position = object->object.position;
 	forge_globals.held_original_forward = object->object.forward;
 	forge_globals.held_original_up = object->object.up;
@@ -721,6 +749,39 @@ static void forge_grab(
 	return;
 }
 
+/* removes the object under the crosshair, or lets a mod do it (forge_edit,
+which can bring it back) */
+static void forge_remove_at_crosshair(
+	short local_player_index)
+{
+	long object_index;
+
+	if (game_connection() != _game_connection_local)
+	{
+		terminal_printf(global_real_argb_orange, "forge: objects change only in local games");
+	}
+	else if (halo_mods_remove())
+	{
+		/* the mod removed it */
+	}
+	else if (observer_get_camera(local_player_index)->location.cluster_index == NONE)
+	{
+		terminal_printf(global_real_argb_orange, "forge: the camera is outside the map");
+	}
+	else if ((object_index = forge_pick(local_player_index)) == NONE)
+	{
+		terminal_printf(global_real_argb_orange, "forge: nothing to remove there");
+	}
+	else
+	{
+		terminal_printf(global_real_argb_green, "forge: removed %s",
+			tag_get_name(object_get(object_index)->definition_index));
+		object_delete(object_index);
+	}
+
+	return;
+}
+
 /* turns the held angle of the chosen axis: freely while turning, or to the
 next step of the snap */
 static void forge_turn(
@@ -743,8 +804,39 @@ static void forge_turn(
 	return;
 }
 
-/* keeps the held object where the crosshair points, turned and raised as
-asked, and still */
+/* puts the held object at the position, turned as held, and still */
+static void forge_hold_place(
+	real_point3d const *position)
+{
+	struct object_datum *object = object_get(forge_globals.held_object_index);
+	real_vector3d forward;
+	real_vector3d up;
+
+	forge_orientation_from_angles(forge_globals.held_angles, &forward, &up);
+	object_set_position(forge_globals.held_object_index, position, &forward, &up);
+	object->object.translational_velocity = *global_zero_vector3d;
+	object->object.angular_velocity = *global_zero_vector3d;
+
+	return;
+}
+
+/* the held object in front of the flying camera (held_anchored) */
+static void forge_hold_place_anchored(
+	void)
+{
+	real_point3d position;
+
+	position.x = forge_globals.camera_position.x + forge_globals.camera_forward.i * forge_globals.held_distance;
+	position.y = forge_globals.camera_position.y + forge_globals.camera_forward.j * forge_globals.held_distance;
+	position.z = forge_globals.camera_position.z + forge_globals.camera_forward.k * forge_globals.held_distance +
+		forge_globals.held_height;
+	forge_hold_place(&position);
+
+	return;
+}
+
+/* keeps the held object where the crosshair points (or, anchored, in front
+of the flying camera), turned and raised as asked, and still */
 static void forge_hold(
 	struct halo_linux_forge_keys const *keys,
 	boolean left,
@@ -752,6 +844,7 @@ static void forge_hold(
 	real seconds)
 {
 	struct object_datum *object = object_get(forge_globals.held_object_index);
+	boolean flying = director_forge_flying(FORGE_LOCAL_PLAYER_INDEX);
 	real_point3d point;
 	real_vector3d normal;
 
@@ -762,17 +855,44 @@ static void forge_hold(
 	forge_globals.held_height += (real)((keys->menu_up != 0) - (keys->menu_down != 0)) *
 		FORGE_RAISE_SPEED * seconds;
 
-	if (forge_aim(FORGE_LOCAL_PLAYER_INDEX, forge_globals.held_object_index, &point, &normal))
+	/* the controller's right stick: with the right trigger it turns the
+	object, else (camera/director.c) it orbits the camera around it, which
+	from then on holds the object in front of it */
+	forge_globals.held_turning = flying && keys->pad_turn;
+	if (forge_globals.held_turning)
+	{
+		forge_globals.held_angles[_forge_axis_yaw] -= keys->pad_look_x * FORGE_TURN_SPEED * seconds;
+		forge_globals.held_angles[_forge_axis_pitch] += keys->pad_look_y * FORGE_TURN_SPEED * seconds;
+	}
+	if (!flying || !forge_globals.camera_valid)
+	{
+		forge_globals.held_anchored = FALSE;
+	}
+	else if (!forge_globals.held_anchored &&
+		(forge_globals.held_turning || keys->pad_look_x != 0.f || keys->pad_look_y != 0.f))
+	{
+		real_vector3d to_object;
+
+		vector_from_points3d(&forge_globals.camera_position, &object->object.position, &to_object);
+		forge_globals.held_distance = PIN(
+			dot_product3d(&to_object, &forge_globals.camera_forward),
+			FORGE_ORBIT_MINIMUM_DISTANCE,
+			FORGE_ORBIT_MAXIMUM_DISTANCE);
+		forge_globals.held_height = 0.f;
+		forge_globals.held_anchored = TRUE;
+	}
+
+	if (forge_globals.held_anchored)
+	{
+		/* and again after the camera moves (forge_flying_camera_moved) */
+		forge_hold_place_anchored();
+	}
+	else if (forge_aim(FORGE_LOCAL_PLAYER_INDEX, forge_globals.held_object_index, &point, &normal))
 	{
 		real_point3d position;
-		real_vector3d forward;
-		real_vector3d up;
 
 		forge_held_position(object->definition_index, &point, &normal, forge_globals.held_height, &position);
-		forge_orientation_from_angles(forge_globals.held_angles, &forward, &up);
-		object_set_position(forge_globals.held_object_index, &position, &forward, &up);
-		object->object.translational_velocity = *global_zero_vector3d;
-		object->object.angular_velocity = *global_zero_vector3d;
+		forge_hold_place(&position);
 	}
 
 	return;
@@ -856,6 +976,9 @@ static void forge_update_keys(
 	boolean remove_object = forge_key_pressed(&forge_globals.remove_object_key, keys->remove_object, FALSE, milliseconds);
 	boolean tab_previous = forge_key_pressed(&forge_globals.tab_previous_key, keys->tab_previous, FALSE, milliseconds);
 	boolean tab_next = forge_key_pressed(&forge_globals.tab_next_key, keys->tab_next, FALSE, milliseconds);
+	boolean pad_menu = forge_key_pressed(&forge_globals.pad_menu_key, keys->pad_menu, FALSE, milliseconds);
+	boolean pad_remove = forge_key_pressed(&forge_globals.pad_remove_key, keys->pad_remove, FALSE, milliseconds);
+	boolean flying = forge_globals.active && director_forge_flying(FORGE_LOCAL_PLAYER_INDEX);
 
 	/* a held object that is gone (a new map, a revert, a deletion) is let go */
 	if (forge_globals.held_object_index != NONE &&
@@ -887,6 +1010,12 @@ static void forge_update_keys(
 
 			if (debug_tab >= 0 && debug_tab < (long)(NUMBEROF(forge_categories) + halo_mods_menu_page_count()))
 			{
+				/* the menu belongs to forge mode */
+				if (!flying)
+				{
+					director_forge_set_flying(FORGE_LOCAL_PLAYER_INDEX, TRUE);
+					flying = TRUE;
+				}
 				forge_globals.category_index = (short)debug_tab;
 				forge_globals.menu_open = TRUE;
 				forge_menu_build();
@@ -908,31 +1037,31 @@ static void forge_update_keys(
 			input.up_pressed = up;
 			input.down_pressed = down;
 			input.axis_pressed = rotation_axis;
-			input.snap_pressed = rotation_snap;
+			input.snap_pressed = rotation_snap || pad_menu;
 			input.place = select;
 			input.cancel = close;
-			input.delete_pressed = remove_object;
+			input.delete_pressed = remove_object || pad_remove;
 			if (forge_globals.mod_hold->update(&input))
 				forge_globals.mod_hold = NULL;
 		}
 		else if (forge_globals.held_object_index != NONE)
 		{
-			if (select || close || remove_object)
+			if (select || close || remove_object || pad_remove)
 			{
-				forge_hold_end(close, remove_object);
+				forge_hold_end(close, remove_object || pad_remove);
 			}
 			else
 			{
 				if (rotation_axis)
 					forge_globals.held_axis = (forge_globals.held_axis + 1) % NUMBER_OF_FORGE_AXES;
-				if (rotation_snap)
+				if (rotation_snap || pad_menu)
 					forge_globals.held_snap_index = (forge_globals.held_snap_index + 1) % NUMBEROF(forge_snaps);
 				forge_hold(keys, left, right, seconds);
 			}
 		}
 		else if (forge_globals.menu_open)
 		{
-			if (menu || close)
+			if (menu || close || pad_menu)
 			{
 				forge_globals.menu_open = FALSE;
 			}
@@ -976,17 +1105,37 @@ static void forge_update_keys(
 				}
 			}
 		}
-		else if (menu)
+		else if ((menu || pad_menu) && !flying)
+		{
+			if (menu)
+				terminal_printf(global_real_argb_orange, "forge: the menu is for forge mode (F2 / D-pad up)");
+		}
+		else if (menu || pad_menu)
 		{
 			forge_globals.menu_open = TRUE;
 			forge_menu_build();
 		}
-		else if (grab || (select && director_forge_flying(FORGE_LOCAL_PLAYER_INDEX)))
+		else if (grab || (select && flying))
 		{
 			/* a mod may have something of its own to pick up there */
 			if (game_connection() != _game_connection_local || !halo_mods_grab())
 				forge_grab(FORGE_LOCAL_PLAYER_INDEX);
 		}
+		else if (pad_remove && flying)
+		{
+			forge_remove_at_crosshair(FORGE_LOCAL_PLAYER_INDEX);
+		}
+	}
+	if (!flying)
+	{
+		/* the menu belongs to forge mode */
+		forge_globals.camera_valid = FALSE;
+		forge_globals.menu_open = FALSE;
+	}
+	if (forge_globals.held_object_index == NONE)
+	{
+		forge_globals.held_anchored = FALSE;
+		forge_globals.held_turning = FALSE;
 	}
 
 	/* the keys stay away from the game until they are released, so the
@@ -998,8 +1147,10 @@ static void forge_update_keys(
 		(forge_globals.keys_captured &&
 			(keys->menu_up || keys->menu_down || keys->menu_left || keys->menu_right ||
 			keys->menu_select || keys->menu_close || keys->rotation_axis || keys->rotation_snap ||
-			keys->remove_object || keys->tab_previous || keys->tab_next));
+			keys->remove_object || keys->tab_previous || keys->tab_next || keys->pad_menu ||
+			keys->pad_remove));
 	halo_linux_forge_capture_menu_keys(forge_globals.keys_captured);
+	halo_linux_forge_set_flying(flying);
 	forge_globals.game_time = forge_globals.active ? game_time_get() : 0;
 
 	return;
@@ -1068,7 +1219,7 @@ static void forge_render_held(
 	_snprintf(
 		line,
 		NUMBEROF(line),
-		"turning: %s (T/X), step: %s (V/Y)",
+		"turning: %s (T), step: %s (V/X), right stick orbits, RT + right stick turns",
 		forge_axis_names[forge_globals.held_axis],
 		forge_snaps[forge_globals.held_snap_index].name);
 	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_white, line);
@@ -1079,7 +1230,7 @@ static void forge_render_held(
 		&bounds,
 		_text_justification_left,
 		global_real_argb_grey,
-		"aim to move, left/right turn, up/down raise, enter/click/A place, esc/right click/B cancel, delete/back remove");
+		"aim to move, left/right turn, up/down raise, enter/click/A place, esc/right click/B cancel, delete/Y remove");
 
 	return;
 }
@@ -1112,7 +1263,7 @@ static void forge_render_mod_hold(
 		&bounds,
 		_text_justification_left,
 		global_real_argb_grey,
-		"aim to move, left/right turn, up/down raise, Y/V step, enter/click/A place, esc/right click/B cancel, delete/back remove");
+		"aim to move, left/right turn, up/down raise, V/X step, enter/click/A place, esc/right click/B cancel, delete/Y remove");
 
 	return;
 }
@@ -1188,8 +1339,8 @@ static void forge_render_menu(
 		_text_justification_left,
 		global_real_argb_grey,
 		page
-			? "up/down choose, left/right change, enter/A do, T/X V/Y tabs, esc/B close"
-			: "up/down choose, left/right category, enter/click/A take, esc/right click/B close");
+			? "up/down choose, left/right change, enter/A do, T/V LB/RB tabs, esc/B/X close"
+			: "up/down choose, left/right category, enter/click/A take, esc/right click/B/X close");
 
 	return;
 }
@@ -1257,6 +1408,58 @@ void forge_render(
 	/* drawn only after an update: nothing is left over when the game stops
 	updating the tools (the main menu, loading) */
 	forge_globals.active = FALSE;
+
+	return;
+}
+
+/* ---------- what the flying camera asks the tools (halo_forge.h) */
+
+int forge_menu_is_open(
+	void)
+{
+	return forge_globals.menu_open;
+}
+
+int forge_camera_turning(
+	void)
+{
+	return forge_globals.held_object_index != NONE && forge_globals.held_turning;
+}
+
+float forge_camera_orbit_distance(
+	void)
+{
+	return forge_globals.held_object_index != NONE && forge_globals.held_anchored && !forge_globals.held_turning
+		? forge_globals.held_distance
+		: 0.f;
+}
+
+float forge_camera_zoom(
+	float step)
+{
+	real distance;
+
+	if (!forge_camera_turning() || !forge_globals.held_anchored)
+		return 0.f;
+	distance = PIN(forge_globals.held_distance - step, FORGE_ORBIT_MINIMUM_DISTANCE, FORGE_ORBIT_MAXIMUM_DISTANCE);
+	step = forge_globals.held_distance - distance;
+	forge_globals.held_distance = distance;
+
+	return step;
+}
+
+void forge_flying_camera_moved(
+	float const position[3],
+	float const forward[3])
+{
+	forge_globals.camera_valid = TRUE;
+	set_real_point3d(&forge_globals.camera_position, position[0], position[1], position[2]);
+	set_real_vector3d(&forge_globals.camera_forward, forward[0], forward[1], forward[2]);
+	if (forge_globals.held_object_index != NONE && forge_globals.held_anchored &&
+		object_try_and_get(forge_globals.held_object_index))
+	{
+		forge_hold_place_anchored();
+	}
 
 	return;
 }

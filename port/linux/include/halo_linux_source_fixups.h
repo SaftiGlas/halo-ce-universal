@@ -48,6 +48,8 @@ unsigned char halo_tag_import_read(long offset, long size, void *buffer);
 #include "halo_forge.h"
 /* what source mods can use (port/linux/game/mods.c) */
 #include "halo_mod.h"
+/* the sky's look (port/linux/src/skyfx.c) */
+#include "halo_sky.h"
 
 /* the width of the screen the game draws, 480 lines tall: the device's or
 the display's shape, or 640 (port/linux/src/d3d8_gl.c) */

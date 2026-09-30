@@ -142,12 +142,14 @@ symbols in this file:
 
 #ifdef HALO_LINUX
 /* the dev tools' flying camera (port/linux/game/forge.c): faster than the
-debug camera, and faster again with shift, and it stays inside
+debug camera, and faster again with shift (the left trigger), and it stays inside
 flying_camera_update's +/-5000 bound */
 #define FORGE_SPEED_SCALE 2.f
 #define FORGE_FAST_SCALE 4.f
 /* world units a second straight up or down, the stick's full push */
 #define FORGE_VERTICAL_SPEED 1.6f
+/* world units a second nearer to or further from a turned object */
+#define FORGE_ZOOM_SPEED 2.f
 #define FORGE_CAMERA_POSITION_BOUND 4900.f
 #endif
 
@@ -873,6 +875,7 @@ static boolean director_update_controls(
 	boolean forge_active = FALSE;
 	boolean forge_fast = FALSE;
 	real forge_rise = 0.f;
+	real forge_speed_change = 0.f;
 #endif
 
 	csmemset(controls, 0, sizeof(*controls));
@@ -929,16 +932,21 @@ static boolean director_update_controls(
 #ifdef HALO_LINUX
 				{
 					/* the dev tools (port/linux/game/forge.c) fly straight up and
-					down on their own keys and buttons, not through the height
-					variable's slow acceleration, nor on the triggers, which the
-					mouse's buttons also press; controller 1 is the keyboard */
+					down on their own keys and buttons (space and ctrl, the
+					shoulders), not through the height variable's slow
+					acceleration, nor on the triggers, which the mouse's buttons
+					also press; controller 1 is the keyboard. The menu has those
+					keys while it is open, and a held object the arrows. */
 					struct halo_linux_forge_keys keys;
 
 					if (player_index == 0 && halo_linux_forge_read_keys(&keys))
 					{
 						forge_active = TRUE;
 						forge_fast = keys.fast != 0;
-						forge_rise = (real)((keys.up != 0) - (keys.down != 0));
+						if (!forge_menu_is_open())
+							forge_rise = (real)((keys.up != 0) - (keys.down != 0));
+						if (!forge_busy())
+							forge_speed_change = (real)((keys.faster != 0) - (keys.slower != 0));
 						SET_FLAG(control_flags, _camera_control_up_bit, FALSE);
 						SET_FLAG(control_flags, _camera_control_down_bit, FALSE);
 					}
@@ -947,6 +955,12 @@ static boolean director_update_controls(
 				controls->wheel_delta =
 					(real)((gamepad->buttons[_gamepad_binary_button_dpad_up] > 1) -
 						(gamepad->buttons[_gamepad_binary_button_dpad_down] > 1)) * 0.4f;
+#ifdef HALO_LINUX
+				/* the D-pad's up lands the dev tools' camera: the speed is on
+				the arrows alone */
+				if (forge_active)
+					controls->wheel_delta = forge_speed_change * 0.4f;
+#endif
 				director_process_variables(
 					local_player_index,
 					control_flags,
@@ -984,6 +998,51 @@ static boolean director_update_controls(
 					controls->position_delta.j *= speed_scale;
 					controls->position_delta.k += forge_rise * FORGE_VERTICAL_SPEED * speed_scale *
 						director->debug_input_scale * director_globals.dtime;
+
+					if (forge_camera_turning())
+					{
+						/* the right stick turns the held object instead, and the
+						left stick's forward and back take the camera nearer to it
+						and further away */
+						real step = (real)gamepad->sticks[_gamepad_stick_left].y / 32767.f *
+							FORGE_ZOOM_SPEED * speed_scale * director_globals.dtime;
+
+						controls->facing_delta.yaw = 0.f;
+						controls->facing_delta.pitch = 0.f;
+						controls->position_delta.i = 0.f;
+						controls->position_delta.j = 0.f;
+						if (step != 0.f &&
+							director->camera_proc == (director_camera_update_proc)flying_camera_update)
+						{
+							struct flying_camera *camera = (struct flying_camera *)director->camera_data;
+							real_vector3d forward;
+
+							step = forge_camera_zoom(step);
+							vector3d_from_euler_angles2d(&forward, &camera->facing);
+							camera->position.x += forward.i * step;
+							camera->position.y += forward.j * step;
+							camera->position.z += forward.k * step;
+						}
+					}
+					else if (forge_camera_orbit_distance() > 0.f &&
+						director->camera_proc == (director_camera_update_proc)flying_camera_update)
+					{
+						/* the look turns the camera about the held object: it
+						moves so the object stays the same distance in front */
+						struct flying_camera *camera = (struct flying_camera *)director->camera_data;
+						real distance = forge_camera_orbit_distance();
+						real_euler_angles2d facing = camera->facing;
+						real_vector3d old_forward;
+						real_vector3d new_forward;
+
+						vector3d_from_euler_angles2d(&old_forward, &facing);
+						facing.yaw += controls->facing_delta.yaw;
+						facing.pitch = PIN(facing.pitch + controls->facing_delta.pitch, -1.56765485f, 1.56765485f);
+						vector3d_from_euler_angles2d(&new_forward, &facing);
+						camera->position.x += (old_forward.i - new_forward.i) * distance;
+						camera->position.y += (old_forward.j - new_forward.j) * distance;
+						camera->position.z += (old_forward.k - new_forward.k) * distance;
+					}
 				}
 #endif
 				controls->active = TRUE;
@@ -1137,6 +1196,26 @@ void director_update(
 					&controls,
 					&command);
 			}
+#ifdef HALO_LINUX
+			/* where the dev tools' camera is now, for the object it holds */
+			if (local_player_index == 0 &&
+				director->camera_proc == (director_camera_update_proc)flying_camera_update)
+			{
+				struct flying_camera const *camera = (struct flying_camera const *)director->camera_data;
+				real_vector3d forward;
+				float position[3];
+				float direction[3];
+
+				vector3d_from_euler_angles2d(&forward, &camera->facing);
+				position[0] = camera->position.x;
+				position[1] = camera->position.y;
+				position[2] = camera->position.z;
+				direction[0] = forward.i;
+				direction[1] = forward.j;
+				direction[2] = forward.k;
+				forge_flying_camera_moved(position, direction);
+			}
+#endif
 
 			if (TEST_FLAG(command.flags, _observer_command_valid_bit))
 			{

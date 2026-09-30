@@ -5,7 +5,8 @@
     "forge_edit",
     "forge_ui",
     "forge_zones",
-    "gravity"
+    "gravity",
+    "sky"
   ],
   "launch": {
     "map": "bloodgulch",

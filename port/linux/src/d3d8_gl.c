@@ -25,6 +25,7 @@ Conventions carried over from the Xbox:
 #include "sdl_platform.h"
 #include "halo_ui_pointer.h"
 #include "port_config.h"
+#include "skyfx.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -3599,6 +3600,25 @@ static void write_screenshot(struct render_target_entry *target)
 		fclose(file);
 	}
 	free(pixels);
+}
+
+/* the sky of the window being drawn (skyfx.h): over the viewport of the
+targets bound now, as apply_raster_state sets it */
+int halo_sky_draw(const struct halo_sky_view *view, int after_sky)
+{
+	BOOL has_depth;
+	int viewport[4];
+	int drawn;
+
+	if (!device.gl_ready || !halo_sky_changed() || !bind_targets(&has_depth))
+		return FALSE;
+	viewport[0] = target_pixel((float)device.viewport.X, 0);
+	viewport[1] = target_pixel((float)device.viewport.Y, 1);
+	viewport[2] = target_pixel((float)(device.viewport.X + device.viewport.Width), 0) - viewport[0];
+	viewport[3] = target_pixel((float)(device.viewport.Y + device.viewport.Height), 1) - viewport[1];
+	drawn = skyfx_draw(view, viewport, after_sky);
+	xgpu_gl_state_invalidate();
+	return drawn;
 }
 
 void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destination_rectangle,

@@ -4,8 +4,8 @@ FORGE_EDIT.C
 A source mod (mods/forge_edit): copy, paste and remove objects, with the
 dev tools' crosshair (port/linux/game/forge.c).
 
-All of it is on the "Edit" tab of the dev tools' menu (F3 / D-pad right;
-LB / RB, Page Up / Page Down, or X / Y change tab): up and down choose a
+All of it is on the "Edit" tab of the dev tools' menu (F3, D-pad right or, flying,
+X; LB / RB, Page Up / Page Down, or T / V change tab): up and down choose a
 row, enter or A act, so it works on a controller as on a keyboard, and no
 Ctrl key is used. The rows:
 
@@ -17,7 +17,8 @@ Ctrl key is used. The rows:
 	                  at a time)
 
 On a keyboard, Delete removes the object under the crosshair with the menu
-closed. The object under the crosshair is the one the dev tools would pick
+closed, and so does Y on a controller while the camera flies (the tools'
+remove hook). The object under the crosshair is the one the dev tools would pick
 up: flying, where the crosshair points, else where the player looks. While
 the camera flies it is marked on the screen with its name.
 
@@ -506,6 +507,22 @@ static struct halo_mod_menu const forge_edit_menu =
 
 /* ---------- the mod */
 
+/* Y while flying (the tools' remove hook): removed here, so Undo remove
+brings it back; taken even with nothing marked, so the tools never remove
+what may not be (a vehicle holding a player) */
+static int forge_edit_remove(
+	void)
+{
+	long object_index = cinematic_in_progress() ? NONE : forge_edit_marked_object();
+
+	if (object_index == NONE)
+		terminal_printf(global_real_argb_orange, "forge_edit: nothing to remove there");
+	else
+		forge_edit_delete(object_index);
+
+	return TRUE;
+}
+
 static struct halo_mod const forge_edit_mod =
 {
 	"forge_edit",
@@ -514,7 +531,9 @@ static struct halo_mod const forge_edit_mod =
 	NULL,
 	NULL,
 	NULL,
-	&forge_edit_menu
+	&forge_edit_menu,
+	NULL,
+	forge_edit_remove
 };
 
 HALO_MOD_REGISTER(forge_edit_mod)

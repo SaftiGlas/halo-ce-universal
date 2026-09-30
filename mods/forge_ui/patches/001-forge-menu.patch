@@ -1,8 +1,8 @@
 --- a/port/linux/game/forge.c
 +++ b/port/linux/game/forge.c
-@@ -29,6 +29,19 @@
- value that left and right change and that enter or A act on. T / X and V / Y
- go to the previous and next tab on every page.
+@@ -32,6 +32,19 @@
+ value that left and right change and that enter or A act on. T and V, or LB
+ and RB, go to the previous and next tab on every page; X closes the menu too.
  
 +The menu (with the forge_ui mod, mods/forge_ui) is drawn after the forge
 +menu of Halo: Reach: a dark panel with the categories down its left side
@@ -20,7 +20,7 @@
  A taken or picked up object is held where the crosshair points (or, not
  flying, where the player looks), standing on the surface there, until it
  is placed:
-@@ -68,6 +81,7 @@
+@@ -78,6 +91,7 @@
  #include "physics/collisions.h"
  #include "rasterizer/rasterizer.h"
  #include "render/render.h"
@@ -28,7 +28,7 @@
  #include "tag_files/tag_files.h"
  #include "tag_files/tag_groups.h"
  #include "text/draw_string.h"
-@@ -75,6 +89,7 @@
+@@ -85,6 +99,7 @@
  #include "text/text_group.h"
  #include "units/units.h"
  
@@ -36,7 +36,7 @@
  #include <stdlib.h>
  
  /* ---------- constants */
-@@ -83,8 +98,22 @@
+@@ -93,8 +108,25 @@
  {
  	FORGE_LOCAL_PLAYER_INDEX = 0,
  	FORGE_MAXIMUM_MENU_ENTRIES = 1024,
@@ -46,8 +46,11 @@
 +	/* the menu's panel (forge_ui): padding inside it, its widest, the share
 +	of it that is the list of categories, the scroll bar's width, the gap
 +	between hints, and the fade in and highlight glide speeds (per second) */
-+	FORGE_MENU_PADDING = 6,
-+	FORGE_MENU_MAX_WIDTH = 520,
++	FORGE_MENU_PADDING = 5,
++	FORGE_MENU_MAX_WIDTH = 400,
++	/* the menu's font fits this many lines on the screen: smaller than the
++	mods' large font, so the menu leaves most of the view free */
++	FORGE_MENU_FONT_LINES = 26,
 +	FORGE_MENU_CATEGORY_PERCENT = 28,
 +	FORGE_MENU_SCROLL_WIDTH = 3,
 +	FORGE_MENU_HINT_GAP = 14,
@@ -60,9 +63,9 @@
  	FORGE_KEY_REPEAT_DELAY_MILLISECONDS = 400,
  	FORGE_KEY_REPEAT_INTERVAL_MILLISECONDS = 70,
  	/* surfaces of objects the aim passes through (the player's own vehicle,
-@@ -131,6 +160,27 @@
- #define FORGE_TURN_SPEED _pi
- #define FORGE_RAISE_SPEED 2.f
+@@ -144,6 +176,27 @@
+ #define FORGE_ORBIT_MINIMUM_DISTANCE 1.5f
+ #define FORGE_ORBIT_MAXIMUM_DISTANCE 50.f
  
 +/* the menu's colours (forge_ui), 0xAARRGGBB: the steel blue and pale
 +cyan of Reach's menus */
@@ -88,7 +91,7 @@
  /* ---------- structures */
  
  struct forge_category
-@@ -169,6 +219,15 @@
+@@ -188,6 +241,15 @@
  	short category_index;
  	short entry_count;
  	short selected_entry_index;
@@ -104,7 +107,7 @@
  	long entries[FORGE_MAXIMUM_MENU_ENTRIES];
  	long game_time;
  	unsigned long milliseconds;
-@@ -195,13 +254,13 @@
+@@ -221,13 +283,13 @@
  
  /* ---------- globals */
  
@@ -124,7 +127,7 @@
  };
  
  static char const *const forge_axis_names[NUMBER_OF_FORGE_AXES] =
-@@ -603,6 +662,46 @@
+@@ -629,6 +691,46 @@
  	return;
  }
  
@@ -171,7 +174,7 @@
  /* the map's objects of the menu's category, by name */
  static void forge_menu_build(
  	void)
-@@ -612,10 +711,12 @@
+@@ -638,10 +740,12 @@
  	struct tag_iterator iterator;
  	long tag_index;
  
@@ -184,7 +187,7 @@
  		if (page->opened)
  			page->opened();
  		return;
-@@ -635,7 +736,123 @@
+@@ -661,7 +765,123 @@
  		forge_globals.entry_count,
  		sizeof(forge_globals.entries[0]),
  		forge_compare_entries);
@@ -308,7 +311,7 @@
  
  	return;
  }
-@@ -947,12 +1164,14 @@
+@@ -1076,12 +1296,14 @@
  
  					forge_globals.category_index =
  						(forge_globals.category_index + (next ? 1 : category_count - 1)) % category_count;
@@ -323,7 +326,7 @@
  				}
  				else if (forge_globals.entry_count > 0)
  				{
-@@ -966,6 +1185,11 @@
+@@ -1095,6 +1317,11 @@
  						forge_globals.selected_entry_index =
  							(forge_globals.selected_entry_index + 1) % forge_globals.entry_count;
  					}
@@ -335,17 +338,17 @@
  					if (select)
  					{
  						forge_globals.menu_open = FALSE;
-@@ -978,6 +1202,8 @@
+@@ -1112,6 +1339,8 @@
  		}
- 		else if (menu)
+ 		else if (menu || pad_menu)
  		{
 +			if (!forge_globals.menu_state_loaded)
 +				forge_menu_state_load();
  			forge_globals.menu_open = TRUE;
  			forge_menu_build();
  		}
-@@ -989,6 +1215,10 @@
- 		}
+@@ -1138,6 +1367,10 @@
+ 		forge_globals.held_turning = FALSE;
  	}
  
 +	/* a closed menu's place is written once, whichever way it closed */
@@ -355,7 +358,7 @@
  	/* the keys stay away from the game until they are released, so the
  	escape that closes the menu does not also pause the game */
  	forge_globals.keys_captured =
-@@ -1117,79 +1347,465 @@
+@@ -1268,79 +1501,465 @@
  	return;
  }
  
@@ -555,21 +558,21 @@
 -	rectangle2d bounds;
 +	static struct forge_menu_hint const object_hints[] =
 +	{
-+		{ "Up/Down", "Choose" }, { "Left/Right", "Category" }, { "Enter/A", "Take" }, { "Esc/B", "Close" },
++		{ "Up/Down", "Choose" }, { "Left/Right", "Category" }, { "Enter/A", "Take" }, { "Esc/B/X", "Close" },
 +	};
 +	static struct forge_menu_hint const page_hints[] =
 +	{
-+		{ "Up/Down", "Choose" }, { "Left/Right", "Change" }, { "Enter/A", "Do" }, { "T/V", "Tab" },
-+		{ "Esc/B", "Close" },
++		{ "Up/Down", "Choose" }, { "Left/Right", "Change" }, { "Enter/A", "Do" }, { "LB/RB", "Tab" },
++		{ "Esc/B/X", "Close" },
 +	};
 +	unsigned long milliseconds = system_milliseconds();
 +	real seconds = MIN((real)(milliseconds - forge_menu_look.milliseconds) / MILLISECONDS_PER_SECOND, 0.1f);
 +	boolean fresh = milliseconds - forge_menu_look.milliseconds > FORGE_MENU_FRESH_MILLISECONDS;
-+	long font = halo_mod_font(TRUE);
++	long font = halo_mod_font_for_lines(FORGE_MENU_FONT_LINES);
 +	long small_font = halo_mod_font(FALSE);
 +	short line_height = halo_mod_line_height(font);
 +	short small_height = halo_mod_line_height(small_font);
-+	short row_height = (short)(line_height + 4);
++	short row_height = (short)(line_height + 3);
 +	short section_height = (short)(small_height + 8);
 +	short title_height = (short)(line_height + 10);
  	struct halo_mod_menu const *page = forge_menu_page();
@@ -590,7 +593,7 @@
 +	short hint_rows = forge_menu_hints(small_font, (short)(x0 + FORGE_MENU_PADDING), (short)(x1 - FORGE_MENU_PADDING),
 +		0, hints, hint_count, FALSE);
 +	short hint_height = (short)(hint_rows * (small_height + 7) + 6);
-+	short left_width = (short)PIN((x1 - x0) * FORGE_MENU_CATEGORY_PERCENT / 100, 120, 190);
++	short left_width = (short)PIN((x1 - x0) * FORGE_MENU_CATEGORY_PERCENT / 100, 100, 150);
 +	short right_x0 = (short)(x0 + left_width + 1);
 +	short text_x1 = (short)(x1 - FORGE_MENU_PADDING - FORGE_MENU_SCROLL_WIDTH - 2);
 +	/* the categories share what height there is */
@@ -854,8 +857,8 @@
 -		_text_justification_left,
 -		global_real_argb_grey,
 -		page
--			? "up/down choose, left/right change, enter/A do, T/X V/Y tabs, esc/B close"
--			: "up/down choose, left/right category, enter/click/A take, esc/right click/B close");
+-			? "up/down choose, left/right change, enter/A do, T/V LB/RB tabs, esc/B/X close"
+-			: "up/down choose, left/right category, enter/click/A take, esc/right click/B/X close");
 +	/* under the rows: the chosen object's whole tag name */
 +	y = (short)(body_y1 - details_height);
 +	forge_menu_box((short)(right_x0 + FORGE_MENU_PADDING), y, (short)(x1 - FORGE_MENU_PADDING), (short)(y + 1),
@@ -877,7 +880,7 @@
  
  	return;
  }
-@@ -1250,7 +1866,7 @@
+@@ -1401,7 +2020,7 @@
  		}
  		else if (forge_globals.menu_open)
  		{

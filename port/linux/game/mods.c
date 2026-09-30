@@ -42,12 +42,15 @@ static struct
 	struct halo_mod const *mods[HALO_MOD_MAXIMUM_COUNT];
 } halo_mod_globals;
 
-/* the large font of the map it was chosen in */
+/* the fonts chosen (for so many lines) and the map they were chosen in */
+#define HALO_MOD_FONT_CACHE_COUNT 4
+
 static struct
 {
+	short lines;
 	char map_name[256];
 	long font_tag_index;
-} halo_mod_font_globals = { "", NONE };
+} halo_mod_font_globals[HALO_MOD_FONT_CACHE_COUNT];
 
 /* ---------- private code */
 
@@ -117,6 +120,20 @@ int halo_mods_grab(
 	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
 	{
 		if (halo_mod_globals.mods[mod_index]->grab && halo_mod_globals.mods[mod_index]->grab())
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+int halo_mods_remove(
+	void)
+{
+	short mod_index;
+
+	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
+	{
+		if (halo_mod_globals.mods[mod_index]->remove_object && halo_mod_globals.mods[mod_index]->remove_object())
 			return TRUE;
 	}
 
@@ -251,37 +268,54 @@ int halo_mod_screen(
 long halo_mod_font(
 	int large)
 {
+	return large
+		? halo_mod_font_for_lines(HALO_MOD_LARGE_FONT_LINES)
+		: interface_get_tag_index(_interface_font_terminal);
+}
+
+long halo_mod_font_for_lines(
+	short lines)
+{
 	long terminal = interface_get_tag_index(_interface_font_terminal);
 	char const *map_name;
+	short cache_index;
 
-	if (!large || global_scenario_index == NONE || terminal == NONE)
+	if (lines <= 0 || global_scenario_index == NONE || terminal == NONE)
 		return terminal;
 
 	map_name = tag_get_name(global_scenario_index);
-	if (strcmp(map_name, halo_mod_font_globals.map_name) != 0)
+	for (cache_index = 0; cache_index < HALO_MOD_FONT_CACHE_COUNT - 1; cache_index++)
+	{
+		if (halo_mod_font_globals[cache_index].lines == lines || halo_mod_font_globals[cache_index].lines == 0)
+			break;
+	}
+	if (halo_mod_font_globals[cache_index].lines != lines ||
+		strcmp(map_name, halo_mod_font_globals[cache_index].map_name) != 0)
 	{
 		struct tag_iterator iterator;
 		long font_tag_index;
 		short best_height = halo_mod_line_height(terminal);
 
-		halo_mod_font_globals.font_tag_index = terminal;
+		halo_mod_font_globals[cache_index].lines = lines;
+		halo_mod_font_globals[cache_index].font_tag_index = terminal;
 		tag_iterator_new(&iterator, FONT_GROUP_TAG);
 		while ((font_tag_index = tag_iterator_next(&iterator)) != NONE)
 		{
 			short height = halo_mod_line_height(font_tag_index);
 
 			if (height > best_height &&
-				height <= HALO_MOD_SCREEN_HEIGHT / HALO_MOD_LARGE_FONT_LINES &&
+				height <= HALO_MOD_SCREEN_HEIGHT / lines &&
 				halo_mod_font_holds_text(font_tag_index))
 			{
 				best_height = height;
-				halo_mod_font_globals.font_tag_index = font_tag_index;
+				halo_mod_font_globals[cache_index].font_tag_index = font_tag_index;
 			}
 		}
-		_snprintf(halo_mod_font_globals.map_name, sizeof(halo_mod_font_globals.map_name), "%s", map_name);
+		_snprintf(halo_mod_font_globals[cache_index].map_name, sizeof(halo_mod_font_globals[cache_index].map_name),
+			"%s", map_name);
 	}
 
-	return halo_mod_font_globals.font_tag_index;
+	return halo_mod_font_globals[cache_index].font_tag_index;
 }
 
 short halo_mod_line_height(

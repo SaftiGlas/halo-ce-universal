@@ -18,7 +18,8 @@ Keyboard and mouse (port 0):
 	F12              release or recapture the mouse
 
 With HALO_FORGE set, the dev tools read their own keys and buttons
-(halo_linux_forge_read_keys), take the D-pad's left and right from
+(halo_linux_forge_read_keys); while the camera flies (forge mode) they take
+the D-pad's up and right, the shoulder buttons and the left trigger from
 controller 1, and while their menu is open or they hold an object also the
 D-pad, A, B, X, Y, start, back and the triggers (forge_filter_gamepad).
 
@@ -174,12 +175,29 @@ void halo_linux_forge_capture_menu_keys(int capture)
 	forge_menu_keys_captured = capture;
 }
 
-/* the D-pad's left and right always open the dev tools (it only doubles the
-stick in the game); while they are captured, the D-pad, A, B, X, Y, the
-shoulder buttons, start, back and the triggers too */
+/* while the camera flies, the D-pad's up (which lands it) and right (the
+menu), the shoulder buttons (which rise and sink) and the left trigger
+(faster) belong to the dev tools: the game would otherwise also switch
+cameras on the held right shoulder (black) */
+static volatile int forge_flying = FALSE;
+
+void halo_linux_forge_set_flying(int flying)
+{
+	forge_flying = flying;
+}
+
+/* while the camera flies, the D-pad's up and right, the shoulder buttons
+and the left trigger belong to the dev tools; while they are captured, the
+D-pad, A, B, X, Y, start, back and the triggers too */
 static void forge_filter_gamepad(XINPUT_GAMEPAD *pad)
 {
-	pad->wButtons &= ~(XINPUT_GAMEPAD_DPAD_LEFT | XINPUT_GAMEPAD_DPAD_RIGHT);
+	if (forge_flying || forge_menu_keys_captured)
+	{
+		pad->wButtons &= ~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_RIGHT);
+		pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] = 0;
+		pad->bAnalogButtons[XINPUT_GAMEPAD_WHITE] = 0;
+		pad->bAnalogButtons[XINPUT_GAMEPAD_BLACK] = 0;
+	}
 	if (forge_menu_keys_captured)
 	{
 		pad->wButtons &= ~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_DOWN |
@@ -547,11 +565,13 @@ int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
 
 #define PAD_BUTTON(button) (gamepad && SDL_GetGamepadButton(gamepad, (button)))
 #define PAD_TRIGGER(axis) (gamepad && SDL_GetGamepadAxis(gamepad, (axis)) > 8192)
-	keys->toggle_flying = k[SDL_SCANCODE_F2] || (!captured && PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_LEFT));
+	keys->toggle_flying = k[SDL_SCANCODE_F2] || (!captured && PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_UP));
 	keys->menu = k[SDL_SCANCODE_F3] || (!captured && PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_RIGHT));
-	keys->up = k[SDL_SCANCODE_SPACE] || PAD_TRIGGER(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
-	keys->down = k[SDL_SCANCODE_LCTRL] || k[SDL_SCANCODE_C] || PAD_TRIGGER(SDL_GAMEPAD_AXIS_LEFT_TRIGGER);
-	keys->fast = k[SDL_SCANCODE_LSHIFT] || k[SDL_SCANCODE_RSHIFT] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_LEFT_STICK);
+	keys->up = k[SDL_SCANCODE_SPACE] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
+	keys->down = k[SDL_SCANCODE_LCTRL] || k[SDL_SCANCODE_C] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+	keys->fast = k[SDL_SCANCODE_LSHIFT] || k[SDL_SCANCODE_RSHIFT] || PAD_TRIGGER(SDL_GAMEPAD_AXIS_LEFT_TRIGGER);
+	keys->faster = k[SDL_SCANCODE_UP] != 0;
+	keys->slower = k[SDL_SCANCODE_DOWN] != 0;
 	keys->menu_up = k[SDL_SCANCODE_UP] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_UP);
 	keys->menu_down = k[SDL_SCANCODE_DOWN] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_DOWN);
 	keys->menu_left = k[SDL_SCANCODE_LEFT] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_LEFT);
@@ -561,11 +581,23 @@ int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
 	keys->menu_close = k[SDL_SCANCODE_ESCAPE] || k[SDL_SCANCODE_BACKSPACE] ||
 		(mouse && m[SDL_BUTTON_RIGHT]) || PAD_BUTTON(SDL_GAMEPAD_BUTTON_EAST);
 	keys->grab = k[SDL_SCANCODE_F4] != 0;
-	keys->rotation_axis = k[SDL_SCANCODE_T] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_WEST);
-	keys->rotation_snap = k[SDL_SCANCODE_V] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_NORTH);
+	keys->rotation_axis = k[SDL_SCANCODE_T] != 0;
+	keys->rotation_snap = k[SDL_SCANCODE_V] != 0;
 	keys->remove_object = k[SDL_SCANCODE_DELETE] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_BACK);
 	keys->tab_previous = k[SDL_SCANCODE_PAGEUP] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
 	keys->tab_next = k[SDL_SCANCODE_PAGEDOWN] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
+	keys->pad_menu = PAD_BUTTON(SDL_GAMEPAD_BUTTON_WEST);
+	keys->pad_remove = PAD_BUTTON(SDL_GAMEPAD_BUTTON_NORTH);
+	keys->pad_turn = PAD_TRIGGER(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+	if (gamepad)
+	{
+		/* SDL's y is down; a dead zone so a resting stick is still */
+		float x = (float)SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTX) / 32767.0f;
+		float y = -(float)SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHTY) / 32767.0f;
+
+		keys->pad_look_x = fabsf(x) > 0.2f ? x : 0.0f;
+		keys->pad_look_y = fabsf(y) > 0.2f ? y : 0.0f;
+	}
 #undef PAD_BUTTON
 #undef PAD_TRIGGER
 	return TRUE;
