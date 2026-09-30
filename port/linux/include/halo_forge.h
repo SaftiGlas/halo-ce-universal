@@ -28,6 +28,8 @@ struct halo_linux_forge_keys
 	int rotation_axis; /* T / X */
 	int rotation_snap; /* V / Y */
 	int remove_object; /* delete / back */
+	int tab_previous; /* page up / left shoulder (LB) */
+	int tab_next; /* page down / right shoulder (RB) */
 };
 /* the keys as held now; FALSE, with nothing held, unless HALO_FORGE is set
 and the console is closed */
@@ -49,5 +51,43 @@ long forge_object_at_crosshair(void);
 /* where an object of the definition would be placed at the crosshair,
 standing on the surface there; FALSE when the camera is outside the map */
 int forge_placement_at_crosshair(long definition_index, float position[3]);
+/* the surface point the crosshair points at and its normal, or, in the
+open, a point a little in front of the camera with an upward normal; FALSE
+when the camera is outside the map */
+int forge_point_at_crosshair(float position[3], float normal[3]);
+
+/* a mod's own thing held like an object: aimed to move, turned, raised,
+put down or cancelled with the tools' keys and buttons (so on a controller
+too). While it is held the tools' menu keys belong to it and forge_busy()
+is TRUE. */
+struct halo_forge_hold_input
+{
+	/* the time since the last update, at most a tenth of a second */
+	float seconds;
+	/* the keys held now (D-pad or arrows) */
+	int left, right, up, down;
+	/* the same, once when pressed and again while held (repeating) */
+	int left_pressed, right_pressed, up_pressed, down_pressed;
+	/* X / T, and Y / V */
+	int axis_pressed, snap_pressed;
+	/* enter, click or A; escape, right click or B; delete or Back */
+	int place, cancel, delete_pressed;
+};
+
+struct halo_forge_hold
+{
+	/* what is held, for the first line of text */
+	char const *name;
+	/* the second line of text, or NULL */
+	void (*describe)(char *line, unsigned long size);
+	/* once a frame while it is held; returns TRUE when it is done (put
+	down, cancelled or removed). With a NULL input the hold has been cut
+	short (a new map, a checkpoint): put things back and return TRUE. */
+	int (*update)(struct halo_forge_hold_input const *input);
+};
+
+/* starts holding; FALSE when another hold is going or an
+object is held. The hold is called from the next frame on. */
+int forge_mod_hold_begin(struct halo_forge_hold const *hold);
 
 #endif

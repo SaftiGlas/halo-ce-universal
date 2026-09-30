@@ -355,6 +355,11 @@ void console_startup(
 		fclose(file);
 	}
 
+#ifdef HALO_LINUX
+	/* a map to start, from the settings (port/linux/game/start_map.c) */
+	halo_start_map();
+#endif
+
 	return;
 }
 

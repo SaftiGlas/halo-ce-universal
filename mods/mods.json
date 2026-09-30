@@ -1,0 +1,19 @@
+{
+  "enabled": [
+    "checkpoint_handler",
+    "forge_ai",
+    "forge_edit",
+    "forge_ui",
+    "forge_zones",
+    "gravity"
+  ],
+  "launch": {
+    "map": "bloodgulch",
+    "variant": "slayer"
+  },
+  "import": [
+    "a30:actv:characters\\grunt\\grunt minor plasma pistol",
+    "b30:actv:characters\\hunter\\hunter",
+    "a30:scen:scenery\\rocks\\boulder_granite_large\\boulder_granite_large"
+  ]
+}

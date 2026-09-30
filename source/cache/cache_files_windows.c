@@ -801,6 +801,15 @@ short cache_file_read(
 	{
 		size = (size | (CACHE_FILE_SECTOR_SIZE - 1)) + 1;
 	}
+#ifdef HALO_LINUX
+	/* the pixels of a bitmap brought in from another map are not in this
+	map's file (port/linux/game/tag_import.c) */
+	if (halo_tag_import_read(offset, size, buffer))
+	{
+		*completion_flag_reference = TRUE;
+		return request_index;
+	}
+#endif
 	*completion_flag_reference = FALSE;
 	memset(
 		&request->overlapped,

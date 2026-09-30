@@ -175,8 +175,8 @@ void halo_linux_forge_capture_menu_keys(int capture)
 }
 
 /* the D-pad's left and right always open the dev tools (it only doubles the
-stick in the game); while they are captured, the D-pad, A, B, X, Y, start,
-back and the triggers too */
+stick in the game); while they are captured, the D-pad, A, B, X, Y, the
+shoulder buttons, start, back and the triggers too */
 static void forge_filter_gamepad(XINPUT_GAMEPAD *pad)
 {
 	pad->wButtons &= ~(XINPUT_GAMEPAD_DPAD_LEFT | XINPUT_GAMEPAD_DPAD_RIGHT);
@@ -188,6 +188,8 @@ static void forge_filter_gamepad(XINPUT_GAMEPAD *pad)
 		pad->bAnalogButtons[XINPUT_GAMEPAD_B] = 0;
 		pad->bAnalogButtons[XINPUT_GAMEPAD_X] = 0;
 		pad->bAnalogButtons[XINPUT_GAMEPAD_Y] = 0;
+		pad->bAnalogButtons[XINPUT_GAMEPAD_WHITE] = 0;
+		pad->bAnalogButtons[XINPUT_GAMEPAD_BLACK] = 0;
 		pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] = 0;
 		pad->bAnalogButtons[XINPUT_GAMEPAD_RIGHT_TRIGGER] = 0;
 	}
@@ -560,6 +562,8 @@ int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
 	keys->rotation_axis = k[SDL_SCANCODE_T] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_WEST);
 	keys->rotation_snap = k[SDL_SCANCODE_V] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_NORTH);
 	keys->remove_object = k[SDL_SCANCODE_DELETE] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_BACK);
+	keys->tab_previous = k[SDL_SCANCODE_PAGEUP] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+	keys->tab_next = k[SDL_SCANCODE_PAGEDOWN] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
 #undef PAD_BUTTON
 #undef PAD_TRIGGER
 	return TRUE;

@@ -24,7 +24,10 @@ leaves the camera where it is, as the game's own debug flying camera does
 
 In the menu: up and down choose, left and right change the category, enter,
 the left mouse button or A take the object, escape, backspace, the right
-mouse button or B close the menu.
+mouse button or B close the menu. After the object categories come the
+pages that source mods add (halo_mod.h, struct halo_mod_menu): rows with a
+value that left and right change and that enter or A act on. T / X and V / Y
+go to the previous and next tab on every page.
 
 A taken or picked up object is held where the crosshair points (or, not
 flying, where the player looks), standing on the surface there, until it
@@ -182,6 +185,12 @@ struct forge_globals
 	struct forge_key rotation_axis_key;
 	struct forge_key rotation_snap_key;
 	struct forge_key remove_object_key;
+	struct forge_key tab_previous_key;
+	struct forge_key tab_next_key;
+
+	/* a mod's own thing held (halo_forge.h), and when it was last updated */
+	struct halo_forge_hold const *mod_hold;
+	unsigned long mod_hold_milliseconds;
 };
 
 /* ---------- globals */
@@ -544,6 +553,9 @@ static void forge_toggle_flying(
 	return;
 }
 
+static struct halo_mod_menu const *forge_menu_page(
+	void);
+
 static int forge_compare_entries(
 	void const *a,
 	void const *b)
@@ -551,14 +563,65 @@ static int forge_compare_entries(
 	return _stricmp(tag_get_name(*(long const *)a), tag_get_name(*(long const *)b));
 }
 
+/* the mod page of the menu's current tab, or NULL on an object category */
+static struct halo_mod_menu const *forge_menu_page(
+	void)
+{
+	short page_index = (short)(forge_globals.category_index - NUMBEROF(forge_categories));
+
+	return page_index >= 0 ? halo_mods_menu_page(page_index) : NULL;
+}
+
+/* the keys on a mod's page: choose a row, change its value, act on it */
+static void forge_menu_page_keys(
+	struct halo_mod_menu const *page,
+	boolean up,
+	boolean down,
+	boolean left,
+	boolean right,
+	boolean select)
+{
+	short count = page->row_count();
+
+	forge_globals.entry_count = count;
+	forge_globals.selected_entry_index = (short)PIN(forge_globals.selected_entry_index, 0, MAX(count - 1, 0));
+	if (count > 0)
+	{
+		if (up)
+			forge_globals.selected_entry_index = (short)((forge_globals.selected_entry_index + count - 1) % count);
+		if (down)
+			forge_globals.selected_entry_index = (short)((forge_globals.selected_entry_index + 1) % count);
+		if (page->row_change)
+		{
+			if (left != right)
+				page->row_change(forge_globals.selected_entry_index, right ? 1 : -1);
+			if (select && page->row_change(forge_globals.selected_entry_index, 0))
+				forge_globals.menu_open = FALSE;
+		}
+	}
+
+	return;
+}
+
 /* the map's objects of the menu's category, by name */
 static void forge_menu_build(
 	void)
 {
-	short object_type = forge_categories[forge_globals.category_index].object_type;
+	struct halo_mod_menu const *page = forge_menu_page();
+	short object_type;
 	struct tag_iterator iterator;
 	long tag_index;
 
+	if (page)
+	{
+		forge_globals.entry_count = page->row_count();
+		forge_globals.selected_entry_index = 0;
+		if (page->opened)
+			page->opened();
+		return;
+	}
+
+	object_type = forge_categories[forge_globals.category_index].object_type;
 	forge_globals.entry_count = 0;
 	tag_iterator_new(&iterator, OBJECT_DEFINITION_TAG);
 	while ((tag_index = tag_iterator_next(&iterator)) != NONE &&
@@ -752,6 +815,28 @@ static void forge_hold_end(
 	return;
 }
 
+/* debug.forge_menu_tab (port_config.c): a few seconds into a game, opens
+the menu on that tab, once, for automated screenshots of it
+(HALO_SCREENSHOT_DIR); -1 never. Returns the tab, or -1 */
+long config_integer(char const *name);
+
+static long forge_debug_menu_tab(
+	void)
+{
+	static long tab = -2;
+	long result = -1;
+
+	if (tab == -2)
+		tab = config_integer("debug.forge_menu_tab");
+	if (tab >= 0 && game_time_get() >= 90)
+	{
+		result = tab;
+		tab = -1;
+	}
+
+	return result;
+}
+
 static void forge_update_keys(
 	struct halo_linux_forge_keys const *keys,
 	unsigned long milliseconds,
@@ -769,6 +854,8 @@ static void forge_update_keys(
 	boolean rotation_axis = forge_key_pressed(&forge_globals.rotation_axis_key, keys->rotation_axis, FALSE, milliseconds);
 	boolean rotation_snap = forge_key_pressed(&forge_globals.rotation_snap_key, keys->rotation_snap, FALSE, milliseconds);
 	boolean remove_object = forge_key_pressed(&forge_globals.remove_object_key, keys->remove_object, FALSE, milliseconds);
+	boolean tab_previous = forge_key_pressed(&forge_globals.tab_previous_key, keys->tab_previous, FALSE, milliseconds);
+	boolean tab_next = forge_key_pressed(&forge_globals.tab_next_key, keys->tab_next, FALSE, milliseconds);
 
 	/* a held object that is gone (a new map, a revert, a deletion) is let go */
 	if (forge_globals.held_object_index != NONE &&
@@ -781,6 +868,11 @@ static void forge_update_keys(
 	(or a revert, as game time also goes back) closes the menu */
 	if (!forge_globals.active || game_time_get() < forge_globals.game_time)
 	{
+		if (forge_globals.mod_hold)
+		{
+			forge_globals.mod_hold->update(NULL);
+			forge_globals.mod_hold = NULL;
+		}
 		forge_globals.menu_open = FALSE;
 		/* what was held stays where it is */
 		forge_globals.held_object_index = NONE;
@@ -790,7 +882,40 @@ static void forge_update_keys(
 		if (toggle_flying)
 			forge_toggle_flying(FORGE_LOCAL_PLAYER_INDEX);
 
-		if (forge_globals.held_object_index != NONE)
+		{
+			long debug_tab = forge_debug_menu_tab();
+
+			if (debug_tab >= 0 && debug_tab < (long)(NUMBEROF(forge_categories) + halo_mods_menu_page_count()))
+			{
+				forge_globals.category_index = (short)debug_tab;
+				forge_globals.menu_open = TRUE;
+				forge_menu_build();
+			}
+		}
+
+		if (forge_globals.mod_hold)
+		{
+			struct halo_forge_hold_input input;
+
+			csmemset(&input, 0, sizeof(input));
+			input.seconds = seconds;
+			input.left = keys->menu_left;
+			input.right = keys->menu_right;
+			input.up = keys->menu_up;
+			input.down = keys->menu_down;
+			input.left_pressed = left;
+			input.right_pressed = right;
+			input.up_pressed = up;
+			input.down_pressed = down;
+			input.axis_pressed = rotation_axis;
+			input.snap_pressed = rotation_snap;
+			input.place = select;
+			input.cancel = close;
+			input.delete_pressed = remove_object;
+			if (forge_globals.mod_hold->update(&input))
+				forge_globals.mod_hold = NULL;
+		}
+		else if (forge_globals.held_object_index != NONE)
 		{
 			if (select || close || remove_object)
 			{
@@ -813,15 +938,23 @@ static void forge_update_keys(
 			}
 			else
 			{
-				short category_count = NUMBEROF(forge_categories);
+				short category_count = (short)(NUMBEROF(forge_categories) + halo_mods_menu_page_count());
+				struct halo_mod_menu const *page = forge_menu_page();
 
-				if (left || right)
+				if (rotation_axis || rotation_snap || tab_previous || tab_next || (!page && (left || right)))
 				{
+					boolean next = rotation_snap || tab_next || (!rotation_axis && !tab_previous && right);
+
 					forge_globals.category_index =
-						(forge_globals.category_index + (right ? 1 : category_count - 1)) % category_count;
+						(forge_globals.category_index + (next ? 1 : category_count - 1)) % category_count;
 					forge_menu_build();
+					page = forge_menu_page();
 				}
-				if (forge_globals.entry_count > 0)
+				if (page)
+				{
+					forge_menu_page_keys(page, up, down, left, right, select);
+				}
+				else if (forge_globals.entry_count > 0)
 				{
 					if (up)
 					{
@@ -850,7 +983,9 @@ static void forge_update_keys(
 		}
 		else if (grab || (select && director_forge_flying(FORGE_LOCAL_PLAYER_INDEX)))
 		{
-			forge_grab(FORGE_LOCAL_PLAYER_INDEX);
+			/* a mod may have something of its own to pick up there */
+			if (game_connection() != _game_connection_local || !halo_mods_grab())
+				forge_grab(FORGE_LOCAL_PLAYER_INDEX);
 		}
 	}
 
@@ -859,10 +994,11 @@ static void forge_update_keys(
 	forge_globals.keys_captured =
 		forge_globals.menu_open ||
 		forge_globals.held_object_index != NONE ||
+		forge_globals.mod_hold != NULL ||
 		(forge_globals.keys_captured &&
 			(keys->menu_up || keys->menu_down || keys->menu_left || keys->menu_right ||
 			keys->menu_select || keys->menu_close || keys->rotation_axis || keys->rotation_snap ||
-			keys->remove_object));
+			keys->remove_object || keys->tab_previous || keys->tab_next));
 	halo_linux_forge_capture_menu_keys(forge_globals.keys_captured);
 	forge_globals.game_time = forge_globals.active ? game_time_get() : 0;
 
@@ -948,6 +1084,39 @@ static void forge_render_held(
 	return;
 }
 
+/* what a mod holds (halo_forge.h) */
+static void forge_render_mod_hold(
+	long font_tag_index,
+	rectangle2d const *window,
+	short line_height)
+{
+	char line[256];
+	rectangle2d bounds;
+
+	forge_first_line_bounds(window, line_height, &bounds);
+	_snprintf(line, NUMBEROF(line), "moving %s", forge_globals.mod_hold->name);
+	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_yellow, line);
+	offset_rectangle2d(&bounds, 0, line_height);
+
+	line[0] = 0;
+	if (forge_globals.mod_hold->describe)
+		forge_globals.mod_hold->describe(line, sizeof(line));
+	if (line[0])
+	{
+		forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_white, line);
+		offset_rectangle2d(&bounds, 0, line_height);
+	}
+
+	forge_draw_line(
+		font_tag_index,
+		&bounds,
+		_text_justification_left,
+		global_real_argb_grey,
+		"aim to move, left/right turn, up/down raise, Y/V step, enter/click/A place, esc/right click/B cancel, delete/back remove");
+
+	return;
+}
+
 static void forge_render_menu(
 	long font_tag_index,
 	rectangle2d const *window,
@@ -955,6 +1124,7 @@ static void forge_render_menu(
 {
 	char line[256];
 	rectangle2d bounds;
+	struct halo_mod_menu const *page = forge_menu_page();
 	short first_entry_index = PIN(
 		forge_globals.selected_entry_index - FORGE_MENU_VISIBLE_ENTRIES / 2,
 		0,
@@ -965,8 +1135,9 @@ static void forge_render_menu(
 	_snprintf(
 		line,
 		NUMBEROF(line),
-		"spawn: < %s >  %d of %d",
-		forge_categories[forge_globals.category_index].name,
+		"%s: < %s >  %d of %d",
+		page ? "tools" : "spawn",
+		page ? page->title : forge_categories[forge_globals.category_index].name,
 		forge_globals.entry_count ? forge_globals.selected_entry_index + 1 : 0,
 		forge_globals.entry_count);
 	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_yellow, line);
@@ -984,12 +1155,24 @@ static void forge_render_menu(
 	{
 		boolean selected = entry_index == forge_globals.selected_entry_index;
 
-		_snprintf(
-			line,
-			NUMBEROF(line),
-			"%s %s",
-			selected ? ">" : " ",
-			tag_get_name(forge_globals.entries[entry_index]));
+		if (page)
+		{
+			char label[128];
+			char value[128];
+
+			label[0] = value[0] = 0;
+			page->row_text(entry_index, label, sizeof(label), value, sizeof(value));
+			_snprintf(line, NUMBEROF(line), "%s %s%s%s", selected ? ">" : " ", label, value[0] ? ": " : "", value);
+		}
+		else
+		{
+			_snprintf(
+				line,
+				NUMBEROF(line),
+				"%s %s",
+				selected ? ">" : " ",
+				tag_get_name(forge_globals.entries[entry_index]));
+		}
 		forge_draw_line(
 			font_tag_index,
 			&bounds,
@@ -1004,7 +1187,9 @@ static void forge_render_menu(
 		&bounds,
 		_text_justification_left,
 		global_real_argb_grey,
-		"up/down choose, left/right category, enter/click/A take, esc/right click/B close");
+		page
+			? "up/down choose, left/right change, enter/A do, T/X V/Y tabs, esc/B close"
+			: "up/down choose, left/right category, enter/click/A take, esc/right click/B close");
 
 	return;
 }
@@ -1049,11 +1234,16 @@ void forge_render(
 
 		offset_rectangle2d(&window, -render.camera.viewport_bounds.x0, -render.camera.viewport_bounds.y0);
 		if (director_forge_flying(FORGE_LOCAL_PLAYER_INDEX) ||
-			forge_globals.held_object_index != NONE)
+			forge_globals.held_object_index != NONE ||
+			forge_globals.mod_hold)
 		{
 			forge_render_crosshair(font_tag_index, &window, line_height);
 		}
-		if (forge_globals.held_object_index != NONE &&
+		if (forge_globals.mod_hold)
+		{
+			forge_render_mod_hold(font_tag_index, &window, line_height);
+		}
+		else if (forge_globals.held_object_index != NONE &&
 			object_try_and_get(forge_globals.held_object_index))
 		{
 			forge_render_held(font_tag_index, &window, line_height);
@@ -1076,7 +1266,21 @@ void forge_render(
 int forge_busy(
 	void)
 {
-	return forge_globals.menu_open || forge_globals.held_object_index != NONE;
+	return forge_globals.menu_open || forge_globals.held_object_index != NONE || forge_globals.mod_hold != NULL;
+}
+
+int forge_mod_hold_begin(
+	struct halo_forge_hold const *hold)
+{
+	boolean begun = FALSE;
+
+	if (!forge_globals.mod_hold && forge_globals.held_object_index == NONE)
+	{
+		forge_globals.mod_hold = hold;
+		begun = TRUE;
+	}
+
+	return begun;
 }
 
 long forge_object_at_crosshair(
@@ -1114,4 +1318,27 @@ int forge_placement_at_crosshair(
 	}
 
 	return placed;
+}
+
+int forge_point_at_crosshair(
+	float position[3],
+	float normal[3])
+{
+	real_point3d point;
+	real_vector3d surface_normal;
+	boolean aimed = FALSE;
+
+	if (local_player_get_player_index(FORGE_LOCAL_PLAYER_INDEX) != NONE &&
+		forge_aim(FORGE_LOCAL_PLAYER_INDEX, NONE, &point, &surface_normal))
+	{
+		position[0] = point.x;
+		position[1] = point.y;
+		position[2] = point.z;
+		normal[0] = surface_normal.i;
+		normal[1] = surface_normal.j;
+		normal[2] = surface_normal.k;
+		aimed = TRUE;
+	}
+
+	return aimed;
 }

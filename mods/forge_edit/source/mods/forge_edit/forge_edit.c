@@ -4,16 +4,22 @@ FORGE_EDIT.C
 A source mod (mods/forge_edit): copy, paste and remove objects, with the
 dev tools' crosshair (port/linux/game/forge.c).
 
-	Ctrl+C  copy the object under the crosshair: its tag, turn and scale
-	Ctrl+V  place a copy where the crosshair points
-	Delete  remove the object under the crosshair; nothing when there is
-	        none
-	Ctrl+Z  bring back the last removed object (the last 16, one at a time)
+All of it is on the "Edit" tab of the dev tools' menu (F3 / D-pad right;
+LB / RB, Page Up / Page Down, or X / Y change tab): up and down choose a
+row, enter or A act, so it works on a controller as on a keyboard, and no
+Ctrl key is used. The rows:
 
-(the keys are in forge_edit_keys.h). The object under the crosshair is the
-one the dev tools would pick up: flying, where the crosshair points, else
-where the player looks. While Ctrl is held or the camera flies it is
-marked on the screen with its name.
+	At the crosshair  the object the dev tools would pick up, or nothing
+	Copy              copy it: its tag, turn and scale
+	Paste             place a copy where the crosshair points
+	Remove            remove it
+	Undo remove       bring back the last removed object (the last 16, one
+	                  at a time)
+
+On a keyboard, Delete removes the object under the crosshair with the menu
+closed. The object under the crosshair is the one the dev tools would pick
+up: flying, where the crosshair points, else where the player looks. While
+the camera flies it is marked on the screen with its name.
 
 Objects are made and removed only with the game's own object_new and
 object_delete. The player, what they ride and carry, and anything that
@@ -43,8 +49,6 @@ removed objects back itself.
 #include "scenario/scenario.h"
 #include "tag_files/tag_groups.h"
 #include "units/units.h"
-
-#include "forge_edit_keys.h"
 
 #include <stdio.h>
 
@@ -79,11 +83,7 @@ struct forge_edit_object
 
 static struct
 {
-	struct halo_mod_key_state copy_key;
-	struct halo_mod_key_state paste_key;
 	struct halo_mod_key_state delete_key;
-	struct halo_mod_key_state undo_key;
-	boolean shortcuts_registered;
 
 	/* the map the copy and the removals belong to, and the game time of the
 	last update (a checkpoint's revert takes it back) */
@@ -100,23 +100,6 @@ static struct
 } forge_edit_globals = { { 0 } };
 
 /* ---------- private code */
-
-/* ctrl shortcuts no longer reach the game while Ctrl is held */
-static void forge_edit_register_shortcuts(
-	void)
-{
-	if (FORGE_EDIT_COPY_CTRL)
-		halo_mod_ctrl_shortcut(FORGE_EDIT_COPY_KEY);
-	if (FORGE_EDIT_PASTE_CTRL)
-		halo_mod_ctrl_shortcut(FORGE_EDIT_PASTE_KEY);
-	if (FORGE_EDIT_DELETE_CTRL)
-		halo_mod_ctrl_shortcut(FORGE_EDIT_DELETE_KEY);
-	if (FORGE_EDIT_UNDO_CTRL)
-		halo_mod_ctrl_shortcut(FORGE_EDIT_UNDO_KEY);
-	forge_edit_globals.shortcuts_registered = TRUE;
-
-	return;
-}
 
 /* the object's name for messages: the last part of its tag's name */
 static char const *forge_edit_object_name(
@@ -229,8 +212,7 @@ static void forge_edit_paste(
 
 	if (!forge_edit_globals.copied)
 	{
-		terminal_printf(global_real_argb_orange, "forge_edit: nothing copied yet (%s+%s)",
-			halo_mod_key_name(HALO_MOD_KEY_CTRL), halo_mod_key_name(FORGE_EDIT_COPY_KEY));
+		terminal_printf(global_real_argb_orange, "forge_edit: nothing copied yet (Edit tab, Copy)");
 	}
 	else if (!forge_placement_at_crosshair(forge_edit_globals.copy.definition_index, position))
 	{
@@ -276,9 +258,8 @@ static void forge_edit_delete(
 		record = &forge_edit_globals.removed[forge_edit_globals.removed_count++];
 		forge_edit_record(object_index, record);
 		object_delete(object_index);
-		terminal_printf(global_real_argb_green, "forge_edit: removed %s (%s+%s brings it back)",
-			forge_edit_object_name(record->definition_index),
-			halo_mod_key_name(HALO_MOD_KEY_CTRL), halo_mod_key_name(FORGE_EDIT_UNDO_KEY));
+		terminal_printf(global_real_argb_green, "forge_edit: removed %s (Edit tab, Undo remove brings it back)",
+			forge_edit_object_name(record->definition_index));
 	}
 
 	return;
@@ -338,21 +319,7 @@ static void forge_edit_check_map(
 static void forge_edit_update(
 	void)
 {
-	boolean copy;
-	boolean paste;
-	boolean delete_object;
-	boolean undo;
-	boolean ctrl;
-
-	if (!forge_edit_globals.shortcuts_registered)
-		forge_edit_register_shortcuts();
-
-	/* every key's state is kept up to date, so none fires late */
-	copy = halo_mod_key_pressed(&forge_edit_globals.copy_key, FORGE_EDIT_COPY_KEY, FORGE_EDIT_COPY_CTRL);
-	paste = halo_mod_key_pressed(&forge_edit_globals.paste_key, FORGE_EDIT_PASTE_KEY, FORGE_EDIT_PASTE_CTRL);
-	delete_object = halo_mod_key_pressed(&forge_edit_globals.delete_key, FORGE_EDIT_DELETE_KEY, FORGE_EDIT_DELETE_CTRL);
-	undo = halo_mod_key_pressed(&forge_edit_globals.undo_key, FORGE_EDIT_UNDO_KEY, FORGE_EDIT_UNDO_CTRL);
-	ctrl = halo_mod_key_down(HALO_MOD_KEY_CTRL);
+	boolean delete_object = halo_mod_key_pressed(&forge_edit_globals.delete_key, HALO_MOD_KEY_DELETE, FALSE);
 
 	forge_edit_globals.marking = FALSE;
 	forge_edit_globals.marked_object_index = NONE;
@@ -365,32 +332,20 @@ static void forge_edit_update(
 	if (forge_busy() || cinematic_in_progress())
 		return;
 
-	forge_edit_globals.marking = ctrl || director_forge_flying(FORGE_EDIT_LOCAL_PLAYER_INDEX);
-	if (forge_edit_globals.marking || copy || delete_object)
+	forge_edit_globals.marking = director_forge_flying(FORGE_EDIT_LOCAL_PLAYER_INDEX);
+	if (forge_edit_globals.marking || delete_object)
 		forge_edit_globals.marked_object_index = forge_edit_marked_object();
 
-	if (copy || paste || delete_object || undo)
+	if (delete_object)
 	{
 		if (game_connection() != _game_connection_local)
 		{
 			terminal_printf(global_real_argb_orange, "forge_edit: objects change only in local games");
 		}
-		else if (copy)
-		{
-			forge_edit_copy(forge_edit_globals.marked_object_index);
-		}
-		else if (paste)
-		{
-			forge_edit_paste();
-		}
-		else if (delete_object)
+		else
 		{
 			forge_edit_delete(forge_edit_globals.marked_object_index);
 			forge_edit_globals.marked_object_index = NONE;
-		}
-		else
-		{
-			forge_edit_undo();
 		}
 	}
 
@@ -421,9 +376,7 @@ static void forge_edit_render(
 		short width;
 
 		_snprintf(label, sizeof(label), "%s", forge_edit_object_name(object->definition_index));
-		_snprintf(hint, sizeof(hint), "%s+%s copy, %s remove",
-			halo_mod_key_name(HALO_MOD_KEY_CTRL), halo_mod_key_name(FORGE_EDIT_COPY_KEY),
-			halo_mod_key_name(FORGE_EDIT_DELETE_KEY));
+		_snprintf(hint, sizeof(hint), "%s removes, menu: Edit tab", halo_mod_key_name(HALO_MOD_KEY_DELETE));
 		width = (short)(MAX(halo_mod_text_width(font, label), halo_mod_text_width(font, hint)) +
 			4 * FORGE_EDIT_LABEL_MARGIN);
 
@@ -446,13 +399,122 @@ static void forge_edit_render(
 	return;
 }
 
+/* ---------- the tools' menu page */
+
+enum
+{
+	_forge_edit_row_target = 0,
+	_forge_edit_row_copy,
+	_forge_edit_row_paste,
+	_forge_edit_row_remove,
+	_forge_edit_row_undo,
+	NUMBER_OF_FORGE_EDIT_ROWS
+};
+
+static short forge_edit_menu_row_count(
+	void)
+{
+	return NUMBER_OF_FORGE_EDIT_ROWS;
+}
+
+static void forge_edit_menu_row_text(
+	short row,
+	char *label,
+	unsigned long label_size,
+	char *value,
+	unsigned long value_size)
+{
+	switch (row)
+	{
+	case _forge_edit_row_target:
+	{
+		long object_index = local_player_get_player_index(FORGE_EDIT_LOCAL_PLAYER_INDEX) != NONE
+			? forge_edit_marked_object()
+			: NONE;
+
+		_snprintf(label, label_size, "At the crosshair");
+		_snprintf(value, value_size, "%s",
+			object_index != NONE ? forge_edit_object_name(object_get(object_index)->definition_index) : "nothing");
+		break;
+	}
+	case _forge_edit_row_copy:
+		_snprintf(label, label_size, "Copy");
+		break;
+	case _forge_edit_row_paste:
+		_snprintf(label, label_size, "Paste (a copy at the crosshair)");
+		_snprintf(value, value_size, "%s", forge_edit_globals.copied
+			? forge_edit_object_name(forge_edit_globals.copy.definition_index)
+			: "nothing copied");
+		break;
+	case _forge_edit_row_remove:
+		_snprintf(label, label_size, "Remove");
+		break;
+	case _forge_edit_row_undo:
+		_snprintf(label, label_size, "Undo remove");
+		_snprintf(value, value_size, "%d to bring back", forge_edit_globals.removed_count);
+		break;
+	}
+
+	return;
+}
+
+/* enter or A on a row (left and right change nothing here) */
+static int forge_edit_menu_row_change(
+	short row,
+	int direction)
+{
+	int close_menu = FALSE;
+
+	if (direction != 0 || row == _forge_edit_row_target)
+		return FALSE;
+	if (game_connection() != _game_connection_local)
+	{
+		terminal_printf(global_real_argb_orange, "forge_edit: objects change only in local games");
+		return FALSE;
+	}
+
+	switch (row)
+	{
+	case _forge_edit_row_copy:
+		forge_edit_copy(forge_edit_marked_object());
+		break;
+	case _forge_edit_row_paste:
+		forge_edit_paste();
+		close_menu = TRUE;
+		break;
+	case _forge_edit_row_remove:
+		forge_edit_delete(forge_edit_marked_object());
+		close_menu = TRUE;
+		break;
+	case _forge_edit_row_undo:
+		forge_edit_undo();
+		close_menu = TRUE;
+		break;
+	}
+
+	return close_menu;
+}
+
+static struct halo_mod_menu const forge_edit_menu =
+{
+	"Edit",
+	forge_edit_menu_row_count,
+	forge_edit_menu_row_text,
+	forge_edit_menu_row_change,
+	NULL
+};
+
 /* ---------- the mod */
 
 static struct halo_mod const forge_edit_mod =
 {
 	"forge_edit",
 	forge_edit_update,
-	forge_edit_render
+	forge_edit_render,
+	NULL,
+	NULL,
+	NULL,
+	&forge_edit_menu
 };
 
 HALO_MOD_REGISTER(forge_edit_mod)

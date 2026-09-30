@@ -93,6 +93,26 @@ static const struct config_setting config_settings[] =
 		"The language the game asks the Xbox for: \"ja\", \"de\", \"fr\", \"es\" or \"it\";\n"
 		"empty for English. The game data decides what is translated." },
 
+	{ "game.start_map", _config_string, "\"\"", "HALO_START_MAP", _environment_value, _platform_desktop,
+		"A map to start when the game starts, without the menus: a campaign level\n"
+		"(\"a10\") or a multiplayer map (\"bloodgulch\"), or a scenario path\n"
+		"(\"levels\\test\\bloodgulch\\bloodgulch\"); empty shows the main menu. The mod\n"
+		"launcher's --map sets it." },
+	{ "game.start_variant", _config_string, "\"\"", "HALO_START_VARIANT", _environment_value, _platform_desktop,
+		"With a multiplayer start_map, the game variant it is played with:\n"
+		"\"slayer\", \"team_slayer\", \"ctf\", \"king\", \"oddball\", \"race\"..." },
+	{ "game.start_difficulty", _config_string, "\"\"", "HALO_START_DIFFICULTY", _environment_value, _platform_desktop,
+		"With a campaign start_map: \"easy\", \"normal\", \"hard\" or \"impossible\";\n"
+		"empty for normal." },
+
+	{ "game.import", _config_string, "\"\"", "HALO_IMPORT", _environment_value, _platform_desktop,
+		"Tags to bring into every map from other maps, \"donor:group:tag name\"\n"
+		"separated by |, for example \"a30:scen:scenery\\rocks\\boulder_granite_large\\\n"
+		"boulder_granite_large\" (everything the tag refers to comes with it); the\n"
+		"mod launcher's import list sets it. Empty: none." },
+	{ "game.import_into", _config_string, "\"\"", "HALO_IMPORT_INTO", _environment_value, _platform_desktop,
+		"The maps game.import applies to, with commas between: \"bloodgulch,wizard\";\n"
+		"empty for every map but the menu's." },
 	{ "paths.data", _config_string, "\"\"", "HALO_DATA_ROOT", _environment_value, _platform_desktop,
 		"The folder holding the game data's maps folder; empty looks in the\n"
 		"working directory and its assets folder. Windows paths are easiest in\n"
@@ -170,6 +190,9 @@ static const struct config_setting config_settings[] =
 	{ "debug.update_answer", _config_string, "\"\"", "HALO_UPDATE_ANSWER", _environment_value, _platform_desktop,
 		"The answer to the new version question, for automated tests: \"yes\",\n"
 		"\"no\" or \"never\" (do not ask again, confirmed); empty asks." },
+	{ "debug.forge_menu_tab", _config_integer, "-1", "HALO_FORGE_MENU_TAB", _environment_value, _platform_desktop,
+		"With the dev tools on (HALO_FORGE), a few seconds into a game, open their\n"
+		"menu on this tab (0 is the first), for screenshots of it; -1 never." },
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens; 0 never." },
 	{ "debug.hidden_window", _config_boolean, "false", "HALO_HIDDEN_WINDOW", _environment_set_is_true, _platform_desktop,

@@ -5,13 +5,15 @@ The hooks of source mods (mods/, tools/mod_overlay.py; see
 port/linux/README.md, "Source mods"): each mod's unit registers a struct
 halo_mod (halo_mod.h) before the game starts, and the dev tools' own hooks
 in main/main.c and interface/interface.c (forge_update, forge_render) call
-every mod's first, in registration order. Without mods nothing is
-registered and this does nothing.
+every mod's first, in registration order; game/game.c calls the tick and
+new map hooks, render/render.c the world drawing hooks. Without mods
+nothing is registered and this does nothing.
 */
 
 #include "cseries.h"
 #include "cache/cache_files.h"
 #include "cutscene/cinematics.h"
+#include "game/game.h"
 #include "game/players.h"
 #include "interface/interface.h"
 #include "math/integer_math.h"
@@ -107,6 +109,49 @@ void halo_mods_update(
 	return;
 }
 
+int halo_mods_grab(
+	void)
+{
+	short mod_index;
+
+	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
+	{
+		if (halo_mod_globals.mods[mod_index]->grab && halo_mod_globals.mods[mod_index]->grab())
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+short halo_mods_menu_page_count(
+	void)
+{
+	short mod_index;
+	short count = 0;
+
+	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
+	{
+		if (halo_mod_globals.mods[mod_index]->menu)
+			count++;
+	}
+
+	return count;
+}
+
+struct halo_mod_menu const *halo_mods_menu_page(
+	short index)
+{
+	short mod_index;
+
+	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
+	{
+		if (halo_mod_globals.mods[mod_index]->menu && index-- == 0)
+			return halo_mod_globals.mods[mod_index]->menu;
+	}
+
+	return NULL;
+}
+
 void halo_mods_render(
 	void)
 {
@@ -116,6 +161,56 @@ void halo_mods_render(
 	{
 		if (halo_mod_globals.mods[mod_index]->render)
 			halo_mod_globals.mods[mod_index]->render();
+	}
+
+	return;
+}
+
+/* at the start of every game tick (game/game.c) */
+void halo_mods_tick(
+	void)
+{
+	short mod_index;
+
+	/* system link machines must compute the game state alike, and a film
+	replays what was recorded */
+	if (game_connection() != _game_connection_local)
+		return;
+
+	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
+	{
+		if (halo_mod_globals.mods[mod_index]->tick)
+			halo_mod_globals.mods[mod_index]->tick();
+	}
+
+	return;
+}
+
+/* at the end of game_initialize_for_new_map (game/game.c) */
+void halo_mods_new_map(
+	void)
+{
+	short mod_index;
+
+	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
+	{
+		if (halo_mod_globals.mods[mod_index]->new_map)
+			halo_mod_globals.mods[mod_index]->new_map();
+	}
+
+	return;
+}
+
+/* in each player's window, after render_debug (render/render.c) */
+void halo_mods_render_world(
+	void)
+{
+	short mod_index;
+
+	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
+	{
+		if (halo_mod_globals.mods[mod_index]->render_world)
+			halo_mod_globals.mods[mod_index]->render_world();
 	}
 
 	return;

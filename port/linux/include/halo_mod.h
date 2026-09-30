@@ -17,6 +17,29 @@ port/linux/game/mods.c.
 
 /* ---------- hooks */
 
+/* a page of the dev tools' menu (F3 / D-pad right, HALO_FORGE) that a mod
+adds after the map's object tabs: rows of a label and a value, driven with
+the menu's own keys and buttons, so it works on a keyboard and a
+controller alike. Up and down choose a row; left and right change its
+value; enter, the left mouse button or A select it (an action). LB / RB (Page
+Up / Page Down), and X / T and Y / V, go to the previous and next tab. */
+struct halo_mod_menu
+{
+	/* the tab's name */
+	char const *title;
+	/* how many rows there are now (it may change while the menu is open) */
+	short (*row_count)(void);
+	/* row's label, and its value for the right column: "" for an action or
+	a note */
+	void (*row_text)(short row, char *label, unsigned long label_size, char *value, unsigned long value_size);
+	/* direction -1 or +1 (left, right): change the row's value; 0 (select):
+	do the row's action. Returns TRUE to close the menu (so an action that
+	needs the crosshair can be seen). May be NULL for a page of notes. */
+	int (*row_change)(short row, int direction);
+	/* the page has just been shown; may be NULL */
+	void (*opened)(void);
+};
+
 struct halo_mod
 {
 	char const *name;
@@ -26,6 +49,28 @@ struct halo_mod
 	/* once a frame over the other overlays, before the dev tools
 	(forge_render); may be NULL */
 	void (*render)(void);
+	/* once a game tick (30 a second, whatever the frame rate), at the
+	start of game_tick (game/game.c) before units and physics update, only
+	in local games (not system link, not saved films): the place for
+	changes to the game state such as gravity; may be NULL */
+	void (*tick)(void);
+	/* once a map has been loaded and its objects placed, before its first
+	tick, in every game (local or not): the place to undo what the last
+	map changed; may be NULL */
+	void (*new_map)(void);
+	/* once a frame in each local player's view, after the game's own debug
+	drawing (render_debug, render/render.c) and before its debug geometry
+	is drawn: rasterizer_debug_triangle and rasterizer_debug_line_shaded
+	(rasterizer/rasterizer_debug.h) then draw in the world, with the
+	view's camera and depth; may be NULL */
+	void (*render_world)(void);
+	/* a page in the dev tools' menu; may be NULL */
+	struct halo_mod_menu const *menu;
+	/* the tools' pick up (F4, or enter / A while flying) just before they
+	look for an object to pick up: return TRUE when the mod takes the
+	press (it picks up something of its own, with forge_mod_hold_begin); may be
+	NULL */
+	int (*grab)(void);
 };
 
 /* at most this many mods run; more are refused with a message on stderr */
@@ -34,6 +79,13 @@ struct halo_mod
 void halo_mod_register(struct halo_mod const *mod);
 void halo_mods_update(void);
 void halo_mods_render(void);
+void halo_mods_tick(void);
+void halo_mods_new_map(void);
+void halo_mods_render_world(void);
+/* the menu pages of every mod, in registration order (game/forge.c) */
+int halo_mods_grab(void);
+short halo_mods_menu_page_count(void);
+struct halo_mod_menu const *halo_mods_menu_page(short index);
 
 /* registers a struct halo_mod of the unit before the game starts */
 #define HALO_MOD_REGISTER(mod) \

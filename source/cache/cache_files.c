@@ -335,6 +335,10 @@ void scenario_tags_unload(
 	texture_cache_close();
 	cache_file_close();
 	tags_header_deregister_vertex_and_index_buffers(cache_file_globals.tag_header);
+#ifdef HALO_LINUX
+	/* what tags brought in from other maps took (port/linux/game/tag_import.c) */
+	halo_tag_import_release();
+#endif
 	cache_file_globals.tags_loaded = FALSE;
 	global_tag_instances = NULL;
 
@@ -696,6 +700,10 @@ long scenario_tags_load(
 					's'));
 			global_tag_instances = cache_file_globals.tag_header->tag_instances;
 			tags_header_register_vertex_and_index_buffers(cache_file_globals.tag_header);
+#ifdef HALO_LINUX
+			/* tags brought in from other maps (port/linux/game/tag_import.c) */
+			halo_tag_import(cache_file_globals.tag_header, (void **)&global_tag_instances, stripped_scenario_name);
+#endif
 			cache_file_globals.tags_loaded = TRUE;
 			result = cache_file_globals.tag_header->scenario_tag_index;
 		}

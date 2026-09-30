@@ -1,7 +1,7 @@
 {
   "name": "Forge edit",
-  "version": "1.0.0",
-  "description": "Ctrl+C copies the object under the crosshair, Ctrl+V places a copy there, Delete removes it and Ctrl+Z brings the last removed objects back.",
+  "version": "2.0.0",
+  "description": "An Edit tab in the dev tools' menu (F3 / D-pad right): copy the object under the crosshair, paste a copy there, remove it, and bring the last removed objects back. Works with a keyboard and a controller (Delete also removes on a keyboard).",
   "env": {
     "HALO_FORGE": "1"
   }

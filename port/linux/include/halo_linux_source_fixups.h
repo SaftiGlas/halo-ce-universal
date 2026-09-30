@@ -35,6 +35,15 @@ void render_interpolation_first_person(short local_player_index, struct real_mat
 	short node_count, struct render_camera const *camera);
 float render_interpolation_game_time_sec(long ticks);
 
+/* starts the map the settings name, after d:\init.txt
+(port/linux/game/start_map.c, called by console_startup) */
+void halo_start_map(void);
+
+/* tags brought in from other maps (port/linux/game/tag_import.c) */
+void halo_tag_import(void *tag_header, void **instances, char const *map_name);
+void halo_tag_import_release(void);
+unsigned char halo_tag_import_read(long offset, long size, void *buffer);
+
 /* in-game dev tools (port/linux/game/forge.c) */
 #include "halo_forge.h"
 /* what source mods can use (port/linux/game/mods.c) */

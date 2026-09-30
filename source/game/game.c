@@ -446,6 +446,10 @@ void game_tick(
 		game_globals->active);
 
 	remove_quitting_players_from_game();
+#ifdef HALO_LINUX
+	/* source mods' tick hooks, local games only (port/linux/game/mods.c) */
+	halo_mods_tick();
+#endif
 	game_allegiance_update();
 	units_update();
 	ai_update();
@@ -767,6 +771,8 @@ void game_initialize_for_new_map(
 	/* (the map's objects, placed as on the host: a distributed client's own
 	from now on go elsewhere, port/linux/game/network_objects.c) */
 	network_objects_placed();
+	/* source mods' new map hooks (port/linux/game/mods.c) */
+	halo_mods_new_map();
 #endif
 	ui_widgets_safe_to_load(TRUE);
 
