@@ -96,6 +96,11 @@ enum
 	PLAYLIST_PROFILE_CHECKSUM_DATA_SIZE = 104,
 	MAXIMUM_GAME_VARIANT_NAME_LENGTH = 12,
 	NUMBER_OF_DEFAULT_PLAYLIST_PROFILES = 26,
+#ifdef HALO_LINUX
+	/* port: the Forge game type follows the Xbox's defaults */
+	FORGE_PLAYLIST_PROFILE_INDEX = NUMBER_OF_DEFAULT_PLAYLIST_PROFILES,
+	NUMBER_OF_PORT_DEFAULT_PLAYLIST_PROFILES = NUMBER_OF_DEFAULT_PLAYLIST_PROFILES + 1,
+#endif
 };
 
 enum
@@ -485,13 +490,24 @@ static void playlist_profile_create_default_profiles_on_disk(
 	{
 		long profile_index;
 
+#ifdef HALO_LINUX
+		for (profile_index = 0;
+			profile_index < NUMBER_OF_PORT_DEFAULT_PLAYLIST_PROFILES;
+			profile_index++)
+#else
 		for (profile_index = 0;
 			profile_index < NUMBER_OF_DEFAULT_PLAYLIST_PROFILES;
 			profile_index++)
+#endif
 		{
 			wchar_t *display_name;
 			boolean file_written = FALSE;
 
+#ifdef HALO_LINUX
+			if (profile_index == FORGE_PLAYLIST_PROFILE_INDEX)
+				variant = *build_game_variant_forge(&temporary);
+			else
+#endif
 			variant = *playlist_profile_default_data.default_variant_building_functions[
 				profile_index](&temporary);
 

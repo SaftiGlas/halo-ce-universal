@@ -101,6 +101,10 @@ static const struct config_setting config_settings[] =
 	{ "game.start_variant", _config_string, "\"\"", "HALO_START_VARIANT", _environment_value, _platform_desktop,
 		"With a multiplayer start_map, the game variant it is played with:\n"
 		"\"slayer\", \"team_slayer\", \"ctf\", \"king\", \"oddball\", \"race\"..." },
+	{ "game.start_layout", _config_integer, "0", "HALO_START_LAYOUT", _environment_value, _platform_desktop,
+		"With a multiplayer start_map, play it with this Forge layout of it (1 to\n"
+		"16, as the map list's Forge maps are); 0 none. The mod launcher's --layout\n"
+		"sets it." },
 	{ "game.start_difficulty", _config_string, "\"\"", "HALO_START_DIFFICULTY", _environment_value, _platform_desktop,
 		"With a campaign start_map: \"easy\", \"normal\", \"hard\" or \"impossible\";\n"
 		"empty for normal." },
@@ -197,8 +201,11 @@ static const struct config_setting config_settings[] =
 		"The answer to the new version question, for automated tests: \"yes\",\n"
 		"\"no\" or \"never\" (do not ask again, confirmed); empty asks." },
 	{ "debug.forge_menu_tab", _config_integer, "-1", "HALO_FORGE_MENU_TAB", _environment_value, _platform_desktop,
-		"With the dev tools on (HALO_FORGE), a few seconds into a game, open their\n"
+		"With the dev tools on (a Forge game), a few seconds into a game, open their\n"
 		"menu on this tab (0 is the first), for screenshots of it; -1 never." },
+	{ "debug.forge_layout_save", _config_integer, "0", "HALO_FORGE_LAYOUT_SAVE", _environment_value, _platform_desktop,
+		"For automated tests: in a local game, save the Forge layout to this slot (1\n"
+		"to 16) a few seconds in, once, and log where the player is; 0 never." },
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens; 0 never." },
 	{ "debug.hidden_window", _config_boolean, "false", "HALO_HIDDEN_WINDOW", _environment_set_is_true, _platform_desktop,

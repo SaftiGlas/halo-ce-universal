@@ -1,14 +1,17 @@
 /*
 HALO_FORGE.H
 
-The in-game dev tools of the native ports, off unless HALO_FORGE is set
-(port/linux/game/forge.c). Shared by the game, through
+The in-game dev tools of the native ports, on in local games of the Forge
+game type (a slayer variant among the default game types), or in every
+game with HALO_FORGE=all (port/linux/game/forge.c). Shared by the game, through
 halo_linux_source_fixups.h, and the platform layer, which reads their keys
 (port/linux/src/xinput_sdl.c).
 */
 
 #ifndef __HALO_FORGE_H
 #define __HALO_FORGE_H
+
+#include <stddef.h>
 
 /* keyboard, mouse / first gamepad */
 struct halo_linux_forge_keys
@@ -38,7 +41,11 @@ struct halo_linux_forge_keys
 	float pad_look_x; /* the right stick, -1 to 1, right and up positive */
 	float pad_look_y;
 };
-/* the keys as held now; FALSE, with nothing held, unless HALO_FORGE is set
+/* TRUE while the tools are on: a local game of the Forge game type
+(GAME_VARIANT_FORGE_FLAG), or any game with HALO_FORGE=all; for the
+platform layer and for mods */
+int forge_mode_on(void);
+/* the keys as held now; FALSE, with nothing held, unless the tools are on
 and the console is closed */
 int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys);
 /* while TRUE (the menu is open, or an object is being placed), the menu's
@@ -63,6 +70,50 @@ int forge_camera_turning(void);
 float forge_camera_orbit_distance(void);
 float forge_camera_zoom(float step);
 void forge_flying_camera_moved(float const position[3], float const forward[3]);
+
+/* layouts (port/linux/game/forge_layout.c) */
+/* a new map, after the mods' new map hooks: notes the map's own objects,
+then, in a local game, loads the layout chosen to play on the map */
+void forge_layout_new_map(void);
+/* an object the tools or a mod made (spawned, pasted, brought back), kept
+by the layout */
+void forge_layout_note_spawned(long object_index);
+/* an object the tools put down (a map's own one is saved as moved, any
+other as made), and one they are about to remove (a map's own one is saved
+as removed): call before object_delete */
+void forge_layout_note_placed(long object_index);
+void forge_layout_note_removed(long object_index);
+
+/* layouts shown as maps of their own in the multiplayer map list of local
+games (the "Show in the map list" row): after the game's 13 maps, with the
+picture of the map they are made on (its index in that list, 0 to 12) and
+the layout's name. forge_custom_maps_refresh reads them again and returns
+how many there are; forge_custom_map_select chooses the one to play the
+next game with (NONE: none, a map of the game), and forge_custom_map_selected
+is that one's index, or NONE. By name: the base map's short name
+("bloodgulch") and the layout's number, for game.start_layout. */
+short forge_custom_maps_refresh(void);
+short forge_custom_map_base_index(short index);
+char const *forge_custom_map_base_name(short index);
+wchar_t const *forge_custom_map_title(short index);
+void forge_custom_map_select(short index);
+short forge_custom_map_selected(void);
+int forge_custom_map_select_by_name(char const *map_name, short slot);
+/* system link (port/linux/game/network_distributed.c): the host sends the
+layout of the map to a client that has loaded it; the client applies what
+the host's objects do not bring (scenery, devices, the mods' parts). While
+it does, forge_layout_loading_for_client is TRUE, and mods leave out what
+is the host's (forge_ai's characters). */
+void forge_layout_send_to_client(long machine_index);
+void forge_layout_handle_message(void const *payload, unsigned long size);
+int forge_layout_loading_for_client(void);
+/* the base map's name as the game shows it ("Blood Gulch") */
+char const *forge_custom_map_base_title(short index);
+/* string indices, past the end of every string list, that the menus show
+the Forge maps' names and descriptions with (text/text_group.c) */
+#define FORGE_CUSTOM_MAP_NAME_STRING 1000
+#define FORGE_CUSTOM_MAP_DESCRIPTION_STRING 2000
+#define FORGE_CUSTOM_MAP_STRING_COUNT 64
 
 /* for source mods (halo_mod.h), about local player 0 */
 /* TRUE while the spawn menu is open or an object is held: the tools then

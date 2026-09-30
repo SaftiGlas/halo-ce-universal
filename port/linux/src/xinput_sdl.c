@@ -17,7 +17,7 @@ Keyboard and mouse (port 0):
 	escape           start               F1               back
 	F12              release or recapture the mouse
 
-With HALO_FORGE set, the dev tools read their own keys and buttons
+In a local game of the Forge game type, the dev tools read their own keys and buttons
 (halo_linux_forge_read_keys); while the camera flies (forge mode) they take
 the D-pad's up and right, the shoulder buttons and the left trigger from
 controller 1, and while their menu is open or they hold an object also the
@@ -153,17 +153,11 @@ static void mouse_poll(const struct platform_input_state *input)
 
 /* ---------- dev tools (see halo_linux_forge_read_keys) */
 
+/* the dev tools are on in a local game of the Forge game type
+(port/linux/game/forge.c, forge_mode_on) */
 static int forge_enabled(void)
 {
-	static int enabled = -1;
-
-	if (enabled < 0)
-	{
-		const char *text = getenv("HALO_FORGE");
-
-		enabled = text && *text && strcmp(text, "0") != 0;
-	}
-	return enabled;
+	return forge_mode_on();
 }
 
 /* while the dev tools' menu is open or they place an object, the buttons

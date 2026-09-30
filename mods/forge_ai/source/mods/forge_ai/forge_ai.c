@@ -131,8 +131,11 @@ static struct
 	boolean attack_on_sight;
 	unsigned long repatrol_milliseconds;
 
-	/* what was spawned: the units (object indices) */
+	/* what was spawned: the units (object indices), their actor variants,
+	and whether they are the player's friends */
 	long units[FORGE_AI_MAXIMUM_UNITS];
+	long unit_variants[FORGE_AI_MAXIMUM_UNITS];
+	boolean unit_friendly[FORGE_AI_MAXIMUM_UNITS];
 	short unit_count;
 
 	/* the scenario's command lists with ours at the end, made for this map */
@@ -209,7 +212,12 @@ static short forge_ai_living_units(
 	for (read = 0; read < forge_ai_globals.unit_count; read++)
 	{
 		if (object_try_and_get(forge_ai_globals.units[read]))
-			forge_ai_globals.units[write++] = forge_ai_globals.units[read];
+		{
+			forge_ai_globals.units[write] = forge_ai_globals.units[read];
+			forge_ai_globals.unit_variants[write] = forge_ai_globals.unit_variants[read];
+			forge_ai_globals.unit_friendly[write] = forge_ai_globals.unit_friendly[read];
+			write++;
+		}
 	}
 	forge_ai_globals.unit_count = write;
 
@@ -402,16 +410,69 @@ static void forge_ai_repatrol(
 
 /* ---------- the actions */
 
+/* makes a character of the variant, standing at the position, facing
+forward; NONE when the game cannot */
+static long forge_ai_create(
+	long variant_index,
+	real_point3d const *position,
+	real_vector3d const *forward,
+	boolean friendly)
+{
+	struct actor_variant_definition *variant = actor_variant_definition_get(variant_index);
+	struct object_placement_data data;
+	long unit_index;
+
+	if (forge_ai_living_units() >= FORGE_AI_MAXIMUM_UNITS)
+	{
+		terminal_printf(global_real_argb_orange, "forge_ai: too many characters");
+		return NONE;
+	}
+	object_placement_data_new(&data, variant->unit_reference.index, NONE);
+	data.position = *position;
+	data.forward = *forward;
+	data.forward.k = 0.f;
+	if (data.forward.i * data.forward.i + data.forward.j * data.forward.j < 0.0001f)
+		data.forward = *global_forward3d;
+	else
+		normalize3d(&data.forward);
+	data.up = *global_up3d;
+	unit_index = object_new(&data);
+	if (unit_index == NONE)
+	{
+		terminal_printf(global_real_argb_orange, "forge_ai: %s could not be made", forge_ai_short_name(variant_index));
+		return NONE;
+	}
+	actor_customize_unit(variant_index, unit_index);
+	{
+		/* the actor takes the unit's team when it is attached */
+		struct unit_datum *unit = unit_get(unit_index);
+		short player_team = forge_ai_player_team();
+
+		if (friendly)
+			unit->object.owner_team_index = player_team;
+		else if (unit->object.owner_team_index == player_team)
+			unit->object.owner_team_index = (short)((player_team + 1) % FORGE_AI_TEAM_COUNT);
+	}
+	ai_scripting_attach_free(unit_index, variant_index);
+	forge_ai_globals.units[forge_ai_globals.unit_count] = unit_index;
+	forge_ai_globals.unit_variants[forge_ai_globals.unit_count] = variant_index;
+	forge_ai_globals.unit_friendly[forge_ai_globals.unit_count] = friendly;
+	forge_ai_globals.unit_count++;
+	if (forge_ai_globals.patrol_new && forge_ai_globals.waypoint_count >= 2 && forge_ai_globals.command_lists)
+		ai_scripting_command_list_by_unit(unit_index, forge_ai_globals.command_list_index);
+
+	return unit_index;
+}
+
 static void forge_ai_spawn(
 	void)
 {
 	struct actor_variant_definition *variant;
 	long variant_index;
-	long unit_definition_index;
 	float position[3];
-	struct object_placement_data data;
 	struct observer_result const *camera = observer_get_camera(FORGE_AI_LOCAL_PLAYER_INDEX);
-	long unit_index;
+	real_point3d point;
+	real_vector3d forward;
 
 	if (!forge_ai_local_game())
 	{
@@ -424,56 +485,21 @@ static void forge_ai_spawn(
 			"forge_ai: this map has no characters (import one: the launcher, Ctrl-T, tags of the actv group)");
 		return;
 	}
-	if (forge_ai_living_units() >= FORGE_AI_MAXIMUM_UNITS)
-	{
-		terminal_printf(global_real_argb_orange, "forge_ai: too many characters");
-		return;
-	}
 	variant_index = forge_ai_globals.characters[forge_ai_globals.character_index];
 	variant = actor_variant_definition_get(variant_index);
-	unit_definition_index = variant->unit_reference.index;
-	if (!forge_placement_at_crosshair(unit_definition_index, position))
+	if (!forge_placement_at_crosshair(variant->unit_reference.index, position))
 	{
 		terminal_printf(global_real_argb_orange, "forge_ai: the camera is outside the map");
 		return;
 	}
-
-	object_placement_data_new(&data, unit_definition_index, NONE);
-	data.position.x = position[0];
-	data.position.y = position[1];
-	data.position.z = position[2];
+	set_real_point3d(&point, position[0], position[1], position[2]);
 	/* facing the player */
-	data.forward.i = -camera->forward.i;
-	data.forward.j = -camera->forward.j;
-	data.forward.k = 0.f;
-	if (data.forward.i * data.forward.i + data.forward.j * data.forward.j < 0.0001f)
-		data.forward = *global_forward3d;
-	else
-		normalize3d(&data.forward);
-	data.up = *global_up3d;
-	unit_index = object_new(&data);
-	if (unit_index == NONE)
+	set_real_vector3d(&forward, -camera->forward.i, -camera->forward.j, 0.f);
+	if (forge_ai_create(variant_index, &point, &forward, forge_ai_globals.friendly) != NONE)
 	{
-		terminal_printf(global_real_argb_orange, "forge_ai: %s could not be made", forge_ai_short_name(variant_index));
-		return;
+		terminal_printf(global_real_argb_green, "forge_ai: %s (%s)", forge_ai_short_name(variant_index),
+			forge_ai_globals.friendly ? "friend" : "enemy");
 	}
-	actor_customize_unit(variant_index, unit_index);
-	{
-		/* the actor takes the unit's team when it is attached */
-		struct unit_datum *unit = unit_get(unit_index);
-		short player_team = forge_ai_player_team();
-
-		if (forge_ai_globals.friendly)
-			unit->object.owner_team_index = player_team;
-		else if (unit->object.owner_team_index == player_team)
-			unit->object.owner_team_index = (short)((player_team + 1) % FORGE_AI_TEAM_COUNT);
-	}
-	ai_scripting_attach_free(unit_index, variant_index);
-	forge_ai_globals.units[forge_ai_globals.unit_count++] = unit_index;
-	if (forge_ai_globals.patrol_new && forge_ai_globals.waypoint_count >= 2 && forge_ai_globals.command_lists)
-		ai_scripting_command_list_by_unit(unit_index, forge_ai_globals.command_list_index);
-	terminal_printf(global_real_argb_green, "forge_ai: %s (%s)", forge_ai_short_name(variant_index),
-		forge_ai_globals.friendly ? "friend" : "enemy");
 
 	return;
 }
@@ -862,6 +888,105 @@ static struct halo_mod_menu const forge_ai_menu =
 	forge_ai_menu_opened
 };
 
+/* ---------- layouts (port/linux/game/forge_layout.c) */
+
+static void forge_ai_layout_save(
+	struct halo_layout_writer *writer)
+{
+	short index;
+
+	halo_layout_printf(writer, "settings %d %d %d %d", (int)forge_ai_globals.friendly,
+		(int)forge_ai_globals.attack_on_sight, (int)forge_ai_globals.patrol_new, (int)forge_ai_globals.show_waypoints);
+	for (index = 0; index < forge_ai_globals.waypoint_count; index++)
+	{
+		real_point3d const *point = &forge_ai_globals.waypoints[index];
+
+		halo_layout_printf(writer, "waypoint %.4f %.4f %.4f", point->x, point->y, point->z);
+	}
+	for (index = 0; index < forge_ai_living_units(); index++)
+	{
+		struct object_datum *object = object_get(forge_ai_globals.units[index]);
+
+		/* the dead lie where they fell: only the living are kept */
+		if (object->object.body_vitality <= 0.f)
+			continue;
+		halo_layout_printf(writer, "character %d %.4f %.4f %.4f %.5f %.5f %s",
+			(int)forge_ai_globals.unit_friendly[index],
+			object->object.position.x, object->object.position.y, object->object.position.z,
+			object->object.forward.i, object->object.forward.j,
+			tag_get_name(forge_ai_globals.unit_variants[index]));
+	}
+
+	return;
+}
+
+static void forge_ai_layout_clear(
+	void)
+{
+	short index;
+
+	for (index = 0; index < forge_ai_living_units(); index++)
+		object_delete(forge_ai_globals.units[index]);
+	forge_ai_globals.unit_count = 0;
+	forge_ai_globals.waypoint_count = 0;
+	forge_ai_hold_globals.waypoint_index = NONE;
+	forge_ai_update_command_list();
+
+	return;
+}
+
+static void forge_ai_layout_load(
+	char const *line)
+{
+	int values[4];
+	float numbers[5];
+	int name_offset = 0;
+
+	if (sscanf(line, "settings %d %d %d %d", &values[0], &values[1], &values[2], &values[3]) == 4)
+	{
+		forge_ai_globals.friendly = values[0] != 0;
+		forge_ai_globals.attack_on_sight = values[1] != 0;
+		forge_ai_globals.patrol_new = values[2] != 0;
+		forge_ai_globals.show_waypoints = values[3] != 0;
+		forge_ai_update_command_list();
+	}
+	else if (sscanf(line, "waypoint %f %f %f", &numbers[0], &numbers[1], &numbers[2]) == 3 &&
+		forge_ai_globals.waypoint_count < FORGE_AI_MAXIMUM_WAYPOINTS)
+	{
+		real_point3d point;
+		long surface_index;
+
+		set_real_point3d(&point, numbers[0], numbers[1], numbers[2]);
+		if ((surface_index = forge_ai_ground_surface(&point)) != NONE)
+		{
+			forge_ai_globals.waypoints[forge_ai_globals.waypoint_count] = point;
+			forge_ai_globals.waypoint_surfaces[forge_ai_globals.waypoint_count] = surface_index;
+			forge_ai_globals.waypoint_count++;
+			forge_ai_update_command_list();
+		}
+	}
+	else if (sscanf(line, "character %d %f %f %f %f %f %n", &values[0], &numbers[0], &numbers[1], &numbers[2],
+		&numbers[3], &numbers[4], &name_offset) >= 6 && name_offset > 0 &&
+		/* a system link client has the host's characters */
+		!forge_layout_loading_for_client())
+	{
+		long variant_index = tag_loaded(ACTOR_VARIANT_DEFINITION_TAG, line + name_offset);
+		real_point3d point;
+		real_vector3d forward;
+
+		if (variant_index == NONE)
+		{
+			terminal_printf(global_real_argb_orange, "forge_ai: %s is not in this map, left out", line + name_offset);
+			return;
+		}
+		set_real_point3d(&point, numbers[0], numbers[1], numbers[2]);
+		set_real_vector3d(&forward, numbers[3], numbers[4], 0.f);
+		forge_ai_create(variant_index, &point, &forward, values[0] != 0);
+	}
+
+	return;
+}
+
 /* ---------- the hooks */
 
 /* once a frame: now and then, idle characters go back to their patrol */
@@ -870,7 +995,8 @@ static void forge_ai_update(
 {
 	unsigned long milliseconds = system_milliseconds();
 
-	if (!forge_ai_local_game() || !forge_ai_globals.attack_on_sight ||
+	/* where the AI runs: a local game, the host of a system link game */
+	if (!halo_mods_authoritative() || !forge_ai_globals.attack_on_sight ||
 		(long)(milliseconds - forge_ai_globals.repatrol_milliseconds) < FORGE_AI_REPATROL_MILLISECONDS)
 	{
 		return;
@@ -891,7 +1017,7 @@ static void forge_ai_new_map(
 	forge_ai_globals.command_lists = NULL;
 	forge_ai_globals.command_list_index = NONE;
 	forge_ai_find_characters();
-	if (game_connection() == _game_connection_local)
+	if (halo_mods_authoritative())
 	{
 		/* (the previous map's list array is not freed: its scenario is gone, and a stale
 		pointer to it could be in a command list still running for a moment) */
@@ -965,7 +1091,11 @@ static struct halo_mod const forge_ai_mod =
 	forge_ai_new_map,
 	forge_ai_render_world,
 	&forge_ai_menu,
-	forge_ai_grab
+	forge_ai_grab,
+	NULL,
+	forge_ai_layout_save,
+	forge_ai_layout_clear,
+	forge_ai_layout_load
 };
 
 HALO_MOD_REGISTER(forge_ai_mod)

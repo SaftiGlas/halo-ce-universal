@@ -278,8 +278,13 @@ you push it again.
 
 ## Dev tools
 
-`HALO_FORGE=1` turns on in-game dev tools (`game/forge.c`), a first step
-towards modding. Without it the game plays as usual.
+The in-game dev tools (`game/forge.c`), a first step towards modding, are
+on in local games of the **Forge** game type: the last of the default game
+types in the game setup (a slayer variant with no score to reach, marked
+with `GAME_VARIANT_FORGE_FLAG`; copies of it that you save stay Forge), or
+`game.start_variant = "forge"` / `--variant forge`. In every other game the
+game plays as usual. `HALO_FORGE=all` turns the tools on in every game, for
+development.
 
 | Keyboard and mouse | Controller | Effect |
 | --- | --- | --- |
@@ -326,6 +331,30 @@ shoulder buttons and the left trigger belong to them; and while the menu is open
 (D-pad), enter and A, escape and start, backspace and B, X, Y, back and
 the mouse's buttons (triggers) work only the tools. In the menu X closes
 it too, and LB and RB change tab.
+
+**Layouts** (`game/forge_layout.c`): the **Map** tab of the menu saves
+what Forge changed in the map (the objects spawned, the map's own objects
+moved or removed, zones, AI characters and waypoints, gravity, the sky) as
+a layout: choose one with left and right (or a new one), Save, Load it,
+Play on this map (it then loads in every local game on the map, whatever
+the game type), Reset the map, Delete it. Up to 16 a map, in
+`u/forge/<map>/layout_NN.txt` of the save root; new ones are called
+"Layout N", and `python -m tools.mod_launcher layouts rename MAP N NAME`
+renames one (`layouts` lists them).
+
+A layout with **Show in the map list** on is a map of its own: the
+multiplayer map list of local (splitscreen) games shows it after the 13
+maps of the game, with its base map's picture, the layout's name as its
+title and "A Forge map made on <map>" as its description. Choosing it
+plays the base map with that layout, in any game type, also in system link:
+the host loads the layout and sends it to each machine that joins (the
+other machines need not have it). The host's objects reach them as all its
+objects do; each machine makes the layout's scenery itself and takes its
+zones, gravity and sky. Kill and teleport zones act on the host, gravity
+zones and gravity on every machine. The tags the layout uses from other
+maps must be imported on every machine alike (the launcher's import list). `game.start_layout` (`HALO_START_LAYOUT`,
+`mod_launcher run --map bloodgulch --layout 3`) starts one without the
+menus.
 
 The tools act on local player 0. Spawning, moving and removing objects
 and moving the player are refused in system link games, where every
@@ -377,7 +406,7 @@ the setting for one start of the game. It has priority over the file.
 | `discord.application_id` | the application of the project | `HALO_DISCORD_APPLICATION` | The Discord application for invites. Empty: no Discord. |
 | `update.auto` | `true` | `HALO_UPDATE_AUTO` | `true`: at start-up, the game looks for a new version. Refer to "Updates". `false`: the game does not look. |
 | `debug.update_answer` | `""` | `HALO_UPDATE_ANSWER` | The answer to the update question, for automatic tests: `yes`, `no` or `never`. Empty: the game asks. |
-| `debug.forge_menu_tab` | `-1` | `HALO_FORGE_MENU_TAB` | With the dev tools on (`HALO_FORGE`), a few seconds into a game: open their menu on this tab (0 is the first), for screenshots of it (`debug.screenshot_directory`). `-1`: never. |
+| `debug.forge_menu_tab` | `-1` | `HALO_FORGE_MENU_TAB` | With the dev tools on (a Forge game), a few seconds into a game: open their menu on this tab (0 is the first), for screenshots of it (`debug.screenshot_directory`). `-1`: never. |
 | `debug.exit_after` | `0.0` | `HALO_EXIT_AFTER` | The game stops after this number of seconds. `0`: never. |
 | `debug.screenshot_directory`, `debug.screenshot_every` | `""`, `0` | `HALO_SCREENSHOT_DIR`, `HALO_SCREENSHOT_EVERY` | The game writes each Nth frame to this folder as a BMP file. |
 | `debug.hidden_window`, `debug.null_renderer` | `false` | `HALO_HIDDEN_WINDOW`, `HALO_NULL_RENDERER` | `true`: no visible window, or no graphics. |
@@ -386,8 +415,9 @@ the setting for one start of the game. It has priority over the file.
 | `debug.network_test`, `debug.network_test_start`, `debug.network_test_kill`, `debug.network_test_shoot`, `debug.network_test_vehicle`, `debug.network_test_pickup`, `debug.test_input` | off | `HALO_NETWORK_TEST`, `HALO_NETWORK_TEST_START`, `HALO_NETWORK_TEST_KILL`, `HALO_NETWORK_TEST_SHOOT`, `HALO_NETWORK_TEST_VEHICLE`, `HALO_NETWORK_TEST_PICKUP`, `HALO_TEST_INPUT` | Automatic tests of system link (`game/network_test.c`). Refer to `NETCODE.md`. |
 | `debug.network_latency`, `debug.network_loss` | `0` | `HALO_NETWORK_LATENCY`, `HALO_NETWORK_LOSS` | The game holds all the data that it receives for this number of milliseconds, and ignores this percentage of the datagrams. Use these settings to test the netcode as on the internet. |
 
-The environment variable `HALO_FORGE=1` turns on the dev tools (refer to
-"Dev tools"). It has no setting in `config.toml`.
+The environment variable `HALO_FORGE=all` turns on the dev tools in every
+game, not only Forge games (refer to "Dev tools"). It has no setting in
+`config.toml`.
 
 With Mesa drivers, the game sends its GL calls through the GL thread of
 Mesa. To stop this, set the environment variable `mesa_glthread=false`.

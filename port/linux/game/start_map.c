@@ -23,6 +23,11 @@ A short name is expanded to the map's scenario path. The campaign levels
 and the 13 multiplayer maps of the game are known; another name is looked
 for as levels\test\<name>\<name>, as the game's own multiplayer maps are.
 
+With game.start_layout (HALO_START_LAYOUT, the launcher's --layout) a
+multiplayer map is played with that Forge layout of it loaded
+(forge_layout.c, forge_custom_map_select_by_name), as when it is chosen as
+a map of its own in the map list.
+
 Called at the end of console_startup (main/console.c).
 */
 
@@ -35,6 +40,7 @@ Called at the end of console_startup (main/console.c).
 
 /* the platform layer's (port/linux/src/port_config.c) */
 const char *config_string(char const *name);
+long config_integer(char const *name);
 void platform_log(char const *format, ...);
 
 /* ---------- constants */
@@ -141,6 +147,13 @@ void halo_start_map(
 	}
 
 	start_map_scenario_path(map, path, sizeof(path));
+	if (config_integer("game.start_layout") > 0)
+	{
+		char const *separator = strrchr(path, '\\');
+
+		if (!forge_custom_map_select_by_name(separator ? separator + 1 : path, (short)config_integer("game.start_layout")))
+			platform_log("start: game.start_layout is for the multiplayer maps of the game, 1 to 16");
+	}
 	if (difficulty[0])
 		start_map_command("game_difficulty_set %s", difficulty);
 	if (variant[0])

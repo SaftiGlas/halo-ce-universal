@@ -1,8 +1,5 @@
 {
   "name": "Sky",
   "version": "1.1.0",
-  "description": "A Sky tab in the dev tools' menu (forge mode: F3, D-pad right or X) with the look of the sky and its fog: the map's own, sunset, night and fog tints of the map's sky, then skies a shader draws: clear day, golden sunset, night with stars, overcast, alien dusk. Left and right change it. Works in local games only.",
-  "env": {
-    "HALO_FORGE": "1"
-  }
+  "description": "A Sky tab in the dev tools' menu (forge mode: F3, D-pad right or X) with the look of the sky and its fog: the map's own, sunset, night and fog tints of the map's sky, then skies a shader draws: clear day, golden sunset, night with stars, overcast, alien dusk. Left and right change it. Works in local games only."
 }

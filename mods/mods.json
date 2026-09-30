@@ -8,13 +8,16 @@
     "gravity",
     "sky"
   ],
-  "launch": {
-    "map": "bloodgulch",
-    "variant": "slayer"
-  },
   "import": [
     "a30:actv:characters\\grunt\\grunt minor plasma pistol",
     "b30:actv:characters\\hunter\\hunter",
-    "a30:scen:scenery\\rocks\\boulder_granite_large\\boulder_granite_large"
+    "a30:scen:scenery\\rocks\\boulder_granite_large\\boulder_granite_large",
+    "c40:actv:characters\\elite\\elite commander\\elite commander energy sword",
+    "c40:actv:characters\\elite\\elite stealth\\stealth elite major energy sword",
+    "c40:actv:characters\\floodcombat elite\\floodcombat elite pistol",
+    "c40:actv:characters\\monitor\\monitor",
+    "c40:actv:characters\\sentinel\\sentinel",
+    "c40:actv:characters\\sentinel\\sentinel major",
+    "c40:scen:scenery\\rocks\\boulder_granite_large\\boulder_granite_large"
   ]
 }

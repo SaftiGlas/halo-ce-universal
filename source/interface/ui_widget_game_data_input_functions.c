@@ -2423,6 +2423,16 @@ void multiplayer_game_set_text_box_for_map_name(
 	if (game)
 	{
 		map_name = game->map_name;
+#ifdef HALO_LINUX
+	/* port: a Forge map chosen in the map list shows its own name */
+	if (forge_custom_map_selected() != NONE &&
+		strstr(map_name, forge_custom_map_base_name(forge_custom_map_selected())))
+	{
+		widget->parameters.text_box.string_list_index =
+			(short)(FORGE_CUSTOM_MAP_NAME_STRING + forge_custom_map_selected());
+		return;
+	}
+#endif
 	if (strstr(map_name, "beavercreek"))
 	{
 		widget->parameters.text_box.string_list_index = 0;
@@ -4234,6 +4244,22 @@ void mp_level_select_list_update_displayed_items(
 				_ui_widget_type_text_box,
 			"expected a text box widget for the list item's third child (map description)");
 
+#ifdef HALO_LINUX
+		/* port: past the game's 13 maps, the Forge maps (forge_layout.c):
+		their base map's picture, and their name and description from the
+		built-in strings (text/text_group.c) */
+		if (displayed_item_indices[item_index] >= 13)
+		{
+			short custom_index = (short)(displayed_item_indices[item_index] - 13);
+
+			map_name->parameters.text_box.string_list_index =
+				(short)(FORGE_CUSTOM_MAP_NAME_STRING + custom_index);
+			map_bitmap->animation.current_frame_index = forge_custom_map_base_index(custom_index);
+			map_description->parameters.text_box.string_list_index =
+				(short)(FORGE_CUSTOM_MAP_DESCRIPTION_STRING + custom_index);
+			continue;
+		}
+#endif
 		map_name->parameters.text_box.string_list_index =
 			(short)displayed_item_indices[item_index];
 		map_bitmap->animation.current_frame_index =

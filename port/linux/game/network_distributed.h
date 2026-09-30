@@ -54,6 +54,9 @@ enum
 	_distributed_message_relayed_actions,
 	/* the unreliable messages of a tick to one machine, in one datagram */
 	_distributed_message_batch,
+	/* the host's Forge layout of the map, in parts, to a client that has
+	loaded (reliable; port/linux/game/forge_layout.c) */
+	_distributed_message_forge_layout,
 
 	NUMBER_OF_DISTRIBUTED_MESSAGES
 };

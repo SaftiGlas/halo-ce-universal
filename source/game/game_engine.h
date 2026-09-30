@@ -397,6 +397,18 @@ struct game_variant *game_engine_get_variant_by_name(
 	struct game_variant *variant,
 	char const *name);
 
+#ifdef HALO_LINUX
+/* port: game_variant.flags of the Forge game type (a slayer variant with
+the dev tools on, port/linux/game/forge.c); copies of it that players save
+keep it. Bit 0 is the system default bit, the high byte the default's
+index. */
+#define GAME_VARIANT_FORGE_FLAG 0x0002
+
+/* TRUE while the game being played is of the Forge game type */
+boolean game_engine_variant_is_forge(
+	void);
+#endif
+
 boolean game_engine_get_goal_in_use(
 	short goal_index);
 

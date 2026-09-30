@@ -298,6 +298,45 @@ static void sky_new_map(
 	return;
 }
 
+/* ---------- layouts (port/linux/game/forge_layout.c) */
+
+static void sky_layout_save(
+	struct halo_layout_writer *writer)
+{
+	halo_layout_printf(writer, "look %s", sky_looks[sky_globals.look_index].name);
+
+	return;
+}
+
+static void sky_layout_clear(
+	void)
+{
+	sky_globals.look_index = 0;
+	sky_apply(&sky_looks[0]);
+
+	return;
+}
+
+static void sky_layout_load(
+	char const *line)
+{
+	short index;
+
+	if (strncmp(line, "look ", 5) == 0)
+	{
+		for (index = 0; index < NUMBER_OF_SKY_LOOKS; index++)
+		{
+			if (strcmp(line + 5, sky_looks[index].name) == 0)
+			{
+				sky_globals.look_index = index;
+				sky_apply(&sky_looks[index]);
+			}
+		}
+	}
+
+	return;
+}
+
 /* ---------- the mod */
 
 static struct halo_mod const sky_mod =
@@ -308,7 +347,12 @@ static struct halo_mod const sky_mod =
 	NULL,
 	sky_new_map,
 	NULL,
-	&sky_menu
+	&sky_menu,
+	NULL,
+	NULL,
+	sky_layout_save,
+	sky_layout_clear,
+	sky_layout_load
 };
 
 HALO_MOD_REGISTER(sky_mod)

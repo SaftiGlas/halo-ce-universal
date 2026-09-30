@@ -1717,6 +1717,7 @@ void network_distributed_handle_message(
 	case _distributed_message_relayed_actions: entry_size = sizeof(struct distributed_relayed_action); break;
 	case _distributed_message_game_state:
 	case _distributed_message_objects_synchronized:
+	case _distributed_message_forge_layout:
 	case _distributed_message_client_ready: entry_size = 0; break;
 	case _distributed_message_damage_events:
 	case _distributed_message_hit_reports: entry_size = network_damage_entry_size(header.type); break;
@@ -1789,8 +1790,13 @@ void network_distributed_handle_message(
 	case _distributed_message_objects_synchronized:
 		network_objects_handle_synchronized();
 		break;
+	case _distributed_message_forge_layout:
+		forge_layout_handle_message(entries, size - sizeof(header));
+		break;
 	case _distributed_message_client_ready:
 		network_objects_client_ready(machine_index);
+		/* the map's Forge layout, for what the host's objects do not bring */
+		forge_layout_send_to_client(machine_index);
 		/* (every player's statistics with the next, for a machine that
 		joined the game in progress) */
 		csmemset(distributed_sent_statistics, 0, sizeof(distributed_sent_statistics));

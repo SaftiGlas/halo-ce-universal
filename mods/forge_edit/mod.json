@@ -1,8 +1,5 @@
 {
   "name": "Forge edit",
   "version": "2.0.0",
-  "description": "An Edit tab in the dev tools' menu (forge mode: F3, D-pad right or X): copy the object under the crosshair, paste a copy there, remove it, and bring the last removed objects back. Works with a keyboard and a controller (Delete also removes on a keyboard).",
-  "env": {
-    "HALO_FORGE": "1"
-  }
+  "description": "An Edit tab in the dev tools' menu (forge mode: F3, D-pad right or X): copy the object under the crosshair, paste a copy there, remove it, and bring the last removed objects back. Works with a keyboard and a controller (Delete also removes on a keyboard)."
 }

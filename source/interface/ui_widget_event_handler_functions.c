@@ -3113,6 +3113,42 @@ static boolean create_and_begin_editing_new_player_profile(
 	return result;
 }
 
+#ifdef HALO_LINUX
+/* port: the multiplayer map list, the game's 13 maps and then the Forge
+layouts shown as maps (port/linux/game/forge_layout.c), in local and system
+link games: a system link host sends its layout to its clients as they
+join (network_distributed.c), who need not have it */
+#define MAXIMUM_PORT_MULTIPLAYER_LEVELS (13 + 64)
+
+
+static char *port_multiplayer_levels[MAXIMUM_PORT_MULTIPLAYER_LEVELS];
+static char port_custom_level_paths[MAXIMUM_PORT_MULTIPLAYER_LEVELS - 13][96];
+static short port_multiplayer_level_count = 13;
+
+static void port_multiplayer_levels_build(
+	void)
+{
+	short level_index;
+	short custom_count = 0;
+
+	for (level_index = 0; level_index < 13; level_index++)
+		port_multiplayer_levels[level_index] = event_handler_functions.multiplayer_levels[level_index];
+	custom_count = (short)MIN(forge_custom_maps_refresh(), MAXIMUM_PORT_MULTIPLAYER_LEVELS - 13);
+	for (level_index = 0; level_index < custom_count; level_index++)
+	{
+		char const *base_name = forge_custom_map_base_name(level_index);
+
+		_snprintf(port_custom_level_paths[level_index], sizeof(port_custom_level_paths[level_index]),
+			"levels\\test\\%s\\%s", base_name, base_name);
+		port_custom_level_paths[level_index][sizeof(port_custom_level_paths[level_index]) - 1] = 0;
+		port_multiplayer_levels[13 + level_index] = port_custom_level_paths[level_index];
+	}
+	port_multiplayer_level_count = (short)(13 + custom_count);
+
+	return;
+}
+#endif
+
 static boolean multiplayer_level_list_initialize(
 	struct widget_instance *widget,
 	struct event_record *event,
@@ -3120,7 +3156,14 @@ static boolean multiplayer_level_list_initialize(
 {
 	char map_name[256];
 	struct ui_widget_definition *definition = ui_widget_definition_get(widget->definition_tag_index);
+#ifdef HALO_LINUX
+	short level_count;
+
+	port_multiplayer_levels_build();
+	level_count = port_multiplayer_level_count;
+#else
 	short level_count = 13;
+#endif
 
 	match_vassert("c:\\halo\\SOURCE\\interface\\ui_widget_event_handler_functions.c", 1228,
 		definition->type == 2,
@@ -3128,7 +3171,11 @@ static boolean multiplayer_level_list_initialize(
 	match_vassert("c:\\halo\\SOURCE\\interface\\ui_widget_event_handler_functions.c", 1229,
 		definition->child_count == 3,
 		"expected 3 list items for 'multiplayer level list' widget");
+#ifdef HALO_LINUX
+	widget->generated_list = port_multiplayer_levels;
+#else
 	widget->generated_list = event_handler_functions.multiplayer_levels;
+#endif
 	widget->generated_count = level_count;
 	if (saved_game_file_retrieve_last_used_multiplayer_map(map_name))
 	{
@@ -3142,6 +3189,11 @@ static boolean multiplayer_level_list_initialize(
 		if (widget->data3C.selected_index == level_count)
 			widget->data3C.selected_index = 0;
 	}
+#ifdef HALO_LINUX
+	/* the Forge map played last, if it is still there */
+	if (forge_custom_map_selected() != NONE)
+		widget->data3C.selected_index = (short)(13 + forge_custom_map_selected());
+#endif
 	return TRUE;
 }
 
@@ -5710,10 +5762,21 @@ static boolean multiplayer_level_select(
 		definition->child_count == 3,
 		"expected 3 list items for 'multiplayer level list' widget");
 	level_list = widget->child->child;
+#ifdef HALO_LINUX
+	match_vassert("c:\\halo\\SOURCE\\interface\\ui_widget_event_handler_functions.c", 1298,
+		level_list->data3C.selected_index >= 0 && level_list->data3C.selected_index < port_multiplayer_level_count,
+		"invalid multiplayer level specified from 'multiplayer level list' list widget");
+	map_name = port_multiplayer_levels[level_list->data3C.selected_index];
+	/* a Forge map is its base map played with its layout */
+	forge_custom_map_select(level_list->data3C.selected_index >= 13
+		? (short)(level_list->data3C.selected_index - 13)
+		: NONE);
+#else
 	match_vassert("c:\\halo\\SOURCE\\interface\\ui_widget_event_handler_functions.c", 1298,
 		level_list->data3C.selected_index >= 0 && level_list->data3C.selected_index < 13,
 		"invalid multiplayer level specified from 'multiplayer level list' list widget");
 	map_name = event_handler_functions.multiplayer_levels[level_list->data3C.selected_index];
+#endif
 	file = fopen("d:\\map_automation.txt", "r");
 	if (file)
 	{

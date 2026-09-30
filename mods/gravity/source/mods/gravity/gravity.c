@@ -25,6 +25,7 @@ always has it. The choice itself is kept from map to map.
 #include "physics/physics.h"
 
 #include <stdio.h>
+#include <string.h>
 
 /* ---------- constants */
 
@@ -136,7 +137,7 @@ static void gravity_render(
 	return;
 }
 
-/* local games only (halo_mods_tick) */
+/* local and system link games (halo_mods_tick): every machine's physics */
 static void gravity_tick(
 	void)
 {
@@ -151,6 +152,10 @@ static void gravity_new_map(
 {
 	gravity_read_default();
 	global_gravity = gravity_globals.default_gravity;
+	/* a system link game has the gravity of its layout (every machine
+	alike), or the normal one */
+	if (game_connection() != _game_connection_local)
+		gravity_globals.choice_index = 0;
 
 	return;
 }
@@ -208,6 +213,41 @@ static struct halo_mod_menu const gravity_menu =
 	NULL
 };
 
+/* ---------- layouts (port/linux/game/forge_layout.c) */
+
+static void gravity_layout_save(
+	struct halo_layout_writer *writer)
+{
+	halo_layout_printf(writer, "gravity %s", gravity_choices[gravity_globals.choice_index].name);
+
+	return;
+}
+
+static void gravity_layout_clear(
+	void)
+{
+	gravity_globals.choice_index = 0;
+
+	return;
+}
+
+static void gravity_layout_load(
+	char const *line)
+{
+	short index;
+
+	if (strncmp(line, "gravity ", 8) == 0)
+	{
+		for (index = 0; index < NUMBER_OF_GRAVITY_CHOICES; index++)
+		{
+			if (strcmp(line + 8, gravity_choices[index].name) == 0)
+				gravity_globals.choice_index = index;
+		}
+	}
+
+	return;
+}
+
 /* ---------- the mod */
 
 static struct halo_mod const gravity_mod =
@@ -218,7 +258,12 @@ static struct halo_mod const gravity_mod =
 	gravity_tick,
 	gravity_new_map,
 	NULL,
-	&gravity_menu
+	&gravity_menu,
+	NULL,
+	NULL,
+	gravity_layout_save,
+	gravity_layout_clear,
+	gravity_layout_load
 };
 
 HALO_MOD_REGISTER(gravity_mod)

@@ -3265,7 +3265,7 @@ void main_loop(
 					debug_keys_update();
 					cheats_update();
 #ifdef HALO_LINUX
-					/* dev tools, when HALO_FORGE is set (port/linux/game/forge.c) */
+					/* dev tools, in games of the Forge game type (port/linux/game/forge.c) */
 					forge_update();
 #endif
 					player_control_update((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);

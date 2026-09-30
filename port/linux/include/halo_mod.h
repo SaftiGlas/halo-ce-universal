@@ -15,9 +15,11 @@ port/linux/game/mods.c.
 #ifndef __HALO_MOD_H
 #define __HALO_MOD_H
 
+struct halo_layout_writer;
+
 /* ---------- hooks */
 
-/* a page of the dev tools' menu (F3, D-pad right or, flying, X; HALO_FORGE)
+/* a page of the dev tools' menu (F3, D-pad right or, flying, X; Forge games)
 that a mod adds after the map's object tabs: rows of a label and a value, driven with
 the menu's own keys and buttons, so it works on a keyboard and a
 controller alike. Up and down choose a row; left and right change its
@@ -50,9 +52,13 @@ struct halo_mod
 	(forge_render); may be NULL */
 	void (*render)(void);
 	/* once a game tick (30 a second, whatever the frame rate), at the
-	start of game_tick (game/game.c) before units and physics update, only
-	in local games (not system link, not saved films): the place for
-	changes to the game state such as gravity; may be NULL */
+	start of game_tick (game/game.c) before units and physics update, in
+	local and system link games (not saved films): the place for changes to
+	the game state such as gravity. In system link the host's objects are
+	the game's (network_distributed.c) and its clients copy them: what
+	decides the game (killing, teleporting) only where
+	halo_mods_authoritative() is TRUE; what every machine's physics needs
+	(gravity) everywhere. May be NULL */
 	void (*tick)(void);
 	/* once a map has been loaded and its objects placed, before its first
 	tick, in every game (local or not): the place to undo what the last
@@ -75,7 +81,21 @@ struct halo_mod
 	when the mod removes the object under the crosshair itself (so it can
 	bring it back); else the tools remove it. May be NULL */
 	int (*remove_object)(void);
+
+	/* layouts (port/linux/game/forge_layout.c): a layout keeps what Forge
+	changed in a map, the tools' objects and each mod's part. layout_save
+	writes the mod's part, lines of text (halo_layout_printf, no line
+	breaks); layout_clear puts the mod's part back to how the map has it;
+	layout_load gets the lines of the mod's part one by one, after a
+	layout_clear. All three may be NULL, and run only in local games. */
+	void (*layout_save)(struct halo_layout_writer *writer);
+	void (*layout_clear)(void);
+	void (*layout_load)(char const *line);
 };
+
+/* writes one line of a mod's part of a layout (layout_save) */
+struct halo_layout_writer;
+void halo_layout_printf(struct halo_layout_writer *writer, char const *format, ...);
 
 /* at most this many mods run; more are refused with a message on stderr */
 #define HALO_MOD_MAXIMUM_COUNT 32
@@ -84,11 +104,17 @@ void halo_mod_register(struct halo_mod const *mod);
 void halo_mods_update(void);
 void halo_mods_render(void);
 void halo_mods_tick(void);
+/* TRUE in a local game and on the host of a system link game, whose game
+state is the game's; FALSE on a system link client */
+int halo_mods_authoritative(void);
 void halo_mods_new_map(void);
 void halo_mods_render_world(void);
 /* the menu pages of every mod, in registration order (game/forge.c) */
 int halo_mods_grab(void);
 int halo_mods_remove(void);
+/* the layout hooks of every mod (forge_layout.c) */
+short halo_mods_count(void);
+struct halo_mod const *halo_mods_get(short index);
 short halo_mods_menu_page_count(void);
 struct halo_mod_menu const *halo_mods_menu_page(short index);
 

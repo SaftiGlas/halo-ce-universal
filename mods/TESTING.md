@@ -15,7 +15,7 @@ Background: `port/linux/README.md`, "Source mods".
 
   With fzf installed the launcher is a list: **Space** or **Tab** turns the
   mod under the cursor on or off, **Enter** builds and runs the game (with
-  `SDL_VIDEODRIVER=x11`, and `HALO_FORGE=1` when a forge mod is on),
+  `SDL_VIDEODRIVER=x11`; the tools are on in the Forge game type),
   **Ctrl-B** only builds, **Ctrl-L** chooses the map to open at (see
   section 0), **Esc** quits. Without fzf a number turns a mod on or off,
   `b` is "Build with mods", `r` builds and runs, `m` chooses the map,
@@ -157,7 +157,7 @@ Keys: `mods/checkpoint_handler/source/mods/checkpoint_handler/checkpoint_handler
       check that **F6** now takes the checkpoint and **F5** does nothing.
       Change it back.
 
-## 2. forge_ui (only this mod on; the launcher sets `HALO_FORGE=1`)
+## 2. forge_ui (only this mod on; in a Forge game)
 
 Keys of the menu are the dev tools' own (`port/linux/src/xinput_sdl.c`,
 `halo_linux_forge_read_keys`); forge_ui changes only how the menu looks and
@@ -205,7 +205,7 @@ what it remembers.
 - [ ] Load another map that has the same tag (for example a warthog):
       the menu chooses it again; with a tag the map lacks, row 1.
 
-## 3. forge_edit (only this mod on; the launcher sets `HALO_FORGE=1`)
+## 3. forge_edit (only this mod on; in a Forge game)
 
 Everything is on the **Edit** tab of the dev tools' menu (F3 / D-pad right;
 **LB / RB**, Page Up / Page Down, or T / V change tab; up/down
@@ -275,7 +275,7 @@ appear in the terminal at the top left of the game.
       with `mod forge_ui: ... does not apply to port/linux/game/forge.c`.
       Undo the change.
 
-## 6. gravity (the tick and new map hooks; the launcher sets `HALO_FORGE=1`)
+## 6. gravity (the tick and new map hooks; in a Forge game)
 
 Everything is in the dev tools' menu now: **F3** (D-pad right on a
 controller) opens it, **LB / RB** (or T / V) change tab until **Gravity**, and
@@ -304,7 +304,7 @@ left/right change the row. No Ctrl key is used.
 - [ ] With **F9** (checkpoint_handler) at moon gravity: the checkpoint
       comes back and gravity stays moon.
 
-## 7. forge_zones (kill, gravity and teleport zones; the launcher sets `HALO_FORGE=1`)
+## 7. forge_zones (kill, gravity and teleport zones; in a Forge game)
 
 All of it is on the **Zones** tab of the dev tools' menu (F3 / D-pad right;
 LB / RB or T / V change tab; up/down choose a row, left/right change it,

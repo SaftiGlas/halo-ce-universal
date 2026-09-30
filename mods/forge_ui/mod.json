@@ -1,8 +1,5 @@
 {
   "name": "Forge UI",
   "version": "2.0.0",
-  "description": "The dev tools' menu after the forge menu of Halo: Reach: a dark panel with the categories down the left (the map's objects under Spawn, the mods' pages under Tools) and their rows beside them, the chosen object's tag name under the rows, the keys on caps along the bottom, highlights that glide and a panel that fades in. It keeps its place when closed and across restarts (u:\\forge_ui.txt in the save root).",
-  "env": {
-    "HALO_FORGE": "1"
-  }
+  "description": "The dev tools' menu after the forge menu of Halo: Reach: a dark panel with the categories down the left (the map's objects under Spawn, the mods' pages under Tools) and their rows beside them, the chosen object's tag name under the rows, the keys on caps along the bottom, highlights that glide and a panel that fades in. It keeps its place when closed and across restarts (u:\\forge_ui.txt in the save root)."
 }

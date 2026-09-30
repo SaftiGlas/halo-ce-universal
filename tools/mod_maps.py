@@ -52,6 +52,7 @@ MULTIPLAYER_TITLES = {
 VARIANTS = (
     "slayer", "team_slayer", "ctf", "king", "team_king", "oddball", "team_oddball",
     "race", "team_race", "rally", "elimination", "stalker", "accumulation", "ironctf",
+    "forge",
 )
 DIFFICULTIES = ("easy", "normal", "hard", "impossible")
 

@@ -475,7 +475,7 @@ void interface_draw_fullscreen_overlays(
 	hud_render_timer();
 	terminal_draw();
 #ifdef HALO_LINUX
-	/* dev tools, when HALO_FORGE is set (port/linux/game/forge.c) */
+	/* dev tools, in games of the Forge game type (port/linux/game/forge.c) */
 	forge_render();
 #endif
 	main_framerate_render();

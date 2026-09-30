@@ -2,8 +2,11 @@
 FORGE.C
 
 In-game dev tools for the native ports (port/linux, port/windows,
-port/android), off unless HALO_FORGE is set (see port/linux/README.md, "Dev
-tools"). The byte-matching build never compiles this file.
+port/android): on in local games of the Forge game type, the last of the
+default game types (a slayer variant with GAME_VARIANT_FORGE_FLAG,
+game/game_engine.c), or in every game with HALO_FORGE=all (see
+port/linux/README.md, "Dev tools"). The byte-matching build never compiles
+this file.
 
 	F2 / D-pad up
 	        detach the camera from the player and fly it freely, through
@@ -66,6 +69,7 @@ system link game must compute alike, so they work only in local games.
 #include "camera/observer.h"
 #include "cseries/cseries_windows.h"
 #include "game/game.h"
+#include "game/game_engine.h"
 #include "game/player_control.h"
 #include "game/players.h"
 #include "interface/interface.h"
@@ -715,9 +719,15 @@ static void forge_take(
 
 		object_index = object_new(&data);
 		if (object_index == NONE)
+		{
 			terminal_printf(global_real_argb_orange, "forge: %s could not be created", tag_get_name(definition_index));
+		}
 		else
+		{
+			/* kept by the layout (forge_layout.c) */
+			forge_layout_note_spawned(object_index);
 			forge_hold_begin(object_index, TRUE);
+		}
 	}
 
 	return;
@@ -776,6 +786,7 @@ static void forge_remove_at_crosshair(
 	{
 		terminal_printf(global_real_argb_green, "forge: removed %s",
 			tag_get_name(object_get(object_index)->definition_index));
+		forge_layout_note_removed(object_index);
 		object_delete(object_index);
 	}
 
@@ -909,6 +920,7 @@ static void forge_hold_end(
 
 	if (remove_object || (cancel && forge_globals.held_spawned))
 	{
+		forge_layout_note_removed(object_index);
 		object_delete(object_index);
 		if (remove_object)
 			terminal_printf(global_real_argb_green, "forge: removed %s", name);
@@ -925,6 +937,9 @@ static void forge_hold_end(
 		}
 		else
 		{
+			/* kept by the layout: a map's own object as moved, one the game
+			made (a spawn point's weapon) as one of the tools' (forge_layout.c) */
+			forge_layout_note_placed(object_index);
 			terminal_printf(global_real_argb_green, "forge: placed %s", name);
 		}
 		object->object.translational_velocity = *global_zero_vector3d;
@@ -1410,6 +1425,24 @@ void forge_render(
 	forge_globals.active = FALSE;
 
 	return;
+}
+
+/* ---------- whether the tools are on (halo_forge.h) */
+
+int forge_mode_on(
+	void)
+{
+	static int every_game = -1;
+
+	if (every_game < 0)
+	{
+		char const *text = getenv("HALO_FORGE");
+
+		every_game = text && strcmp(text, "all") == 0;
+	}
+
+	return every_game ||
+		(game_engine_variant_is_forge() && game_connection() == _game_connection_local);
 }
 
 /* ---------- what the flying camera asks the tools (halo_forge.h) */

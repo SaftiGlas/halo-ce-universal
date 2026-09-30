@@ -122,7 +122,7 @@ belongs to the stashed post-processing.
 | --- | --- | --- |
 | `forge_ui` 2.0 | **patch** of `game/forge.c` (`001-forge-menu.patch`, ~700 lines) | the restyled menu. Fragile: breaks whenever `forge.c` changes. |
 | `forge_edit` 2.0 | added unit | Edit tab |
-| `forge_zones` 2.0 | added unit (1.6k lines) | Zones tab (kill, gravity, teleport); needs `HALO_FORGE=1` |
+| `forge_zones` 2.0 | added unit (1.6k lines) | Zones tab (kill, gravity, teleport); in Forge games |
 | `forge_ai` 1.0 | added unit | AI tab; needs imported actor variants |
 | `gravity` 1.1 | added unit | Gravity tab |
 | `checkpoint_handler` | added unit | F5 / F9 |
@@ -130,8 +130,9 @@ belongs to the stashed post-processing.
 | `enabled.json` | old launcher state | looks superseded by `mods.json`; remove if unused |
 | `FORGE_PLAN.md`, `TESTING.md`, this file | docs | |
 
-Every forge mod sets `"env": {"HALO_FORGE": "1"}`, which is what switches the
-tools on.
+The tools are on in local games of the **Forge** game type (the last
+default game type, `build_game_variant_forge`, `GAME_VARIANT_FORGE_FLAG`);
+`HALO_FORGE=all` turns them on in every game for development.
 
 ## 6. What must change to ship Forge to other users
 
@@ -169,12 +170,11 @@ Options:
 any edit. If the Reach-style menu is the intended UI, merge it into `forge.c`
 and drop the patch (and the "must apply exactly" failure mode).
 
-### 6.4 Replace the `HALO_FORGE` environment switch
-Tools are off unless the env var is set, and only the mods' `mod.json`
-sets it. For users: add a proper setting (e.g. `game.forge`, in
-`port_config.c` and the settings file/UI) and/or a menu entry or launch
-option. Consider showing a "Forge" entry in the pause/main menu so it is
-discoverable, and printing the key help on first use.
+### 6.4 Replace the `HALO_FORGE` environment switch (done)
+Forge is a game type: "Forge" is added after the 26 default game types
+(`playlist_profile.c`; its name and description are built-in strings in
+`text_group.c`), and `forge_mode_on()` (`forge.c`) is TRUE in local games
+of it. Still open: printing the key help on first use.
 
 ### 6.5 Base-code changes worth making permanent
 From the POC and this branch, the following are the minimal, reviewable base
@@ -201,12 +201,32 @@ Suggested cleanups when upstreaming:
 Not yet run in game: zones (kill, gravity, teleport). Work through
 `mods/TESTING.md` section 7 before release.
 
-### 6.7 Layout save / load (the missing feature)
-Nothing placed survives a map reload, checkpoint revert or restart. This is
-the feature users will expect first. Needed: per-map file next to
-`forge_ui.txt` (JSON; a parser, `json.c`, is in the shader stash) with
-objects (tag **name**, not index), removed map objects, zones, gravity; load after `new_map` and
-after a checkpoint revert. Zones were designed to be serialisable.
+### 6.7 Layout save / load (done, first version)
+`port/linux/game/forge_layout.c` and the "Map" tab: up to 16 layouts a map
+in `u:\forge\<map>\layout_NN.txt` (text, tag **names**), with the objects
+the tools made, the map's own objects they moved or removed (found again
+by tag and placement), and each mod's part through the `layout_save`,
+`layout_clear` and `layout_load` hooks of `struct halo_mod` (zones, AI
+characters and waypoints, gravity, sky). The layout chosen with "Play on
+this map" (`play.txt`) loads at every new map in any local game, Forge or
+not. New layouts are named "Layout N"; `python -m tools.mod_launcher
+layouts rename MAP N NAME` renames one. Automated test hook:
+`debug.forge_layout_save` / `HALO_FORGE_LAYOUT_SAVE`.
+
+Layouts with "Show in the map list" (`listed 1`) are maps of their own in
+the multiplayer map list of local games, after the 13 maps, with the base
+map's picture and the layout's name (`port_multiplayer_levels` in
+`ui_widget_event_handler_functions.c`, `mp_level_select_list_update_displayed_items`,
+the lobby's map name, and `fallback_string` string indices 1000+/2000+ in
+`text_group.c`); `game.start_layout` starts one.
+
+Still open: renaming in the game (text entry); the map list remembers the
+game's maps only (a Forge map chosen last is found again while the game
+runs); a checkpoint revert restores
+the game state as it was, not the layout; weapons of the map's spawn points
+and vehicles the game respawns are not the map's own objects to a layout
+(moving one saves a copy); the game type's rules still apply in normal games
+(slayer's vehicle set keeps only warthogs).
 
 ### 6.8 Cross-map tag import: product decisions
 - It needs the user's own campaign `.map` files (donor maps); nothing may be

@@ -126,6 +126,18 @@ int halo_mods_grab(
 	return FALSE;
 }
 
+short halo_mods_count(
+	void)
+{
+	return halo_mod_globals.count;
+}
+
+struct halo_mod const *halo_mods_get(
+	short index)
+{
+	return index >= 0 && index < halo_mod_globals.count ? halo_mod_globals.mods[index] : NULL;
+}
+
 int halo_mods_remove(
 	void)
 {
@@ -184,14 +196,19 @@ void halo_mods_render(
 }
 
 /* at the start of every game tick (game/game.c) */
+int halo_mods_authoritative(
+	void)
+{
+	return game_connection() == _game_connection_local || game_connection() == _game_connection_network_server;
+}
+
 void halo_mods_tick(
 	void)
 {
 	short mod_index;
 
-	/* system link machines must compute the game state alike, and a film
-	replays what was recorded */
-	if (game_connection() != _game_connection_local)
+	/* a film replays what was recorded */
+	if (game_connection() == _game_connection_film_playback)
 		return;
 
 	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
@@ -214,6 +231,8 @@ void halo_mods_new_map(
 		if (halo_mod_globals.mods[mod_index]->new_map)
 			halo_mod_globals.mods[mod_index]->new_map();
 	}
+	/* then the layout that plays on this map, over what the mods set up */
+	forge_layout_new_map();
 
 	return;
 }

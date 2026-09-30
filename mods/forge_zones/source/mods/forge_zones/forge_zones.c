@@ -1043,7 +1043,9 @@ static void forge_zones_tick_teleport(
 	return;
 }
 
-/* local games only (halo_mods_tick) */
+/* local and system link games (halo_mods_tick): kill and teleport zones
+where the game state is decided (a local game, the host), gravity zones on
+every machine, whose physics moves its own player */
 static void forge_zones_tick(
 	void)
 {
@@ -1056,9 +1058,11 @@ static void forge_zones_tick(
 
 	if (forge_zones_globals.zone_count > 0)
 	{
-		forge_zones_tick_kill();
+		if (halo_mods_authoritative())
+			forge_zones_tick_kill();
 		forge_zones_tick_gravity();
-		forge_zones_tick_teleport();
+		if (halo_mods_authoritative())
+			forge_zones_tick_teleport();
 	}
 	else
 	{
@@ -1521,6 +1525,68 @@ static struct halo_mod_menu const forge_zones_menu =
 
 /* ---------- the mod */
 
+/* ---------- layouts (port/linux/game/forge_layout.c) */
+
+static void forge_zones_layout_save(
+	struct halo_layout_writer *writer)
+{
+	short index;
+
+	for (index = 0; index < forge_zones_globals.zone_count; index++)
+	{
+		struct forge_zone const *zone = &forge_zones_globals.zones[index];
+
+		halo_layout_printf(writer, "zone %d %d %.4f %.4f %.4f %.5f %.4f %.4f %.4f %d %d",
+			zone->kind, zone->setting_index, zone->center.x, zone->center.y, zone->center.z, zone->yaw,
+			zone->half_size.i, zone->half_size.j, zone->half_size.k, zone->channel, zone->direction);
+	}
+
+	return;
+}
+
+static void forge_zones_layout_clear(
+	void)
+{
+	forge_zones_new_map();
+
+	return;
+}
+
+static void forge_zones_layout_load(
+	char const *line)
+{
+	struct forge_zone zone;
+	int kind;
+	int setting_index;
+	int channel;
+	int direction;
+	float values[7];
+
+	if (forge_zones_globals.zone_count < FORGE_ZONES_MAXIMUM_ZONES &&
+		sscanf(line, "zone %d %d %f %f %f %f %f %f %f %d %d", &kind, &setting_index,
+			&values[0], &values[1], &values[2], &values[3], &values[4], &values[5], &values[6],
+			&channel, &direction) == 11 &&
+		kind >= 0 && kind < NUMBER_OF_FORGE_ZONE_KINDS)
+	{
+		memset(&zone, 0, sizeof(zone));
+		zone.kind = (short)kind;
+		zone.setting_index = (short)setting_index;
+		zone.center.x = values[0];
+		zone.center.y = values[1];
+		zone.center.z = values[2];
+		zone.yaw = values[3];
+		zone.half_size.i = values[4];
+		zone.half_size.j = values[5];
+		zone.half_size.k = values[6];
+		zone.channel = (short)PIN(channel, 1, FORGE_ZONES_MAXIMUM_CHANNEL);
+		zone.direction = (short)PIN(direction, 0, NUMBER_OF_FORGE_ZONE_DIRECTIONS - 1);
+		zone.setting_index = (short)PIN(setting_index, 0, MAX(forge_zone_kinds[kind].setting_count - 1, 0));
+		forge_zones_globals.zones[forge_zones_globals.zone_count++] = zone;
+	}
+
+	return;
+}
+
 static struct halo_mod const forge_zones_mod =
 {
 	"forge_zones",
@@ -1530,7 +1596,11 @@ static struct halo_mod const forge_zones_mod =
 	forge_zones_new_map,
 	forge_zones_render_world,
 	&forge_zones_menu,
-	forge_zones_grab
+	forge_zones_grab,
+	NULL,
+	forge_zones_layout_save,
+	forge_zones_layout_clear,
+	forge_zones_layout_load
 };
 
 HALO_MOD_REGISTER(forge_zones_mod)

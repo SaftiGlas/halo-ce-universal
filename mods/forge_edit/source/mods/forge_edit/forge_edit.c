@@ -184,6 +184,9 @@ static long forge_edit_create(
 	object_index = object_new(&data);
 	if (object_index != NONE && record->scale != 1.f)
 		objects_scripting_set_scale(object_index, record->scale, 0);
+	/* kept by the tools' layout (port/linux/game/forge_layout.c) */
+	if (object_index != NONE)
+		forge_layout_note_spawned(object_index);
 
 	return object_index;
 }
@@ -258,6 +261,7 @@ static void forge_edit_delete(
 		}
 		record = &forge_edit_globals.removed[forge_edit_globals.removed_count++];
 		forge_edit_record(object_index, record);
+		forge_layout_note_removed(object_index);
 		object_delete(object_index);
 		terminal_printf(global_real_argb_green, "forge_edit: removed %s (Edit tab, Undo remove brings it back)",
 			forge_edit_object_name(record->definition_index));
@@ -327,6 +331,9 @@ static void forge_edit_update(
 	if (local_player_get_player_index(FORGE_EDIT_LOCAL_PLAYER_INDEX) == NONE)
 		return;
 	forge_edit_check_map();
+	/* only in Forge games: elsewhere Delete is the game's */
+	if (!forge_mode_on())
+		return;
 
 	/* the tools' own keys come first while their menu is open or they hold
 	an object; a cutscene's objects are the cutscene's */

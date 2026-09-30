@@ -930,6 +930,10 @@ struct game_variant *build_game_variant_king(
 	struct game_variant *variant);
 struct game_variant *build_game_variant_team_king(
 	struct game_variant *variant);
+#ifdef HALO_LINUX
+struct game_variant *build_game_variant_forge(
+	struct game_variant *variant);
+#endif
 
 /* ---------- globals */
 
@@ -5996,11 +6000,47 @@ struct game_variant *game_engine_get_variant_by_name(
 		result = *build_game_variant_king(&temporary);
 	else if (csstrcmp(name, "team_king") == 0)
 		result = *build_game_variant_team_king(&temporary);
+#ifdef HALO_LINUX
+	else if (csstrcmp(name, "forge") == 0)
+		result = *build_game_variant_forge(&temporary);
+#endif
 
 	*variant = result;
 
 	return variant;
 }
+
+#ifdef HALO_LINUX
+/* port: the Forge game type, slayer with no score to reach, no respawn
+wait, no suicide penalty and every vehicle, and the Forge flag that turns
+the dev tools on (port/linux/game/forge.c). It is the last of the default game variants
+(saved games/playlist_profile.c). */
+struct game_variant *build_game_variant_forge(
+	struct game_variant *variant)
+{
+	struct game_variant result = { 0 };
+
+	build_game_variant_slayer(&result);
+	result.universal_variant.score_to_win = 999;
+	result.universal_variant.respawn_time = 0;
+	result.universal_variant.respawn_time_growth = 0;
+	result.universal_variant.suicide_penalty = 0;
+	/* every vehicle the map has (slayer's set is warthogs only) */
+	result.universal_variant.vehicle_set = 0;
+	result.game_engine_variant.slayer.no_kill_penalty = TRUE;
+	result.flags |= GAME_VARIANT_FORGE_FLAG;
+
+	*variant = result;
+
+	return variant;
+}
+
+boolean game_engine_variant_is_forge(
+	void)
+{
+	return game_engine_running() && (global_variant.flags & GAME_VARIANT_FORGE_FLAG) != 0;
+}
+#endif
 
 boolean game_engine_get_goal_in_use(
 	short goal_index)

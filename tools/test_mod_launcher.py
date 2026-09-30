@@ -245,3 +245,44 @@ def test_the_fzf_rows_of_a_donors_tags_are_marked(mods, tmp_path):
     assert launcher.saved_imports(mods) == []
     assert mod_fzf.main(["--mods-dir", str(mods), "import-toggle", ROCK]) == 0
     assert launcher.saved_imports(mods) == [ROCK]
+
+
+def test_layouts_are_listed_with_the_one_that_plays(tmp_path, mods, capsys):
+    from tools import mod_layouts
+
+    forge = tmp_path / "saves" / "u" / "forge" / "bloodgulch"
+    write(forge / "layout_01.txt", "name Layout 1\n[forge]\n")
+    write(forge / "layout_03.txt", "name Big base\nlisted 1\n[forge]\n")
+    write(forge / "layout_02.txt", "[forge]\n")
+    write(forge / "play.txt", "3\n")
+    found = mod_layouts.layouts(tmp_path / "saves", "bloodgulch")
+    assert found == [
+        {"slot": 1, "name": "Layout 1", "plays": False, "listed": False},
+        {"slot": 2, "name": "Layout 2", "plays": False, "listed": False},
+        {"slot": 3, "name": "Big base", "plays": True, "listed": True},
+    ]
+    assert launcher.main(["--mods-dir", str(mods), "layouts", "--saves", str(tmp_path / "saves")]) == 0
+    assert "3. Big base  (in the map list, plays on this map)" in capsys.readouterr().out
+
+
+def test_a_layout_is_renamed_on_its_first_line(tmp_path, mods):
+    from tools import mod_layouts
+
+    saves = tmp_path / "saves"
+    path = write(saves / "u" / "forge" / "bloodgulch" / "layout_02.txt", "name Layout 2\nversion 1\n[forge]\n")
+    assert launcher.main(["--mods-dir", str(mods), "layouts", "rename", "bloodgulch", "2", "Red", "base",
+                          "--saves", str(saves)]) == 0
+    assert path.read_text().splitlines() == ["name Red base", "version 1", "[forge]"]
+    with pytest.raises(mod_layouts.LayoutError):
+        mod_layouts.rename(saves, "bloodgulch", 5, "missing")
+    with pytest.raises(mod_layouts.LayoutError):
+        mod_layouts.rename(saves, "bloodgulch", 2, "x" * 64)
+
+
+def test_a_layout_goes_with_a_multiplayer_launch():
+    launch = launcher.with_layout({"map": "bloodgulch", "variant": "slayer", "difficulty": ""}, 3)
+    assert launcher.launch_environment(launch)["HALO_START_LAYOUT"] == "3"
+    with pytest.raises(launcher.LauncherError):
+        launcher.with_layout({"map": "a10", "variant": "", "difficulty": "hard"}, 3)
+    with pytest.raises(launcher.LauncherError):
+        launcher.with_layout({"map": "bloodgulch", "variant": "slayer", "difficulty": ""}, 17)
