@@ -150,7 +150,9 @@ static struct
 static boolean forge_ai_local_game(
 	void)
 {
-	return game_connection() == _game_connection_local &&
+	/* (or the host of a system link game: the AI runs there, and its
+	characters reach the clients as its other units do) */
+	return halo_mods_authoritative() &&
 		local_player_get_player_index(FORGE_AI_LOCAL_PLAYER_INDEX) != NONE;
 }
 
@@ -355,11 +357,13 @@ static short forge_ai_send_patrols(
 	void)
 {
 	short index;
+	/* (counted once: counting packs the list) */
+	short unit_count;
 	short sent = 0;
 
 	if (forge_ai_globals.waypoint_count < 2 || !forge_ai_globals.command_lists)
 		return 0;
-	for (index = 0; index < forge_ai_living_units(); index++)
+	for (index = 0, unit_count = forge_ai_living_units(); index < unit_count; index++)
 	{
 		ai_scripting_command_list_by_unit(forge_ai_globals.units[index], forge_ai_globals.command_list_index);
 		sent++;
@@ -384,10 +388,12 @@ static void forge_ai_repatrol(
 	void)
 {
 	short index;
+	/* (counted once: counting packs the list) */
+	short unit_count;
 
 	if (forge_ai_globals.waypoint_count < 2 || !forge_ai_globals.command_lists || !forge_ai_globals.patrol_new)
 		return;
-	for (index = 0; index < forge_ai_living_units(); index++)
+	for (index = 0, unit_count = forge_ai_living_units(); index < unit_count; index++)
 	{
 		struct unit_datum *unit = unit_try_and_get(forge_ai_globals.units[index]);
 		struct actor_datum *actor;
@@ -860,8 +866,10 @@ static int forge_ai_menu_row_change(
 		if (direction == 0)
 		{
 			short index;
+			/* (counted once: counting packs the list) */
+			short unit_count;
 
-			for (index = 0; index < forge_ai_living_units(); index++)
+			for (index = 0, unit_count = forge_ai_living_units(); index < unit_count; index++)
 				object_delete(forge_ai_globals.units[index]);
 			forge_ai_globals.unit_count = 0;
 		}
@@ -894,6 +902,8 @@ static void forge_ai_layout_save(
 	struct halo_layout_writer *writer)
 {
 	short index;
+	/* (counted once: counting packs the list) */
+	short unit_count;
 
 	halo_layout_printf(writer, "settings %d %d %d %d", (int)forge_ai_globals.friendly,
 		(int)forge_ai_globals.attack_on_sight, (int)forge_ai_globals.patrol_new, (int)forge_ai_globals.show_waypoints);
@@ -903,12 +913,13 @@ static void forge_ai_layout_save(
 
 		halo_layout_printf(writer, "waypoint %.4f %.4f %.4f", point->x, point->y, point->z);
 	}
-	for (index = 0; index < forge_ai_living_units(); index++)
+	for (index = 0, unit_count = forge_ai_living_units(); index < unit_count; index++)
 	{
 		struct object_datum *object = object_get(forge_ai_globals.units[index]);
 
-		/* the dead lie where they fell: only the living are kept */
-		if (object->object.body_vitality <= 0.f)
+		/* the dead lie where they fell: only the living are kept; and none
+		for the clients of a system link game, who have the host's */
+		if (object->object.body_vitality <= 0.f || forge_layout_saving_for_client())
 			continue;
 		halo_layout_printf(writer, "character %d %.4f %.4f %.4f %.5f %.5f %s",
 			(int)forge_ai_globals.unit_friendly[index],
@@ -924,8 +935,10 @@ static void forge_ai_layout_clear(
 	void)
 {
 	short index;
+	/* (counted once: counting packs the list) */
+	short unit_count;
 
-	for (index = 0; index < forge_ai_living_units(); index++)
+	for (index = 0, unit_count = forge_ai_living_units(); index < unit_count; index++)
 		object_delete(forge_ai_globals.units[index]);
 	forge_ai_globals.unit_count = 0;
 	forge_ai_globals.waypoint_count = 0;
@@ -1036,7 +1049,7 @@ static void forge_ai_render_world(
 	real_argb_color color;
 
 	if (!forge_ai_globals.show_waypoints || forge_ai_globals.waypoint_count == 0 ||
-		game_connection() != _game_connection_local)
+		game_connection() == _game_connection_film_playback)
 		return;
 
 	color.alpha = 0.9f;

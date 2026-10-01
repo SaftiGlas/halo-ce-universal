@@ -91,7 +91,7 @@ static void gravity_update(
 {
 	gravity_globals.labelled = local_player_get_player_index(GRAVITY_LOCAL_PLAYER_INDEX) != NONE &&
 		gravity_globals.choice_index != 0 &&
-		game_connection() == _game_connection_local;
+		game_connection() != _game_connection_film_playback;
 
 	return;
 }
@@ -189,9 +189,10 @@ static int gravity_menu_row_change(
 {
 	if (direction != 0)
 	{
-		if (game_connection() != _game_connection_local)
+		if (!halo_mods_authoritative())
 		{
-			terminal_printf(global_real_argb_orange, "gravity: changes only in local games");
+			/* (its layout takes it to its clients, forge_layout.c) */
+			terminal_printf(global_real_argb_orange, "gravity: the gravity is the host's");
 		}
 		else
 		{

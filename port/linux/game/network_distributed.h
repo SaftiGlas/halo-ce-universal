@@ -57,6 +57,9 @@ enum
 	/* the host's Forge layout of the map, in parts, to a client that has
 	loaded (reliable; port/linux/game/forge_layout.c) */
 	_distributed_message_forge_layout,
+	/* a client's Forge tools ask the host to spawn, move or remove an
+	object (reliable; forge_layout.c) */
+	_distributed_message_forge_edit,
 
 	NUMBER_OF_DISTRIBUTED_MESSAGES
 };

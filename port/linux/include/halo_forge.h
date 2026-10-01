@@ -1,9 +1,9 @@
 /*
 HALO_FORGE.H
 
-The in-game dev tools of the native ports, on in local games of the Forge
-game type (a slayer variant among the default game types), or in every
-game with HALO_FORGE=all (port/linux/game/forge.c). Shared by the game, through
+The in-game dev tools of the native ports, on in local and system link
+games of the Forge game type (a slayer variant among the default game
+types), or in every game with HALO_FORGE=all (port/linux/game/forge.c). Shared by the game, through
 halo_linux_source_fixups.h, and the platform layer, which reads their keys
 (port/linux/src/xinput_sdl.c).
 */
@@ -41,9 +41,9 @@ struct halo_linux_forge_keys
 	float pad_look_x; /* the right stick, -1 to 1, right and up positive */
 	float pad_look_y;
 };
-/* TRUE while the tools are on: a local game of the Forge game type
-(GAME_VARIANT_FORGE_FLAG), or any game with HALO_FORGE=all; for the
-platform layer and for mods */
+/* TRUE while the tools are on: a local or system link game of the Forge
+game type (GAME_VARIANT_FORGE_FLAG), or any game with HALO_FORGE=all; for
+the platform layer and for mods */
 int forge_mode_on(void);
 /* the keys as held now; FALSE, with nothing held, unless the tools are on
 and the console is closed */
@@ -54,6 +54,13 @@ void halo_linux_forge_capture_menu_keys(int capture);
 /* while TRUE (the camera flies), the D-pad's up and the shoulder buttons
 stop driving controller 1 */
 void halo_linux_forge_set_flying(int flying);
+/* while TRUE (a name is being typed, forge_text_entry_begin), the keyboard
+drives neither controller 1 nor the mods' keys (halo_mod_key_down);
+halo_linux_forge_read_text_keys still reads it: whether each of the first
+count keys is held, by SDL scancode, all at once (nothing held while the
+console is open) */
+void halo_linux_forge_capture_text(int capture);
+void halo_linux_forge_read_text_keys(unsigned char *keys, int count);
 void forge_update(void);
 void forge_render(void);
 
@@ -70,6 +77,14 @@ int forge_camera_turning(void);
 float forge_camera_orbit_distance(void);
 float forge_camera_zoom(float step);
 void forge_flying_camera_moved(float const position[3], float const forward[3]);
+
+/* asks for a line of text, typed on the keyboard over the tools' menu:
+letters, digits, space and a few marks; backspace deletes, enter (or A)
+takes it and calls done with it, escape (or B) leaves it. initial is what
+the line starts as, maximum_length the most characters it may have. FALSE
+when a line is being typed already. */
+int forge_text_entry_begin(char const *prompt, char const *initial, unsigned long maximum_length,
+	void (*done)(char const *text));
 
 /* layouts (port/linux/game/forge_layout.c) */
 /* a new map, after the mods' new map hooks: notes the map's own objects,
@@ -96,17 +111,37 @@ short forge_custom_maps_refresh(void);
 short forge_custom_map_base_index(short index);
 char const *forge_custom_map_base_name(short index);
 wchar_t const *forge_custom_map_title(short index);
+/* what the layout's "description" line says, or NULL when it has none */
+wchar_t const *forge_custom_map_description(short index);
 void forge_custom_map_select(short index);
 short forge_custom_map_selected(void);
 int forge_custom_map_select_by_name(char const *map_name, short slot);
 /* system link (port/linux/game/network_distributed.c): the host sends the
-layout of the map to a client that has loaded it; the client applies what
+layout of the map to a client that has loaded it, and again to every
+client when the tools or a mod have changed it; the client applies what
 the host's objects do not bring (scenery, devices, the mods' parts). While
 it does, forge_layout_loading_for_client is TRUE, and mods leave out what
-is the host's (forge_ai's characters). */
+is the host's (forge_ai's characters); while the host writes that text,
+forge_layout_saving_for_client is TRUE, and mods leave the same out of
+what they save (it only moves about, and would be sent over and over). */
 void forge_layout_send_to_client(long machine_index);
 void forge_layout_handle_message(void const *payload, unsigned long size);
 int forge_layout_loading_for_client(void);
+int forge_layout_saving_for_client(void);
+/* a client's tools change nothing themselves: they ask the host, which
+spawns an object of the definition at position, or moves or removes its
+object (object_index when the client has the host's object at that index,
+else the one of the definition nearest original). FALSE when this machine
+is not a client. The host's answer is its objects and its layout. */
+enum
+{
+	_forge_edit_spawn = 0,
+	_forge_edit_move,
+	_forge_edit_remove
+};
+int forge_layout_client_edit(int kind, long object_index, long definition_index, float const original[3],
+	float const position[3], float const forward[3], float const up[3]);
+void forge_layout_handle_edit(void const *payload, unsigned long size);
 /* the base map's name as the game shows it ("Blood Gulch") */
 char const *forge_custom_map_base_title(short index);
 /* string indices, past the end of every string list, that the menus show

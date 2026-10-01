@@ -20,7 +20,7 @@
  A taken or picked up object is held where the crosshair points (or, not
  flying, where the player looks), standing on the surface there, until it
  is placed:
-@@ -81,6 +94,7 @@
+@@ -94,6 +107,7 @@
  #include "physics/collisions.h"
  #include "rasterizer/rasterizer.h"
  #include "render/render.h"
@@ -28,7 +28,7 @@
  #include "tag_files/tag_files.h"
  #include "tag_files/tag_groups.h"
  #include "text/draw_string.h"
-@@ -88,6 +102,7 @@
+@@ -101,6 +115,7 @@
  #include "text/text_group.h"
  #include "units/units.h"
  
@@ -36,7 +36,7 @@
  #include <stdlib.h>
  
  /* ---------- constants */
-@@ -96,8 +111,25 @@
+@@ -109,8 +124,25 @@
  {
  	FORGE_LOCAL_PLAYER_INDEX = 0,
  	FORGE_MAXIMUM_MENU_ENTRIES = 1024,
@@ -63,7 +63,7 @@
  	FORGE_KEY_REPEAT_DELAY_MILLISECONDS = 400,
  	FORGE_KEY_REPEAT_INTERVAL_MILLISECONDS = 70,
  	/* surfaces of objects the aim passes through (the player's own vehicle,
-@@ -147,6 +179,27 @@
+@@ -160,6 +192,27 @@
  #define FORGE_ORBIT_MINIMUM_DISTANCE 1.5f
  #define FORGE_ORBIT_MAXIMUM_DISTANCE 50.f
  
@@ -91,7 +91,7 @@
  /* ---------- structures */
  
  struct forge_category
-@@ -191,6 +244,15 @@
+@@ -204,6 +257,15 @@
  	short category_index;
  	short entry_count;
  	short selected_entry_index;
@@ -107,7 +107,7 @@
  	long entries[FORGE_MAXIMUM_MENU_ENTRIES];
  	long game_time;
  	unsigned long milliseconds;
-@@ -224,13 +286,13 @@
+@@ -237,13 +299,13 @@
  
  /* ---------- globals */
  
@@ -127,7 +127,7 @@
  };
  
  static char const *const forge_axis_names[NUMBER_OF_FORGE_AXES] =
-@@ -632,6 +694,46 @@
+@@ -697,6 +759,46 @@
  	return;
  }
  
@@ -174,7 +174,7 @@
  /* the map's objects of the menu's category, by name */
  static void forge_menu_build(
  	void)
-@@ -641,10 +743,12 @@
+@@ -706,10 +808,12 @@
  	struct tag_iterator iterator;
  	long tag_index;
  
@@ -187,7 +187,7 @@
  		if (page->opened)
  			page->opened();
  		return;
-@@ -664,7 +768,123 @@
+@@ -729,7 +833,123 @@
  		forge_globals.entry_count,
  		sizeof(forge_globals.entries[0]),
  		forge_compare_entries);
@@ -311,7 +311,7 @@
  
  	return;
  }
-@@ -1090,12 +1310,14 @@
+@@ -1277,12 +1497,14 @@
  
  					forge_globals.category_index =
  						(forge_globals.category_index + (next ? 1 : category_count - 1)) % category_count;
@@ -326,7 +326,7 @@
  				}
  				else if (forge_globals.entry_count > 0)
  				{
-@@ -1109,6 +1331,11 @@
+@@ -1296,6 +1518,11 @@
  						forge_globals.selected_entry_index =
  							(forge_globals.selected_entry_index + 1) % forge_globals.entry_count;
  					}
@@ -338,7 +338,7 @@
  					if (select)
  					{
  						forge_globals.menu_open = FALSE;
-@@ -1126,6 +1353,8 @@
+@@ -1313,6 +1540,8 @@
  		}
  		else if (menu || pad_menu)
  		{
@@ -347,7 +347,7 @@
  			forge_globals.menu_open = TRUE;
  			forge_menu_build();
  		}
-@@ -1152,6 +1381,10 @@
+@@ -1339,6 +1568,10 @@
  		forge_globals.held_turning = FALSE;
  	}
  
@@ -357,8 +357,8 @@
 +
  	/* the keys stay away from the game until they are released, so the
  	escape that closes the menu does not also pause the game */
- 	forge_globals.keys_captured =
-@@ -1282,79 +1515,465 @@
+ 	halo_linux_forge_capture_text(forge_text_entry_globals.active);
+@@ -1471,79 +1704,465 @@
  	return;
  }
  
@@ -880,12 +880,12 @@
  
  	return;
  }
-@@ -1415,7 +2034,7 @@
+@@ -1637,7 +2256,7 @@
  		}
  		else if (forge_globals.menu_open)
  		{
 -			forge_render_menu(font_tag_index, &window, line_height);
 +			forge_render_menu(&window);
  		}
- 	}
- 
+ 		if (forge_text_entry_globals.active)
+ 			forge_render_text_entry(font_tag_index, &window, line_height);

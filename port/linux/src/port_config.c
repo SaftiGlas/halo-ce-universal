@@ -217,6 +217,11 @@ static const struct config_setting config_settings[] =
 	{ "debug.forge_layout_save", _config_integer, "0", "HALO_FORGE_LAYOUT_SAVE", _environment_value, _platform_desktop,
 		"For automated tests: in a local game, save the Forge layout to this slot (1\n"
 		"to 16) a few seconds in, once, and log where the player is; 0 never." },
+	{ "debug.forge_test_edit", _config_integer, "0", "HALO_FORGE_TEST_EDIT", _environment_value, _platform_desktop,
+		"For automated tests of Forge in system link (with debug.network_test and the\n"
+		"forge variant): 1, the host spawns a scenery object a few seconds in, and a\n"
+		"client asks it to spawn one, then to move it and to remove it; both log what\n"
+		"they send and take. 0 never." },
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens; 0 never." },
 	{ "debug.hidden_window", _config_boolean, "false", "HALO_HIDDEN_WINDOW", _environment_set_is_true, _platform_desktop,

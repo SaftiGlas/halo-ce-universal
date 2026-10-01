@@ -10,7 +10,8 @@
     python -m tools.mod_launcher map [MAP]        the map the game starts at: show, set or none
     python -m tools.mod_launcher maps             the maps of the game data
     python -m tools.mod_launcher import ...       tags to bring into the maps from other maps
-    python -m tools.mod_launcher layouts [MAP]    the saved Forge layouts (rename MAP N NAME...)
+    python -m tools.mod_launcher layouts [MAP]    the saved Forge layouts (rename MAP N NAME...,
+                                                  describe MAP N TEXT...)
 
 Everything is kept in mods/mods.json (an older mods/enabled.json is taken
 over the first time):
@@ -539,8 +540,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     importing.add_argument("--group", default="scen", help="the tag group (default scen, scenery)")
     laying_out = sub.add_parser(
         "layouts",
-        help="the saved Forge layouts: list, rename",
-        description="[MAP] | rename MAP N NAME... (see tools/mod_layouts.py)")
+        help="the saved Forge layouts: list, rename, describe",
+        description="[MAP] | rename MAP N NAME... | describe MAP N TEXT... (see tools/mod_layouts.py)")
     laying_out.add_argument("action", nargs="?")
     laying_out.add_argument("values", nargs="*")
     laying_out.add_argument("--saves", type=Path, help="the save root (default HALO_SAVE_ROOT or the game's)")

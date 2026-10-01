@@ -252,17 +252,19 @@ def test_layouts_are_listed_with_the_one_that_plays(tmp_path, mods, capsys):
 
     forge = tmp_path / "saves" / "u" / "forge" / "bloodgulch"
     write(forge / "layout_01.txt", "name Layout 1\n[forge]\n")
-    write(forge / "layout_03.txt", "name Big base\nlisted 1\n[forge]\n")
-    write(forge / "layout_02.txt", "[forge]\n")
+    write(forge / "layout_03.txt", "name Big base\ndescription Two forts and a bridge\nlisted 1\n[forge]\n")
+    write(forge / "layout_02.txt", "[forge]\ndescription not the header's\n")
     write(forge / "play.txt", "3\n")
     found = mod_layouts.layouts(tmp_path / "saves", "bloodgulch")
     assert found == [
-        {"slot": 1, "name": "Layout 1", "plays": False, "listed": False},
-        {"slot": 2, "name": "Layout 2", "plays": False, "listed": False},
-        {"slot": 3, "name": "Big base", "plays": True, "listed": True},
+        {"slot": 1, "name": "Layout 1", "description": "", "plays": False, "listed": False},
+        {"slot": 2, "name": "Layout 2", "description": "", "plays": False, "listed": False},
+        {"slot": 3, "name": "Big base", "description": "Two forts and a bridge", "plays": True, "listed": True},
     ]
     assert launcher.main(["--mods-dir", str(mods), "layouts", "--saves", str(tmp_path / "saves")]) == 0
-    assert "3. Big base  (in the map list, plays on this map)" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "3. Big base  (in the map list, plays on this map)" in output
+    assert "      Two forts and a bridge" in output
 
 
 def test_a_layout_is_renamed_on_its_first_line(tmp_path, mods):
@@ -277,6 +279,34 @@ def test_a_layout_is_renamed_on_its_first_line(tmp_path, mods):
         mod_layouts.rename(saves, "bloodgulch", 5, "missing")
     with pytest.raises(mod_layouts.LayoutError):
         mod_layouts.rename(saves, "bloodgulch", 2, "x" * 64)
+    with pytest.raises(mod_layouts.LayoutError):
+        mod_layouts.rename(saves, "bloodgulch", 2, "100% base")
+
+
+def test_a_layout_is_described_in_its_header(tmp_path, mods, capsys):
+    from tools import mod_layouts
+
+    saves = tmp_path / "saves"
+    path = write(saves / "u" / "forge" / "bloodgulch" / "layout_02.txt",
+                 "name Red base\nversion 1\nlisted 1\n[forge]\nspawn scen 0 0 0\n[sky]\nlook night\n")
+    assert launcher.main(["--mods-dir", str(mods), "layouts", "describe", "bloodgulch", "2", "Forts", "and", "a",
+                          "bridge", "--saves", str(saves)]) == 0
+    assert "bloodgulch layout 2: Forts and a bridge" in capsys.readouterr().out
+    assert path.read_text().splitlines() == [
+        "name Red base", "description Forts and a bridge", "version 1", "listed 1", "[forge]", "spawn scen 0 0 0",
+        "[sky]", "look night"]
+    # again replaces it; none takes it away
+    assert mod_layouts.describe(saves, "bloodgulch", 2, "  A  canyon ") == "A canyon"
+    assert path.read_text().splitlines()[:3] == ["name Red base", "description A canyon", "version 1"]
+    assert launcher.main(["--mods-dir", str(mods), "layouts", "describe", "bloodgulch", "2", "--saves",
+                          str(saves)]) == 0
+    assert "(no description)" in capsys.readouterr().out
+    assert path.read_text().splitlines() == [
+        "name Red base", "version 1", "listed 1", "[forge]", "spawn scen 0 0 0", "[sky]", "look night"]
+    with pytest.raises(mod_layouts.LayoutError):
+        mod_layouts.describe(saves, "bloodgulch", 5, "missing")
+    with pytest.raises(mod_layouts.LayoutError):
+        mod_layouts.describe(saves, "bloodgulch", 2, "x" * 128)
 
 
 def test_a_layout_goes_with_a_multiplayer_launch():

@@ -237,9 +237,9 @@ static int sky_menu_row_change(
 {
 	if (direction != 0)
 	{
-		if (game_connection() != _game_connection_local)
+		if (!halo_mods_authoritative())
 		{
-			terminal_printf(global_real_argb_orange, "sky: changes only in local games");
+			terminal_printf(global_real_argb_orange, "sky: the sky is the host's");
 		}
 		else
 		{

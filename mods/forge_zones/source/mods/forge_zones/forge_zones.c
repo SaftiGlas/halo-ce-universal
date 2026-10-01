@@ -245,6 +245,8 @@ static struct
 	goes only when it walks in, not each tick it stays) */
 	boolean teleport_inside[FORGE_ZONES_MAXIMUM_OBJECTS];
 	long game_time;
+	/* a tick has counted towards a kill since the zones were last all gone */
+	boolean kill_counting;
 
 	/* local player 0's countdown, seconds; below zero when there is none */
 	real player_kill_seconds;
@@ -252,6 +254,17 @@ static struct
 	/* this frame's drawing, for the render hook */
 	boolean drawing;
 } forge_zones_globals = { 0 };
+
+/* for a tick (forge_zones_tick_prepare): each zone's forward axis, and how
+many zones there are of each kind. A tick asks of every object whether each
+zone holds it; working the axes out again each time (a cosine and a sine)
+was most of what the zones cost. */
+static struct
+{
+	real forward_i[FORGE_ZONES_MAXIMUM_ZONES];
+	real forward_j[FORGE_ZONES_MAXIMUM_ZONES];
+	short kind_counts[NUMBER_OF_FORGE_ZONE_KINDS];
+} forge_zones_tick_globals;
 
 /* ---------- private code */
 
@@ -301,17 +314,39 @@ static void forge_zones_to_local(
 	return;
 }
 
-static boolean forge_zones_contains(
-	struct forge_zone const *zone,
+static void forge_zones_tick_prepare(
+	void)
+{
+	short zone_index;
+
+	csmemset(forge_zones_tick_globals.kind_counts, 0, sizeof(forge_zones_tick_globals.kind_counts));
+	for (zone_index = 0; zone_index < forge_zones_globals.zone_count; zone_index++)
+	{
+		struct forge_zone const *zone = &forge_zones_globals.zones[zone_index];
+
+		forge_zones_tick_globals.forward_i[zone_index] = cosine(zone->yaw);
+		forge_zones_tick_globals.forward_j[zone_index] = sine(zone->yaw);
+		forge_zones_tick_globals.kind_counts[zone->kind]++;
+	}
+
+	return;
+}
+
+/* forge_zones_contains, in a tick, after forge_zones_tick_prepare: its
+height first, which rules most zones out */
+static boolean forge_zones_tick_contains(
+	short zone_index,
 	real_point3d const *point)
 {
-	real_vector3d local;
+	struct forge_zone const *zone = &forge_zones_globals.zones[zone_index];
+	real forward_i = forge_zones_tick_globals.forward_i[zone_index];
+	real forward_j = forge_zones_tick_globals.forward_j[zone_index];
+	real offset_x = point->x - zone->center.x;
+	real offset_y = point->y - zone->center.y;
 
-	forge_zones_to_local(zone, point, &local);
-
-	return (real)fabs(local.i) <= zone->half_size.i &&
-		(real)fabs(local.j) <= zone->half_size.j &&
-		(real)fabs(local.k) <= zone->half_size.k;
+	return (real)fabs(point->z - zone->center.z) <= zone->half_size.k &&
+		(real)fabs(offset_x * forward_i + offset_y * forward_j) <= zone->half_size.i &&
+		(real)fabs(offset_y * forward_i - offset_x * forward_j) <= zone->half_size.j;
 }
 
 static real forge_zones_setting(
@@ -432,10 +467,12 @@ static boolean forge_zones_place_at_crosshair(
 static boolean forge_zones_local_game(
 	void)
 {
-	boolean local = game_connection() == _game_connection_local;
+	/* a local game, or the host of a system link game, whose layout takes
+	the zones to its clients (forge_layout.c) */
+	boolean local = halo_mods_authoritative();
 
 	if (!local)
-		terminal_printf(global_real_argb_orange, "forge_zones: zones work only in local games");
+		terminal_printf(global_real_argb_orange, "forge_zones: the zones are the host's");
 
 	return local;
 }
@@ -482,7 +519,7 @@ static short forge_zones_teleport_destination(
 	return NONE;
 }
 
-/* the teleport zone that sends and has the point in it, or NONE */
+/* the teleport zone that sends and has the point in it, or NONE (in a tick) */
 static short forge_zones_teleport_entrance(
 	real_point3d const *point)
 {
@@ -494,7 +531,7 @@ static short forge_zones_teleport_entrance(
 
 		if (zone->kind == _forge_zone_teleport &&
 			zone->direction != _forge_zone_exit_only &&
-			forge_zones_contains(zone, point))
+			forge_zones_tick_contains(zone_index, point))
 		{
 			return zone_index;
 		}
@@ -620,7 +657,7 @@ static void forge_zones_update(
 {
 	forge_zones_globals.drawing = FALSE;
 	if (local_player_get_player_index(FORGE_ZONES_LOCAL_PLAYER_INDEX) == NONE ||
-		game_connection() != _game_connection_local)
+		game_connection() == _game_connection_film_playback)
 	{
 		return;
 	}
@@ -762,7 +799,7 @@ static void forge_zones_render_world(
 {
 	short zone_index;
 
-	if (!forge_zones_globals.showing || game_connection() != _game_connection_local)
+	if (!forge_zones_globals.showing || game_connection() == _game_connection_film_playback)
 		return;
 
 	for (zone_index = 0; zone_index < forge_zones_globals.zone_count; zone_index++)
@@ -799,7 +836,7 @@ static long forge_zones_kill_delay(
 	{
 		struct forge_zone const *zone = &forge_zones_globals.zones[zone_index];
 
-		if (zone->kind == _forge_zone_kill && forge_zones_contains(zone, point))
+		if (zone->kind == _forge_zone_kill && forge_zones_tick_contains(zone_index, point))
 		{
 			long ticks = (long)(forge_zones_setting(zone) * TICKS_PER_SECOND);
 
@@ -875,7 +912,7 @@ static boolean forge_zones_gravity_scale(
 	{
 		struct forge_zone const *zone = &forge_zones_globals.zones[zone_index];
 
-		if (zone->kind == _forge_zone_gravity && forge_zones_contains(zone, point))
+		if (zone->kind == _forge_zone_gravity && forge_zones_tick_contains(zone_index, point))
 		{
 			*scale = forge_zones_setting(zone);
 			return TRUE;
@@ -1055,17 +1092,26 @@ static void forge_zones_tick(
 		forge_zones_forget_kill_timers();
 	forge_zones_globals.game_time = game_time;
 
+	/* only the kinds there are zones of: each looks at every object */
+	forge_zones_globals.player_kill_seconds = -1.f;
+	if (forge_zones_globals.kill_counting && forge_zones_globals.zone_count == 0)
+	{
+		/* the last zone is gone: nothing is counted towards a kill any more */
+		csmemset(forge_zones_globals.kill_ticks, 0, sizeof(forge_zones_globals.kill_ticks));
+		forge_zones_globals.kill_counting = FALSE;
+	}
 	if (forge_zones_globals.zone_count > 0)
 	{
-		if (halo_mods_authoritative())
+		forge_zones_tick_prepare();
+		if (forge_zones_tick_globals.kind_counts[_forge_zone_kill] > 0 && halo_mods_authoritative())
+		{
 			forge_zones_tick_kill();
-		forge_zones_tick_gravity();
-		if (halo_mods_authoritative())
+			forge_zones_globals.kill_counting = TRUE;
+		}
+		if (forge_zones_tick_globals.kind_counts[_forge_zone_gravity] > 0)
+			forge_zones_tick_gravity();
+		if (forge_zones_tick_globals.kind_counts[_forge_zone_teleport] > 0 && halo_mods_authoritative())
 			forge_zones_tick_teleport();
-	}
-	else
-	{
-		forge_zones_globals.player_kill_seconds = -1.f;
 	}
 
 	return;
@@ -1203,7 +1249,7 @@ static int forge_zones_grab(
 	long object_index;
 	short zone_index;
 
-	if (!forge_zones_globals.showing || game_connection() != _game_connection_local ||
+	if (!forge_zones_globals.showing || !halo_mods_authoritative() ||
 		local_player_get_player_index(FORGE_ZONES_LOCAL_PLAYER_INDEX) == NONE)
 	{
 		return FALSE;
@@ -1502,7 +1548,7 @@ static void forge_zones_menu_opened(
 	void)
 {
 	if (local_player_get_player_index(FORGE_ZONES_LOCAL_PLAYER_INDEX) != NONE &&
-		game_connection() == _game_connection_local)
+		halo_mods_authoritative())
 	{
 		short aimed_zone_index = forge_zones_aimed_zone(NULL);
 

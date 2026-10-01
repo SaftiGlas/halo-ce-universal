@@ -298,9 +298,10 @@ left/right change the row. No Ctrl key is used.
       jump is the same height.
 - [ ] Pick moon, load another map (or restart the level): the new map is
       at moon gravity too.
-- [ ] Pick moon, then join or host a system link game: gravity is normal
-      there, there is no label, and the row says `gravity: changes only in
-      local games`. Back in a local game it is moon again.
+- [ ] Pick moon, then join a system link game: gravity is the host's
+      there, and the row says `gravity: the gravity is the host's`. Host a
+      Forge game instead: the row changes it, and the machines that joined
+      get it within a second. Back in a local game it is moon again.
 - [ ] With **F9** (checkpoint_handler) at moon gravity: the checkpoint
       comes back and gravity stays moon.
 
@@ -383,8 +384,10 @@ Maps and checkpoints:
 - [ ] Load another map: the zones are gone (`forge zones: 0`).
 - [ ] With checkpoint_handler, **F5**, place a zone, **F9**: the zone
       stays (zones are not part of checkpoints).
-- [ ] System link: `New zone` says `zones work only in local games`, and
-      nothing is drawn.
+- [ ] System link, on the host of a Forge game: zones are placed as in a
+      local game, and the machines that joined see them (zones shown) and
+      are killed, pushed and teleported by them. On a machine that joined,
+      `New zone` says `forge_zones: the zones are the host's`.
 
 Teleport zones:
 - [ ] `New zone` kind `teleport zone`, A: a purple box, and the row `Channel
@@ -409,3 +412,50 @@ Teleport zones:
       with people on it may arrive with them slightly inside the ground.)*
 - [ ] Dead bodies and things held or carried do not teleport. A kill zone
       next to the exit still works.
+
+## Layout names and descriptions
+
+- [ ] Forge game, **F2**, **F3**, the **Map** tab: the rows are Layout,
+      Name, Description, Save, Load it, Play on this map, Show in the map
+      list, Reset the map, Delete it.
+- [ ] On `(a new layout)`, **Name**, enter: a box low on the screen asks
+      for the name. Type `Red Fort` (shift for capitals), backspace deletes,
+      held keys repeat. While it is open the camera does not move with
+      W A S D, T and V do not change tab, and mods' keys do nothing. Enter:
+      `forge: the layout is now called Red Fort`, and the row shows it.
+- [ ] **Description**, enter, type a sentence, enter. **Save**: the new
+      layout is `Red Fort`; `u/forge/<map>/layout_NN.txt` starts with `name
+      Red Fort` and has a `description ...` line before `[forge]`.
+- [ ] On a saved layout, **Name** and **Description** change its file at
+      once, and nothing else in it (objects, zones). Escape in the box
+      leaves the text as it was. An empty name is refused; an empty
+      description takes the description away.
+- [ ] **Show in the map list** on, quit to the menus, Multiplayer: the map
+      list shows the layout under its name with its description; with none
+      it says `A Forge map made on <map>`.
+- [ ] `python -m tools.mod_launcher layouts` lists the layouts with their
+      descriptions; `layouts rename MAP N NAME` and `layouts describe MAP N
+      TEXT` change them (`describe MAP N` alone takes the description away).
+
+## Forge with more players (system link)
+
+Two machines (or two copies on one, see "Play on one computer" in
+`port/linux/README.md`), the host with the **Forge** game type.
+
+- [ ] Host: **F2**, **F3**, spawn a Warthog and a rock, place them. The
+      other machine sees the Warthog move while it is held and both where
+      they are put. Remove them: they go there too.
+- [ ] The machine that joined: **F2** flies its camera, **F3** opens the
+      menu. Take a rock: `forge: asked the host for ...`, and it appears
+      where the crosshair pointed on both machines. Pick it up, move it,
+      put it down: `forge: asked the host to place ...`, and the host has
+      it there. Remove it (**Y** or Delete): it goes on both.
+- [ ] The same with a weapon and a vehicle; a player's own biped cannot be
+      picked up from the other machine.
+- [ ] The machine that joined, the **Map** tab: `forge: the layouts are the
+      host's`. On the host, Save, change things, Load it: both machines are
+      back at the saved layout.
+- [ ] A third machine that joins late has everything where it is now.
+- [ ] Automated: `tools/forge_net_test.sh` (from a desktop session) runs a
+      host and a guest on this machine with `debug.forge_test_edit` and ends
+      with `forge net test: passed`.

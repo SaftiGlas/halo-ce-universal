@@ -346,9 +346,9 @@ static void forge_edit_update(
 
 	if (delete_object)
 	{
-		if (game_connection() != _game_connection_local)
+		if (!halo_mods_authoritative())
 		{
-			terminal_printf(global_real_argb_orange, "forge_edit: objects change only in local games");
+			terminal_printf(global_real_argb_orange, "forge_edit: copy, paste and undo are the host's");
 		}
 		else
 		{
@@ -475,9 +475,9 @@ static int forge_edit_menu_row_change(
 
 	if (direction != 0 || row == _forge_edit_row_target)
 		return FALSE;
-	if (game_connection() != _game_connection_local)
+	if (!halo_mods_authoritative())
 	{
-		terminal_printf(global_real_argb_orange, "forge_edit: objects change only in local games");
+		terminal_printf(global_real_argb_orange, "forge_edit: copy, paste and undo are the host's");
 		return FALSE;
 	}
 

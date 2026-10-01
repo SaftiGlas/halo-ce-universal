@@ -2,8 +2,8 @@
 FORGE.C
 
 In-game dev tools for the native ports (port/linux, port/windows,
-port/android): on in local games of the Forge game type, the last of the
-default game types (a slayer variant with GAME_VARIANT_FORGE_FLAG,
+port/android): on in local and system link games of the Forge game type,
+the last of the default game types (a slayer variant with GAME_VARIANT_FORGE_FLAG,
 game/game_engine.c), or in every game with HALO_FORGE=all (see
 port/linux/README.md, "Dev tools"). The byte-matching build never compiles
 this file.
@@ -58,9 +58,22 @@ The platform layer keeps these keys and buttons from the game while the
 menu is open or an object is held.
 
 The keys belong to the player on controller 1, the keyboard and the first
-gamepad, and act on local player 0. Spawning, moving and removing objects
-and moving the player change the game state, which every machine of a
-system link game must compute alike, so they work only in local games.
+gamepad, and act on local player 0.
+
+System link: every player of a Forge game builds. Spawning, moving and
+removing objects change the game state, which is the host's
+(network_distributed.c): the host's tools change it as in a local game, and
+its clients see it as they see the rest of its game (its units and items
+through network_objects.c, its scenery, devices and the mods' parts through
+the layout it sends, forge_layout.c). A client's tools ask the host
+(forge_layout_client_edit): the menu's object is spawned where the
+crosshair points, to be picked up from there; an object picked up moves on
+the client alone until it is put down, which the host then does; a removed
+one the host removes. The mods' pages and the Map tab are the host's.
+
+A page may ask for a line of text (forge_text_entry_begin, the Map tab's
+names and descriptions): it is typed on the keyboard, which until enter or
+escape belongs to it alone.
 */
 
 #include "cseries.h"
@@ -252,6 +265,42 @@ static struct forge_snap const forge_snaps[] =
 
 static struct forge_globals forge_globals = { NONE };
 
+/* a line of text being typed (forge_text_entry_begin); the keys are SDL
+scancodes (halo_linux_forge_read_text_keys) */
+enum
+{
+	FORGE_TEXT_MAXIMUM_LENGTH = 127,
+	FORGE_TEXT_KEY_COUNT = 57,
+	FORGE_TEXT_KEY_A = 4,
+	FORGE_TEXT_KEY_1 = 30,
+	FORGE_TEXT_KEY_ESCAPE = 41,
+	FORGE_TEXT_KEY_BACKSPACE = 42,
+	FORGE_TEXT_KEY_SPACE = 44,
+	FORGE_TEXT_KEY_LEFT_SHIFT = 225,
+	FORGE_TEXT_KEY_RIGHT_SHIFT = 229,
+	/* the keys read each frame: all up to the right shift */
+	FORGE_TEXT_KEYS_READ = 230
+};
+
+/* what the keys from 1 on type, plain and with shift (a US keyboard); a
+space where a key types nothing (the space bar is read by itself, and a
+percent sign would be taken for a format by the menus' strings) */
+static char const forge_text_plain[] = "1234567890     -=[]  ;'`,./";
+static char const forge_text_shifted[] = "!@#$ ^&*()     _+()  :\"~<>?";
+
+static struct
+{
+	boolean active;
+	/* the keys held when it began do not type */
+	boolean primed;
+	char const *prompt;
+	void (*done)(char const *text);
+	unsigned long maximum_length;
+	unsigned long length;
+	char text[FORGE_TEXT_MAXIMUM_LENGTH + 1];
+	struct forge_key keys[FORGE_TEXT_KEY_COUNT];
+} forge_text_entry_globals;
+
 /* ---------- private code */
 
 /* TRUE when the key goes down, and again every repeat interval while it is
@@ -281,6 +330,21 @@ static boolean forge_key_pressed(
 	}
 
 	return pressed;
+}
+
+/* whether this machine's game is the game's (a local game, the host of a
+system link game), and whether it is a system link client, whose tools ask
+the host (forge_layout_client_edit); neither in a saved film */
+static boolean forge_authoritative(
+	void)
+{
+	return halo_mods_authoritative();
+}
+
+static boolean forge_client(
+	void)
+{
+	return game_connection() == _game_connection_network_client;
 }
 
 /* the object the player is: the vehicle they ride, else their unit */
@@ -542,9 +606,10 @@ static void forge_return_to_player(
 	{
 		terminal_printf(global_real_argb_green, "forge: camera returned to the player");
 	}
-	else if (game_connection() != _game_connection_local)
+	else if (!forge_authoritative())
 	{
-		terminal_printf(global_real_argb_orange, "forge: the player moves only in local games");
+		/* (a client's own player is where the host takes it to be) */
+		terminal_printf(global_real_argb_green, "forge: camera returned to the player");
 	}
 	else if (camera->location.cluster_index == NONE)
 	{
@@ -698,9 +763,9 @@ static void forge_take(
 	real_point3d point;
 	real_vector3d normal;
 
-	if (game_connection() != _game_connection_local)
+	if (!forge_authoritative() && !forge_client())
 	{
-		terminal_printf(global_real_argb_orange, "forge: objects spawn only in local games");
+		terminal_printf(global_real_argb_orange, "forge: objects spawn only in a game being played");
 	}
 	else if (!forge_aim(local_player_index, NONE, &point, &normal))
 	{
@@ -715,6 +780,15 @@ static void forge_take(
 		forge_held_position(definition_index, &point, &normal, 0.f, &data.position);
 		forge_forward_from_yaw(arctangent(camera->forward.j, camera->forward.i), &data.forward);
 		data.up = *global_up3d;
+
+		if (forge_client())
+		{
+			/* the host makes it there; picked up from there to move it */
+			forge_layout_client_edit(_forge_edit_spawn, NONE, definition_index, &data.position.x, &data.position.x,
+				&data.forward.i, &data.up.i);
+			terminal_printf(global_real_argb_green, "forge: asked the host for %s", tag_get_name(definition_index));
+			return;
+		}
 
 		object_index = object_new(&data);
 		if (object_index == NONE)
@@ -738,9 +812,9 @@ static void forge_grab(
 {
 	long object_index;
 
-	if (game_connection() != _game_connection_local)
+	if (!forge_authoritative() && !forge_client())
 	{
-		terminal_printf(global_real_argb_orange, "forge: objects move only in local games");
+		terminal_printf(global_real_argb_orange, "forge: objects move only in a game being played");
 	}
 	else if (observer_get_camera(local_player_index)->location.cluster_index == NONE)
 	{
@@ -765,11 +839,11 @@ static void forge_remove_at_crosshair(
 {
 	long object_index;
 
-	if (game_connection() != _game_connection_local)
+	if (!forge_authoritative() && !forge_client())
 	{
-		terminal_printf(global_real_argb_orange, "forge: objects change only in local games");
+		terminal_printf(global_real_argb_orange, "forge: objects change only in a game being played");
 	}
-	else if (halo_mods_remove())
+	else if (forge_authoritative() && halo_mods_remove())
 	{
 		/* the mod removed it */
 	}
@@ -780,6 +854,15 @@ static void forge_remove_at_crosshair(
 	else if ((object_index = forge_pick(local_player_index)) == NONE)
 	{
 		terminal_printf(global_real_argb_orange, "forge: nothing to remove there");
+	}
+	else if (forge_client())
+	{
+		struct object_datum *object = object_get(object_index);
+
+		forge_layout_client_edit(_forge_edit_remove, object_index, object->definition_index, &object->object.position.x,
+			&object->object.position.x, &object->object.forward.i, &object->object.up.i);
+		terminal_printf(global_real_argb_green, "forge: asked the host to remove %s",
+			tag_get_name(object->definition_index));
 	}
 	else
 	{
@@ -826,6 +909,10 @@ static void forge_hold_place(
 	object_set_position(forge_globals.held_object_index, position, &forward, &up);
 	object->object.translational_velocity = *global_zero_vector3d;
 	object->object.angular_velocity = *global_zero_vector3d;
+	/* a system link host: not at rest, so that its clients are told where it
+	is every tick (network_objects.c) and see it move as it is held */
+	if (game_connection() == _game_connection_network_server)
+		SET_FLAG(object->object.flags, _object_at_rest_bit, FALSE);
 
 	return;
 }
@@ -917,7 +1004,31 @@ static void forge_hold_end(
 	struct object_datum *object = object_get(object_index);
 	char const *name = tag_get_name(object->definition_index);
 
-	if (remove_object || (cancel && forge_globals.held_spawned))
+	if (forge_client())
+	{
+		/* the host does it: this machine's copy goes back where it was (a
+		removed one until the host's word comes) or stays where it was put */
+		if (!cancel || remove_object)
+		{
+			forge_layout_client_edit(remove_object ? _forge_edit_remove : _forge_edit_move, object_index,
+				object->definition_index, &forge_globals.held_original_position.x, &object->object.position.x,
+				&object->object.forward.i, &object->object.up.i);
+			terminal_printf(global_real_argb_green, remove_object
+				? "forge: asked the host to remove %s"
+				: "forge: asked the host to place %s", name);
+		}
+		if (cancel || remove_object)
+		{
+			object_set_position(
+				object_index,
+				&forge_globals.held_original_position,
+				&forge_globals.held_original_forward,
+				&forge_globals.held_original_up);
+		}
+		object->object.translational_velocity = *global_zero_vector3d;
+		object->object.angular_velocity = *global_zero_vector3d;
+	}
+	else if (remove_object || (cancel && forge_globals.held_spawned))
 	{
 		forge_layout_note_removed(object_index);
 		object_delete(object_index);
@@ -971,6 +1082,73 @@ static long forge_debug_menu_tab(
 	return result;
 }
 
+/* the line being typed: the keys that went down (and those held, again and
+again) type, backspace deletes, enter takes the line, escape leaves it */
+static void forge_text_entry_update(
+	boolean take,
+	unsigned long milliseconds)
+{
+	unsigned char held[FORGE_TEXT_KEYS_READ];
+	boolean shift;
+	boolean primed = forge_text_entry_globals.primed;
+	short key;
+
+	halo_linux_forge_read_text_keys(held, sizeof(held));
+	shift = held[FORGE_TEXT_KEY_LEFT_SHIFT] || held[FORGE_TEXT_KEY_RIGHT_SHIFT];
+	forge_text_entry_globals.primed = TRUE;
+	for (key = FORGE_TEXT_KEY_A; key < FORGE_TEXT_KEY_COUNT; key++)
+	{
+		struct forge_key *state = &forge_text_entry_globals.keys[key];
+		char character = 0;
+
+		if (!forge_key_pressed(state, held[key], TRUE, milliseconds))
+			continue;
+		if (!primed)
+		{
+			/* held since before the line: it types when pressed again */
+			state->repeat_milliseconds = milliseconds + 0x3fffffff;
+			continue;
+		}
+		if (key == FORGE_TEXT_KEY_ESCAPE)
+		{
+			forge_text_entry_globals.active = FALSE;
+			return;
+		}
+		if (key == FORGE_TEXT_KEY_BACKSPACE)
+		{
+			if (forge_text_entry_globals.length > 0)
+				forge_text_entry_globals.text[--forge_text_entry_globals.length] = 0;
+		}
+		else if (key < FORGE_TEXT_KEY_1)
+		{
+			character = (char)((shift ? 'A' : 'a') + key - FORGE_TEXT_KEY_A);
+		}
+		else if (key == FORGE_TEXT_KEY_SPACE)
+		{
+			character = ' ';
+		}
+		else if (key - FORGE_TEXT_KEY_1 < (short)(sizeof(forge_text_plain) - 1) &&
+			forge_text_plain[key - FORGE_TEXT_KEY_1] != ' ')
+		{
+			character = (shift ? forge_text_shifted : forge_text_plain)[key - FORGE_TEXT_KEY_1];
+			if (character == ' ')
+				character = 0;
+		}
+		if (character && forge_text_entry_globals.length < forge_text_entry_globals.maximum_length)
+		{
+			forge_text_entry_globals.text[forge_text_entry_globals.length++] = character;
+			forge_text_entry_globals.text[forge_text_entry_globals.length] = 0;
+		}
+	}
+	if (take && primed)
+	{
+		forge_text_entry_globals.active = FALSE;
+		forge_text_entry_globals.done(forge_text_entry_globals.text);
+	}
+
+	return;
+}
+
 static void forge_update_keys(
 	struct halo_linux_forge_keys const *keys,
 	unsigned long milliseconds,
@@ -1013,6 +1191,15 @@ static void forge_update_keys(
 		forge_globals.menu_open = FALSE;
 		/* what was held stays where it is */
 		forge_globals.held_object_index = NONE;
+		forge_text_entry_globals.active = FALSE;
+	}
+	else if (forge_text_entry_globals.active)
+	{
+		/* the keyboard is the line's until it is taken or left */
+		if (flying)
+			forge_text_entry_update(select, milliseconds);
+		else
+			forge_text_entry_globals.active = FALSE;
 	}
 	else
 	{
@@ -1132,7 +1319,7 @@ static void forge_update_keys(
 		else if (grab || (select && flying))
 		{
 			/* a mod may have something of its own to pick up there */
-			if (game_connection() != _game_connection_local || !halo_mods_grab())
+			if (!forge_authoritative() || !halo_mods_grab())
 				forge_grab(FORGE_LOCAL_PLAYER_INDEX);
 		}
 		else if (pad_remove && flying)
@@ -1154,8 +1341,10 @@ static void forge_update_keys(
 
 	/* the keys stay away from the game until they are released, so the
 	escape that closes the menu does not also pause the game */
+	halo_linux_forge_capture_text(forge_text_entry_globals.active);
 	forge_globals.keys_captured =
 		forge_globals.menu_open ||
+		forge_text_entry_globals.active ||
 		forge_globals.held_object_index != NONE ||
 		forge_globals.mod_hold != NULL ||
 		(forge_globals.keys_captured &&
@@ -1359,6 +1548,39 @@ static void forge_render_menu(
 	return;
 }
 
+/* the line being typed, low in the window, over the menu */
+static void forge_render_text_entry(
+	long font_tag_index,
+	rectangle2d const *window,
+	short line_height)
+{
+	char line[256];
+	rectangle2d bounds = *window;
+
+	bounds.x0 = (short)(window->x0 + FORGE_MENU_MARGIN);
+	bounds.x1 = (short)(window->x1 - FORGE_MENU_MARGIN);
+	bounds.y0 = (short)(window->y1 - FORGE_MENU_MARGIN - 4 * line_height);
+	bounds.y1 = (short)(bounds.y0 + line_height);
+	halo_mod_draw_box((short)(bounds.x0 - 8), (short)(bounds.y0 - 6), (short)(bounds.x1 + 8),
+		(short)(bounds.y0 + 3 * line_height + 6), 0xD0101418);
+
+	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_yellow,
+		forge_text_entry_globals.prompt);
+	offset_rectangle2d(&bounds, 0, line_height);
+	/* (the cursor blinks) */
+	_snprintf(line, NUMBEROF(line), "> %s%s", forge_text_entry_globals.text,
+		(forge_globals.milliseconds / 400) % 2 ? "_" : "");
+	line[NUMBEROF(line) - 1] = 0;
+	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_white, line);
+	offset_rectangle2d(&bounds, 0, line_height);
+	_snprintf(line, NUMBEROF(line), "type on the keyboard (%lu of %lu), backspace deletes, enter/A takes it, escape leaves it",
+		forge_text_entry_globals.length, forge_text_entry_globals.maximum_length);
+	line[NUMBEROF(line) - 1] = 0;
+	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_grey, line);
+
+	return;
+}
+
 /* ---------- public code */
 
 /* once a frame, with the game's other debug keys (main/main.c) */
@@ -1417,6 +1639,8 @@ void forge_render(
 		{
 			forge_render_menu(font_tag_index, &window, line_height);
 		}
+		if (forge_text_entry_globals.active)
+			forge_render_text_entry(font_tag_index, &window, line_height);
 	}
 
 	/* drawn only after an update: nothing is left over when the game stops
@@ -1440,8 +1664,32 @@ int forge_mode_on(
 		every_game = text && strcmp(text, "all") == 0;
 	}
 
+	/* (not in a saved film, which replays what was recorded) */
 	return every_game ||
-		(game_engine_variant_is_forge() && game_connection() == _game_connection_local);
+		(game_engine_variant_is_forge() && (forge_authoritative() || forge_client()));
+}
+
+/* ---------- a line of text (halo_forge.h) */
+
+int forge_text_entry_begin(
+	char const *prompt,
+	char const *initial,
+	unsigned long maximum_length,
+	void (*done)(char const *text))
+{
+	if (forge_text_entry_globals.active)
+		return FALSE;
+	csmemset(&forge_text_entry_globals, 0, sizeof(forge_text_entry_globals));
+	forge_text_entry_globals.active = TRUE;
+	forge_text_entry_globals.prompt = prompt;
+	forge_text_entry_globals.done = done;
+	forge_text_entry_globals.maximum_length = MIN(maximum_length, FORGE_TEXT_MAXIMUM_LENGTH);
+	_snprintf(forge_text_entry_globals.text, sizeof(forge_text_entry_globals.text), "%.*s",
+		(int)forge_text_entry_globals.maximum_length, initial ? initial : "");
+	forge_text_entry_globals.text[FORGE_TEXT_MAXIMUM_LENGTH] = 0;
+	forge_text_entry_globals.length = (unsigned long)strlen(forge_text_entry_globals.text);
+
+	return TRUE;
 }
 
 /* ---------- what the flying camera asks the tools (halo_forge.h) */
@@ -1501,7 +1749,8 @@ void forge_flying_camera_moved(
 int forge_busy(
 	void)
 {
-	return forge_globals.menu_open || forge_globals.held_object_index != NONE || forge_globals.mod_hold != NULL;
+	return forge_globals.menu_open || forge_globals.held_object_index != NONE || forge_globals.mod_hold != NULL ||
+		forge_text_entry_globals.active;
 }
 
 int forge_mod_hold_begin(

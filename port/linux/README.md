@@ -279,7 +279,7 @@ you push it again.
 ## Dev tools
 
 The in-game dev tools (`game/forge.c`), a first step towards modding, are
-on in local games of the **Forge** game type: the last of the default game
+on in local and system link games of the **Forge** game type: the last of the default game
 types in the game setup (a slayer variant with no score to reach, marked
 with `GAME_VARIANT_FORGE_FLAG`; copies of it that you save stay Forge), or
 `game.start_variant = "forge"` / `--variant forge`. In every other game the
@@ -339,13 +339,19 @@ a layout: choose one with left and right (or a new one), Save, Load it,
 Play on this map (it then loads in every local game on the map, whatever
 the game type), Reset the map, Delete it. Up to 16 a map, in
 `u/forge/<map>/layout_NN.txt` of the save root; new ones are called
-"Layout N", and `python -m tools.mod_launcher layouts rename MAP N NAME`
-renames one (`layouts` lists them).
+"Layout N". The **Name** and **Description** rows change what a layout is
+called and what the map list says about it: select the row and type on the
+keyboard (letters, digits, spaces and the usual marks; backspace deletes,
+enter takes the line, escape leaves it as it was). For a new layout they
+are kept until it is saved. Without a keyboard, `python -m
+tools.mod_launcher layouts rename MAP N NAME` and `layouts describe MAP N
+TEXT` do the same (`layouts` lists them).
 
 A layout with **Show in the map list** on is a map of its own: the
 multiplayer map list of local (splitscreen) games shows it after the 13
 maps of the game, with its base map's picture, the layout's name as its
-title and "A Forge map made on <map>" as its description. Choosing it
+title and its description (or, when it has none, "A Forge map made on
+<map>"). Choosing it
 plays the base map with that layout, in any game type, also in system link:
 the host loads the layout and sends it to each machine that joins (the
 other machines need not have it). The host's objects reach them as all its
@@ -356,11 +362,20 @@ maps must be imported on every machine alike (the launcher's import list). `game
 `mod_launcher run --map bloodgulch --layout 3`) starts one without the
 menus.
 
-The tools act on local player 0. Spawning, moving and removing objects
-and moving the player are refused in system link games, where every
-machine must compute the same game, and when the camera is outside the map
-(the camera then returns without the player). The camera cannot be taken
-over while a cutscene has it.
+The tools act on local player 0. In a **system link** game of the Forge
+game type every player builds, on one map. The game is the host's: what its
+tools and its mods' pages change reaches the other machines as its game
+does (its units and items as its objects, its scenery, devices, zones,
+gravity and sky as the layout, sent again within half a second of a
+change). On another machine the tools ask the host: an object taken from
+the menu appears where the crosshair points (pick it up from there to move
+it); an object picked up moves on that machine alone until it is put down,
+and then the host puts it there; a removed one the host removes. The mods'
+pages (zones, AI, gravity, sky, copy and paste) and the Map tab work on the
+host only, and landing the camera moves the player only there. Nothing is
+spawned or moved while the camera is outside the map (the camera then
+returns without the player). The camera cannot be taken over while a
+cutscene has it.
 
 ## Settings
 
@@ -408,6 +423,7 @@ the setting for one start of the game. It has priority over the file.
 | `update.auto` | `true` | `HALO_UPDATE_AUTO` | `true`: at start-up, the game looks for a new version. Refer to "Updates". `false`: the game does not look. |
 | `debug.update_answer` | `""` | `HALO_UPDATE_ANSWER` | The answer to the update question, for automatic tests: `yes`, `no` or `never`. Empty: the game asks. |
 | `debug.forge_menu_tab` | `-1` | `HALO_FORGE_MENU_TAB` | With the dev tools on (a Forge game), a few seconds into a game: open their menu on this tab (0 is the first), for screenshots of it (`debug.screenshot_directory`). `-1`: never. |
+| `debug.forge_test_edit` | `0` | `HALO_FORGE_TEST_EDIT` | For automated tests of Forge in system link (with `debug.network_test` and the `forge` variant): `1`, the host spawns a scenery object a few seconds in, and a client asks it to spawn one, then to move it and to remove it; both log what they send and take. |
 | `debug.exit_after` | `0.0` | `HALO_EXIT_AFTER` | The game stops after this number of seconds. `0`: never. |
 | `debug.screenshot_directory`, `debug.screenshot_every` | `""`, `0` | `HALO_SCREENSHOT_DIR`, `HALO_SCREENSHOT_EVERY` | The game writes each Nth frame to this folder as a BMP file. |
 | `debug.hidden_window`, `debug.null_renderer` | `false` | `HALO_HIDDEN_WINDOW`, `HALO_NULL_RENDERER` | `true`: no visible window, or no graphics. |

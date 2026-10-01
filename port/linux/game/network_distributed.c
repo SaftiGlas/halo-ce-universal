@@ -2015,6 +2015,7 @@ void network_distributed_handle_message(
 	case _distributed_message_game_state:
 	case _distributed_message_objects_synchronized:
 	case _distributed_message_forge_layout:
+	case _distributed_message_forge_edit:
 	case _distributed_message_client_ready: entry_size = 0; break;
 	case _distributed_message_damage_events:
 	case _distributed_message_hit_reports: entry_size = network_damage_entry_size(header.type); break;
@@ -2035,6 +2036,7 @@ void network_distributed_handle_message(
 	case _distributed_message_hit_reports:
 	case _distributed_message_vehicle_prediction:
 	case _distributed_message_player_inputs:
+	case _distributed_message_forge_edit:
 		if (machine_index == NONE || game_connection() != _game_connection_network_server)
 			return;
 		break;
@@ -2090,6 +2092,9 @@ void network_distributed_handle_message(
 		break;
 	case _distributed_message_forge_layout:
 		forge_layout_handle_message(entries, size - sizeof(header));
+		break;
+	case _distributed_message_forge_edit:
+		forge_layout_handle_edit(entries, size - sizeof(header));
 		break;
 	case _distributed_message_client_ready:
 		distributed_machine_loaded(machine_index);

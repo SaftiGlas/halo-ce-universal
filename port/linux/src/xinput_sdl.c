@@ -183,7 +183,7 @@ static void mouse_poll(const struct platform_input_state *input)
 
 /* ---------- dev tools (see halo_linux_forge_read_keys) */
 
-/* the dev tools are on in a local game of the Forge game type
+/* the dev tools are on in a local or system link game of the Forge game type
 (port/linux/game/forge.c, forge_mode_on) */
 static int forge_enabled(void)
 {
@@ -197,6 +197,22 @@ static volatile int forge_menu_keys_captured = FALSE;
 void halo_linux_forge_capture_menu_keys(int capture)
 {
 	forge_menu_keys_captured = capture;
+}
+
+/* while the dev tools have a line of text typed (forge_text_entry_begin),
+the keyboard is theirs: it drives neither controller 1 nor the mods' keys */
+static volatile int forge_text_captured = FALSE;
+
+void halo_linux_forge_capture_text(int capture)
+{
+	forge_text_captured = capture;
+}
+
+/* (only while the tools are on: a game that ends with a line still open
+leaves the keyboard free) */
+static int forge_typing(void)
+{
+	return forge_text_captured && forge_enabled();
 }
 
 /* while the camera flies, the D-pad's up (which lands it) and right (the
@@ -280,7 +296,7 @@ int halo_mod_key_down(int key)
 {
 	struct platform_input_state input;
 
-	if (console_is_active())
+	if (console_is_active() || forge_typing())
 		return FALSE;
 	platform_input_read(&input, FALSE);
 	switch (key)
@@ -294,6 +310,17 @@ int halo_mod_key_down(int key)
 	default:
 		return key > SDL_SCANCODE_UNKNOWN && key < SDL_SCANCODE_COUNT && input.keys[key];
 	}
+}
+
+void halo_linux_forge_read_text_keys(unsigned char *keys, int count)
+{
+	struct platform_input_state input;
+
+	memset(keys, 0, (size_t)count);
+	if (console_is_active())
+		return;
+	platform_input_read(&input, FALSE);
+	memcpy(keys, input.keys, (size_t)(count < SDL_SCANCODE_COUNT ? count : SDL_SCANCODE_COUNT));
 }
 
 const char *halo_mod_key_name(int key)
@@ -745,7 +772,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		mod_filter_keys(&input);
 		mouse_poll(&input);
 		wheel_update();
-		if (!console_is_active())
+		if (!console_is_active() && !forge_typing())
 			keyboard_gamepad(&input, &state->Gamepad);
 		if (count > 0)
 			sdl_gamepad_state(gamepads[0], &state->Gamepad);

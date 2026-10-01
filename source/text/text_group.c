@@ -221,9 +221,14 @@ static wchar_t *fallback_string(long tag_index, short string_index)
 		string_index < FORGE_CUSTOM_MAP_DESCRIPTION_STRING + FORGE_CUSTOM_MAP_STRING_COUNT)
 	{
 		static wchar_t description[128];
-		char const *base = forge_custom_map_base_title((short)(string_index - FORGE_CUSTOM_MAP_DESCRIPTION_STRING));
+		short custom_index = (short)(string_index - FORGE_CUSTOM_MAP_DESCRIPTION_STRING);
+		char const *base = forge_custom_map_base_title(custom_index);
 		char text[128];
 		short character;
+
+		/* the layout's own, when it has one (the Map tab's Description row) */
+		if (forge_custom_map_description(custom_index))
+			return (wchar_t *)forge_custom_map_description(custom_index);
 
 		_snprintf(text, sizeof(text), "A Forge map made on %s.", base);
 		text[sizeof(text) - 1] = 0;

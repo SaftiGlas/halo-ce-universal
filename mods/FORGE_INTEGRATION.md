@@ -131,7 +131,7 @@ belongs to the stashed post-processing.
 | `enabled.json` | old launcher state | looks superseded by `mods.json`; remove if unused |
 | `FORGE_PLAN.md`, `TESTING.md`, this file | docs | |
 
-The tools are on in local games of the **Forge** game type (the last
+The tools are on in local and system link games of the **Forge** game type (the last
 default game type, `build_game_variant_forge`, `GAME_VARIANT_FORGE_FLAG`);
 `HALO_FORGE=all` turns them on in every game for development.
 
@@ -174,8 +174,8 @@ and drop the patch (and the "must apply exactly" failure mode).
 ### 6.4 Replace the `HALO_FORGE` environment switch (done)
 Forge is a game type: "Forge" is added after the 26 default game types
 (`playlist_profile.c`; its name and description are built-in strings in
-`text_group.c`), and `forge_mode_on()` (`forge.c`) is TRUE in local games
-of it. Still open: printing the key help on first use.
+`text_group.c`), and `forge_mode_on()` (`forge.c`) is TRUE in local and
+system link games of it. Still open: printing the key help on first use.
 
 ### 6.5 Base-code changes worth making permanent
 From the POC and this branch, the following are the minimal, reviewable base
@@ -210,9 +210,21 @@ by tag and placement), and each mod's part through the `layout_save`,
 `layout_clear` and `layout_load` hooks of `struct halo_mod` (zones, AI
 characters and waypoints, gravity, sky). The layout chosen with "Play on
 this map" (`play.txt`) loads at every new map in any local game, Forge or
-not. New layouts are named "Layout N"; `python -m tools.mod_launcher
-layouts rename MAP N NAME` renames one. Automated test hook:
-`debug.forge_layout_save` / `HALO_FORGE_LAYOUT_SAVE`.
+not. New layouts are named "Layout N"; the Map tab's Name and Description
+rows change a layout's name and its `description` header line (typed on the
+keyboard through `forge_text_entry_begin`, `forge.c`), as do `python -m
+tools.mod_launcher layouts rename MAP N NAME` and `layouts describe MAP N
+TEXT`. Automated test hook: `debug.forge_layout_save` /
+`HALO_FORGE_LAYOUT_SAVE`.
+
+System link: the host's tools and mods work as in a local game. A layout is
+written to memory first (`forge_layout_write`), to its file or, without
+what the host's objects bring (units, items, `forge_ai`'s characters), for
+the clients: twice a second the host writes that text and sends it to every
+client when its checksum has changed (`forge_layout_host_sync`). A client's
+tools send `_distributed_message_forge_edit` (spawn, move, remove), which
+the host checks and does (`forge_layout_handle_edit`). Automated test hook:
+`debug.forge_test_edit` / `HALO_FORGE_TEST_EDIT`.
 
 Layouts with "Show in the map list" (`listed 1`) are maps of their own in
 the multiplayer map list of local games, after the 13 maps, with the base
@@ -259,7 +271,9 @@ the internet-play / netcode path without a separate design.
 1. One cache file at a time: only the map's own tags plus imported ones.
 2. Lightmaps are baked; new/moved objects get no radiosity. New BSP is not possible.
 3. Mod `update` runs per frame; gameplay changes must use `tick` (30 Hz).
-4. Local games only.
+4. Local and system link games (the mods' pages and layouts on the host
+   only); a client applies a changed layout whole, so its scenery blinks
+   once when anything of it changes.
 5. Barriers and real collision blocks (scaled scenery, primitives), surface
    shaders / texture replacement and squads / AI vehicles are not built.
 
