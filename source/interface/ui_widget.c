@@ -2312,11 +2312,12 @@ static struct widget_instance *ui_widget_launch_widget(
 	struct widget_instance *new_widget;
 	short local_player_index;
 
-	/* port: the multiplayer menus open only on maps of a build that plays
-	multiplayer with the others (cache_files.c, cache_files_multiplayer_region);
-	otherwise the player is told why, and the main menu stays */
+	/* port: the menus of multiplayer with other machines (not split screen's
+	or co-op's) open only on maps of a build that plays multiplayer with the
+	others (cache_files.c, cache_files_multiplayer_region); otherwise the
+	player is told why, and the menu stays */
 	{
-		static char const multiplayer_menus[] = "ui\\shell\\main_menu\\multiplayer_type_select\\";
+		static char const multiplayer_menus[] = "ui\\shell\\main_menu\\multiplayer_type_select\\connected\\";
 		char const *name = tag_get_name(new_widget_tag_index);
 		char build[0x20];
 
@@ -2324,16 +2325,7 @@ static struct widget_instance *ui_widget_launch_widget(
 			!csstrncmp(name, multiplayer_menus, sizeof(multiplayer_menus) - 1) &&
 			!cache_files_multiplayer_region(build))
 		{
-			void platform_log(char const *format, ...);
-			void platform_show_message(char const *title, char const *message);
-			char message[256];
-
-			platform_log("multiplayer is unavailable: maps of build %s are not supported", build);
-			csprintf(
-				message,
-				"Your maps (build %s) aren't supported for multiplayer yet.\n\nAsk in the Discord to get them added.",
-				build);
-			platform_show_message("Halo: multiplayer unavailable", message);
+			cache_files_show_multiplayer_unavailable(NULL, build);
 
 			return NULL;
 		}
@@ -5773,6 +5765,19 @@ static void widget_instance_render_recursive(
 			&bitmap_group->sequences,
 			0,
 			struct bitmap_group_sequence);
+		/* port: a widget whose bounds cover the whole 640x480 design space (the
+		 * pause menu's dim, for example) should cover the whole screen too,
+		 * not just the centered 640 columns -- same as the fade_to_black
+		 * quad in render_ui_widgets(). Both the bounds and the clip are
+		 * widened symmetrically below, before the centering offset is
+		 * added. Only flat fills (the dims, and the menus' vertical
+		 * gradient, at most 16 texels wide): a picture is drawn texel for
+		 * texel, so wider bounds would shift it (the loading screen). */
+		boolean widen_to_screen =
+			bounds.x0 <= 0 && bounds.y0 <= 0 &&
+			bounds.x1 >= 640 && bounds.y1 >= 480 &&
+			bitmap->width <= 16 &&
+			halo_screen_width() > 640;
 
 		if (use_nifty_plasma_fx)
 		{
@@ -5780,6 +5785,12 @@ static void widget_instance_render_recursive(
 			ui_plasma_effect_color.red = 0.05f;
 			ui_plasma_effect_color.green = 0.05f;
 			ui_plasma_effect_color.blue = 0.05f;
+		}
+		if (widen_to_screen)
+		{
+			long extra = (halo_screen_width() - 640) / 2;
+			bounds.x0 -= (short)extra;
+			bounds.x1 = (short)(640 + extra);
 		}
 		bounds.x0 += offset.x;
 		bounds.x1 += offset.x;
@@ -5793,6 +5804,17 @@ static void widget_instance_render_recursive(
 			clip->x1 += offset.x;
 			clip->y0 += offset.y;
 			clip->y1 += offset.y;
+		}
+		if (widen_to_screen && clip)
+		{
+			/* widen the clip by the same amount (it is offset-shifted but
+			 * still 640-wide at the edges) so the dim is not clipped back
+			 * to the centered columns */
+			long extra = (halo_screen_width() - 640) / 2;
+			if (clip->x0 <= 0)
+				clip->x0 -= (short)extra;
+			if (clip->x1 >= 640)
+				clip->x1 = (short)(clip->x1 + extra);
 		}
 		if (TEST_FLAG(definition->flags, _widget_flash_background_bitmap_bit))
 		{
