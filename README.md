@@ -77,6 +77,55 @@ The game can play system link games on a local network and on the internet:
   and the host makes the decisions for the game. Refer to
   [port/linux/NETCODE.md](port/linux/NETCODE.md).
 
+## Forge
+
+The `forge` branch adds Forge: a game type in which the players build on
+the map. They fly the camera, spawn, move and remove objects, place kill,
+gravity and teleport zones and AI characters, change the gravity and the
+sky, and save the result as a layout. A layout can show in the multiplayer
+map list as a map of its own. Forge operates in local games and in system
+link games, where all the players build together.
+
+The builds on the Download page do not include the Forge mods. Build the
+game from this branch. Only Linux is tested.
+
+To run it:
+
+1. Install the tools for Linux. Refer to "Requirements" in
+   [port/linux/README.md](port/linux/README.md#requirements).
+2. Get the branch:
+   `git clone -b forge https://github.com/SaftiGlas/halo-ce-universal.git`
+3. Put the `maps/` folder of the game data in the `assets/` folder of the
+   repository. If the game finds no data, it asks for the disc image at the
+   first start. Refer to "Start the game" in
+   [port/linux/README.md](port/linux/README.md#start-the-game).
+4. In the root folder of the repository, enter
+   `python -m tools.mod_launcher run`. The launcher builds the game with the
+   Forge mods, then starts it. The first build takes some minutes.
+5. In the game, select Multiplayer, make a game, and select the game type
+   **Forge**. It is the last of the default game types.
+
+In a Forge game:
+
+| Keyboard | Controller | Effect |
+| --- | --- | --- |
+| F2 | D-pad up | The camera flies. Push again to land. |
+| F3 | D-pad right or X (while the camera flies) | The menu opens: the objects to spawn, and the tabs of the mods. |
+| F4, Enter or left mouse button | A (while the camera flies) | Pick up the object under the crosshair. |
+| Enter, Escape, Delete | A, B, Y | Put down, cancel or remove the object that you hold. |
+| Page Up, Page Down | LB, RB | The previous and the next tab of the menu. |
+
+To play with other players, the host makes a system link game of the Forge
+game type and sends the invite link to them. All the machines must have a
+build of the same commit with the same mods.
+
+- To test Forge with other players, refer to
+  [mods/PLAYTEST.md](mods/PLAYTEST.md).
+- For all the controls and the layouts, refer to "Dev tools" in
+  [port/linux/README.md](port/linux/README.md#dev-tools).
+- `python -m tools.mod_launcher` without `run` shows the mods. There you can
+  set each mod to on or off.
+
 ## Build the game
 
 You do not need the Xbox SDK. The port supplies the SDK declarations that
