@@ -1,5 +1,0 @@
-{
-  "name": "Forge AI",
-  "version": "1.1.0",
-  "description": "An AI tab in the dev tools' menu (forge mode: F3, D-pad right or X): add AI characters (the actor variants the map has, such as the grunts and hunters that the launcher brings in from campaign maps) at the crosshair as enemies or friends, put waypoints at the crosshair, pick them up to move or remove them, and have the characters patrol along them with the game's own AI and pathfinding, breaking off to attack what they see and going back to their round afterwards. Works with a keyboard and a controller. In a system link game, on the host (the other machines see its characters)."
-}

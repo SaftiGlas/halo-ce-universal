@@ -1,5 +1,0 @@
-{
-  "name": "Gravity",
-  "version": "1.1.0",
-  "description": "A Gravity tab in the dev tools' menu (forge mode: F3, D-pad right or X): left and right change the gravity of the whole map (normal, low, very low, moon, high, very high). Every map of a local game starts at the chosen gravity; in a system link game the host changes it for every machine."
-}

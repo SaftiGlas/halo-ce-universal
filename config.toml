@@ -1,0 +1,294 @@
+# Halo settings
+#
+# The game writes this file with the defaults when it is missing: delete
+# it to go back to them. Each setting can also be set for one run with
+# the environment variable named with it, which wins over this file.
+
+[display]
+
+# Start fullscreen, drawing at the display's resolution and shape; false
+# starts in a window, which draws the Xbox's 640x480. F11 switches.
+# (for one run: HALO_FULLSCREEN=<value>)
+fullscreen = true
+
+# The window's size as a multiple of 640x480 (it can be resized).
+# (for one run: HALO_WINDOW_SCALE=<value>)
+window_scale = 2
+
+# Wait for the display between frames; false draws as fast as possible.
+# (for one run: HALO_NO_VSYNC=1 makes it false)
+vsync = true
+
+# Draw a frame for every display refresh, blending between the game's 30
+# ticks a second; false keeps the original 30 frames a second.
+# (for one run: HALO_INTERPOLATION=<value>)
+interpolation = true
+
+# In first person, point the view where the player aims now instead of
+# where the last tick left it: the view turns the frame the mouse moves,
+# not up to two ticks (66 ms) later.
+# (for one run: HALO_DIRECT_CAMERA=<value>)
+direct_camera = true
+
+# Draw the HUD (meters, counters, panels, motion sensor, reticles,
+# waypoints, scopes) from the high-res assets (8x the maps' bitmaps);
+# false draws the maps' own bitmaps.
+# (for one run: HALO_HIGH_RES_HUD=<value>)
+high_res_hud = true
+
+[audio]
+
+# Play sound.
+# (for one run: HALO_NO_AUDIO=1 makes it false)
+enabled = true
+
+# The volume of everything, 0.0 to 1.0.
+# (for one run: HALO_VOLUME=<value>)
+volume = 1.0
+
+[input]
+
+# How far the view turns for the mouse's movement.
+# (for one run: HALO_MOUSE_SENSITIVITY=<value>)
+mouse_sensitivity = 1.0
+
+# Moving the mouse forward looks down.
+# (for one run: HALO_MOUSE_INVERT=1 makes it true)
+invert_mouse = false
+
+# Magnetism while aiming with the mouse, as with a controller: the view
+# slowed and dragged along by a target. The last of the mouse and the
+# right stick to move decides. The bullets' autoaim (bent toward the
+# target) stays either way.
+# (for one run: HALO_MOUSE_AIM_ASSIST=<value>)
+mouse_aim_assist = false
+
+[game]
+
+# What the game's console shows on screen of what it logs: "important"
+# (bans, players dropped for cheating, what refuses a command, and the
+# asserts that stop the game), "all" (every line, the game's own
+# chatter too), or "none" (the asserts that stop the game only). What
+# a command prints shows whatever this is, and debug.txt has every line.
+# (for one run: HALO_CONSOLE_LOG=<value>)
+console_log = "important"
+
+# The language the game asks the Xbox for: "ja", "de", "fr", "es" or "it";
+# empty for English. The game data decides what is translated.
+# (for one run: HALO_LANGUAGE=<value>)
+language = ""
+
+[paths]
+
+# The folder holding the game data's maps folder; empty looks in the
+# working directory and its assets folder. Windows paths are easiest in
+# single quotes: 'C:\Games\Halo'.
+# (for one run: HALO_DATA_ROOT=<value>)
+data = ""
+
+# Where saved games and profiles go; empty for the usual place
+# (~/.local/share/halo-linux, or %APPDATA%\halo on Windows).
+# (for one run: HALO_SAVE_ROOT=<value>)
+saves = ""
+
+[network]
+
+# This machine's IPv4 address for system link, for a machine on several
+# networks; empty chooses one.
+# (for one run: HALO_NET_ADDRESS=<value>)
+address = ""
+
+# Comma-separated IPv4 addresses system link sends its announcements to
+# instead of the local network's broadcast address (for VPNs); empty for
+# the local network.
+# (for one run: HALO_NET_BROADCAST=<value>)
+broadcast = ""
+
+# Internet play: hosting makes an invite link (logged, and put on the
+# clipboard) that lets whoever has it join over the internet; opening a
+# link (or copying one before switching to the game) joins. Only people
+# with the invite can join. Off keeps system link to the local network.
+# (for one run: HALO_NET_ONLINE=<value>)
+online = true
+
+# Join the game of an invite link found on the clipboard when the game
+# comes to the front.
+# (for one run: HALO_NET_JOIN_FROM_CLIPBOARD=<value>)
+join_from_clipboard = true
+
+# The UDP port internet play uses; 0 picks one. A fixed one can be
+# forwarded on the router, for networks whose NAT stops connections.
+# (for one run: HALO_NET_TUNNEL_PORT=<value>)
+tunnel_port = 0
+
+# Let internet play ask the router (UPnP) to forward its port, for
+# networks whose NAT stops connections: when a player joins this
+# machine's game, and when joining a game takes too long. False never
+# asks.
+# (for one run: HALO_NET_ALLOW_UPNP=<value>)
+allow_upnp = true
+
+# Public MQTT brokers through which the machines of an invite find each
+# other (its messages are encrypted); comma-separated host:port.
+# (for one run: HALO_NET_BROKERS=<value>)
+signalling_brokers = "broker.emqx.io:1883,broker.hivemq.com:1883,test.mosquitto.org:1883"
+
+# Public STUN servers that tell this machine its internet address;
+# comma-separated host:port.
+# (for one run: HALO_NET_STUN=<value>)
+stun_servers = "stun.l.google.com:19302,stun.cloudflare.com:3478"
+
+[discord]
+
+# The Discord application internet play invites go through while the
+# Discord desktop client runs; empty for none.
+# (for one run: HALO_DISCORD_APPLICATION=<value>)
+application_id = "1553978809840050229"
+
+[update]
+
+# Look for a new version when the game starts, and offer to update to it;
+# false never looks (the game's "Do not ask again" writes false here).
+# (for one run: HALO_UPDATE_AUTO=<value>)
+auto = true
+
+[debug]
+
+# Automated system link sessions for testing (port/linux/game/network_test.c):
+# "host:<map>" hosts a game on that map, "join" joins the first game found;
+# empty for none.
+# (for one run: HALO_NETWORK_TEST=<value>)
+network_test = ""
+
+# Seconds after hosting that an automated test game starts.
+# (for one run: HALO_NETWORK_TEST_START=<value>)
+network_test_start = 15.0
+
+# Every this many seconds an automated test host kills its last player; 0 never.
+# (for one run: HALO_NETWORK_TEST_KILL=<value>)
+network_test_kill = 0.0
+
+# The score an automated test host's game type plays to (a short game, to
+# test the next); 0 the game type's own.
+# (for one run: HALO_NETWORK_TEST_SCORE=<value>)
+network_test_score = 0
+
+# Every this many seconds each automated test player hits the next with
+# their weapon, within its reach (the host brings far players near the
+# first a second before); 0 never.
+# (for one run: HALO_NETWORK_TEST_SHOOT=<value>)
+network_test_shoot = 0.0
+
+# This many seconds into an automated test game the host seats its last
+# player as a vehicle's driver (and out 15 seconds on); 0 never.
+# (for one run: HALO_NETWORK_TEST_VEHICLE=<value>)
+network_test_vehicle = 0.0
+
+# This many seconds into an automated test game the host stands its last
+# player on a weapon, which a joining player then picks up; 0 never.
+# (for one run: HALO_NETWORK_TEST_PICKUP=<value>)
+network_test_pickup = 0.0
+
+# The weapon network_test_pickup stands the player on: the first whose tag
+# name has this in it ("sniper", say); empty any.
+# (for one run: HALO_NETWORK_TEST_PICKUP_WEAPON=<value>)
+network_test_pickup_weapon = ""
+
+# Listen on 127.0.0.1 (port telnet_console_port) for a script console that
+# runs what it is sent as the game's console does, with no password; false
+# none.
+# (for one run: HALO_TELNET_CONSOLE=1 makes it true)
+telnet_console = false
+
+# The port of the script console (telnet_console); the Xbox's was 23, which
+# only the administrator can listen on.
+# (for one run: HALO_TELNET_CONSOLE_PORT=<value>)
+telnet_console_port = 2323
+
+# Milliseconds everything received is held back (a round trip between two
+# machines of twice it), to test the netcode as over the internet; 0 none.
+# (for one run: HALO_NETWORK_LATENCY=<value>)
+network_latency = 0.0
+
+# Percent of datagrams received that are dropped, for the same; 0 none.
+# (for one run: HALO_NETWORK_LOSS=<value>)
+network_loss = 0.0
+
+# "bot:<seed>" plays controller 1 with a scripted pattern (automated
+# network tests); "look:<seed>" stands still, only turning and looking
+# up and down; empty for none.
+# (for one run: HALO_TEST_INPUT=<value>)
+test_input = ""
+
+# The answer to the new version question, for automated tests: "yes",
+# "no" or "never" (do not ask again, confirmed); empty asks.
+# (for one run: HALO_UPDATE_ANSWER=<value>)
+update_answer = ""
+
+# Quit this many seconds after the window opens; 0 never.
+# (for one run: HALO_EXIT_AFTER=<value>)
+exit_after = 0.0
+
+# Keep the window hidden (and never fullscreen).
+# (for one run: HALO_HIDDEN_WINDOW=1 makes it true)
+hidden_window = false
+
+# Run without a window, drawing nothing.
+# (for one run: HALO_NULL_RENDERER=1 makes it true)
+null_renderer = false
+
+# Report OpenGL errors in the log.
+# (for one run: HALO_GL_DEBUG=1 makes it true)
+gl_debug = false
+
+# Log the renderer's draw counts once a second.
+# (for one run: HALO_GPU_STATS=1 makes it true)
+gpu_stats = false
+
+# Log every draw of this frame; -1 none.
+# (for one run: HALO_GPU_TRACE=<value>)
+gpu_trace_frame = -1
+
+# With gpu_trace_frame, also the vertex shader constants.
+# (for one run: HALO_GPU_TRACE_CONSTANTS=1 makes it true)
+gpu_trace_constants = false
+
+# Comma-separated ids of vertex shaders not to draw with.
+# (for one run: HALO_GPU_SKIP_VS=<value>)
+gpu_skip_vertex_shaders = ""
+
+# A folder to write the generated GLSL to; empty none.
+# (for one run: HALO_GPU_DUMP_SHADERS=<value>)
+gpu_dump_shaders = ""
+
+# A GLSL expression every pixel shader shows instead of its result.
+# (for one run: HALO_GPU_DEBUG_EXPR=<value>)
+gpu_debug_expression = ""
+
+# Pixel shaders show their first texture.
+# (for one run: HALO_GPU_DEBUG_T0=1 makes it true)
+gpu_debug_texture0 = false
+
+# Pixel shaders show their vertex colour.
+# (for one run: HALO_GPU_DEBUG_FLAT=1 makes it true)
+gpu_debug_flat = false
+
+# A folder to save frames to (with screenshot_every); empty none.
+# (for one run: HALO_SCREENSHOT_DIR=<value>)
+screenshot_directory = ""
+
+# Save every this many frames to screenshot_directory; 0 none.
+# (for one run: HALO_SCREENSHOT_EVERY=<value>)
+screenshot_every = 0
+
+# A folder to write every texture to as it is uploaded; empty none.
+# (for one run: HALO_TEXTURE_DUMP=<value>)
+texture_dump_directory = ""
+
+# Log texture uploads.
+# (for one run: HALO_TEXTURE_LOG=1 makes it true)
+texture_log = false
+
+# Upload textures again every time they are used.
+# (for one run: HALO_TEXTURE_NO_CACHE=1 makes it true)
+texture_no_cache = false

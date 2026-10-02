@@ -1,5 +1,0 @@
-{
-  "name": "Forge zones",
-  "version": "2.0.0",
-  "description": "Kill, gravity and teleport zones, all in a Zones tab of the dev tools' menu (forge mode: F3, D-pad right or X): add a zone at the crosshair, choose its kind, setting (a teleport's channel number pairs it with the zones that have the same number) and size, move or remove it. Works with a keyboard and a controller. In a system link game the host places them, and they reach every machine."
-}
