@@ -4,6 +4,7 @@
     "comment": "The game: every C file under root but those excluded (zlib's and libtiff's own programs), built with these defines and include directories.",
     "root": "source",
     "exclude": [
+      "source/camera/director.c",
       "source/bitmaps/libtiff/mkg3states.c",
       "source/bitmaps/libtiff/mkspans.c",
       "source/memory/zlib/contrib/asm386/gvmat32c.c",
@@ -65,6 +66,9 @@
   },
   "game_sources": "port/linux/game",
   "platform_sources": "port/linux/src",
+  "excluded_platform_sources": [
+    "xinput_sdl.c"
+  ],
   "libraries": [
     "SDL3",
     "m",

@@ -505,7 +505,10 @@ def generate_linux_build(n: Writer, sln: Any, layout: Optional[LinuxLayout] = No
         ])
         posix_cflags = " ".join(POSIX_FLAGS + [march_flag(sln), f"-I{platform_dir}"])
         mbedtls_include = f"-I{MBEDTLS_DIR / 'include'}"
+        excluded_platform = set(config.get("excluded_platform_sources", []))
         for source in sorted(platform_dir.glob("*.c")):
+            if source.name in excluded_platform:
+                continue
             if source.name == "posix_update.c":
                 add_object(source, f"{posix_cflags} {mbedtls_include}", posix=True)
             elif source.name == "posix_upnp.c":

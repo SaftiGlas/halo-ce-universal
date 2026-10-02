@@ -40,6 +40,7 @@ removed objects back itself.
 
 #include "cseries.h"
 #include "camera/director.h"
+#include "camera/director_forge.h"
 #include "cutscene/cinematics.h"
 #include "game/game.h"
 #include "game/players.h"

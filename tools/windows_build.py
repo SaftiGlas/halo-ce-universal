@@ -368,7 +368,8 @@ def generate_windows_build(n: Writer, sln: Any) -> None:
             f"-I{linux_platform}",
             f"-I{_quote(sdl_include)}",
         ])
-        replaced = set(config.get("replaced_platform_sources", []))
+        replaced = set(config.get("replaced_platform_sources", [])) | set(
+            linux_config.get("excluded_platform_sources", []))
         for source in sorted(linux_platform.glob("*.c")):
             if source.name in replaced:
                 continue
