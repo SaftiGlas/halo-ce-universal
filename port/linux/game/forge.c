@@ -210,6 +210,9 @@ cyan of Reach's menus */
 #define FORGE_MENU_TEXT_COLOR 0xffc9d6e0UL
 #define FORGE_MENU_SELECTED_TEXT_COLOR 0xffffffffUL
 #define FORGE_MENU_DIM_TEXT_COLOR 0xff7f95a8UL
+/* the count of objects when few more can be made, and when none can */
+#define FORGE_MENU_BUDGET_LOW_COLOR 0xffffb347UL
+#define FORGE_MENU_BUDGET_FULL_COLOR 0xffff5a4aUL
 
 /* where the menu's place is kept (see above) */
 #define FORGE_MENU_STATE_FILE "u:\\forge_ui.txt"
@@ -800,7 +803,8 @@ static void forge_menu_count_categories(
 	return;
 }
 
-/* the map's objects of the menu's category, by name */
+/* the map's objects of the menu's category, by name (the categories' counts
+are the map's: counted when the menu opens, forge_menu_open) */
 static void forge_menu_build(
 	void)
 {
@@ -809,7 +813,6 @@ static void forge_menu_build(
 	struct tag_iterator iterator;
 	long tag_index;
 
-	forge_menu_count_categories();
 	if (page)
 	{
 		forge_globals.entry_count = page->row_count();
@@ -852,6 +855,21 @@ static void forge_menu_build(
 	}
 	forge_globals.first_entry_index = forge_globals.category_first_entry_indices[forge_globals.category_index];
 	forge_menu_scroll_to_selection();
+
+	return;
+}
+
+static void forge_menu_fonts_choose(
+	void);
+
+/* opens the menu on its category */
+static void forge_menu_open(
+	void)
+{
+	forge_globals.menu_open = TRUE;
+	forge_menu_fonts_choose();
+	forge_menu_count_categories();
+	forge_menu_build();
 
 	return;
 }
@@ -975,6 +993,19 @@ static void forge_hold_begin(
 	return;
 }
 
+/* whether the layout keeps as many of the tools' objects as it can
+(forge_layout.c) */
+static boolean forge_budget_full(
+	void)
+{
+	short used;
+	short maximum;
+
+	forge_layout_object_budget(&used, &maximum);
+
+	return used >= maximum;
+}
+
 /* spawns the object where the crosshair points and holds it there */
 static void forge_take(
 	short local_player_index,
@@ -991,6 +1022,10 @@ static void forge_take(
 	else if (!forge_aim(local_player_index, NONE, &point, &normal))
 	{
 		terminal_printf(global_real_argb_orange, "forge: the camera is outside the map");
+	}
+	else if (forge_authoritative() && forge_budget_full())
+	{
+		terminal_printf(global_real_argb_orange, "forge: the map is full, remove an object first");
 	}
 	else
 	{
@@ -1439,8 +1474,7 @@ static void forge_update_keys(
 					flying = TRUE;
 				}
 				forge_globals.category_index = (short)debug_tab;
-				forge_globals.menu_open = TRUE;
-				forge_menu_build();
+				forge_menu_open();
 			}
 		}
 
@@ -1543,8 +1577,7 @@ static void forge_update_keys(
 		{
 			if (!forge_globals.menu_state_loaded)
 				forge_menu_state_load();
-			forge_globals.menu_open = TRUE;
-			forge_menu_build();
+			forge_menu_open();
 		}
 		else if (grab || (select && flying))
 		{
@@ -1705,6 +1738,80 @@ static void forge_render_mod_hold(
 	return;
 }
 
+/* ---------- the menu's fonts (forge_ui) */
+
+/* the menu's two fonts, as its drawing names them */
+enum
+{
+	_forge_menu_font_large = 0,
+	_forge_menu_font_small,
+	NUMBER_OF_FORGE_MENU_FONTS
+};
+
+/* a font of the menu: the font tag that draws it, how much its text is
+scaled, and its lines' height once scaled. With the high-res text
+(display.high_res_text, port/linux/src/text_hires.c) the tags are those it
+has fonts for, scaled to the height of the map's fonts the menu would
+otherwise use (the terminal's, and the largest that fits the menu's lines),
+so the menu is laid out the same either way. */
+static struct
+{
+	long tag_index;
+	real scale;
+	short line_height;
+} forge_menu_fonts[NUMBER_OF_FORGE_MENU_FONTS];
+
+int config_boolean(char const *name);
+
+/* chooses the menu's fonts in this map: when the menu opens */
+static void forge_menu_fonts_choose(
+	void)
+{
+	static char const *const high_res_names[NUMBER_OF_FORGE_MENU_FONTS] =
+	{
+		"ui\\large_ui",
+		"ui\\small_ui"
+	};
+	static int high_res = -1;
+	long plain[NUMBER_OF_FORGE_MENU_FONTS];
+	short font;
+
+	if (high_res < 0)
+		high_res = config_boolean("display.high_res_text");
+	plain[_forge_menu_font_large] = halo_mod_font_for_lines(FORGE_MENU_FONT_LINES);
+	plain[_forge_menu_font_small] = halo_mod_font(FALSE);
+	for (font = 0; font < NUMBER_OF_FORGE_MENU_FONTS; font++)
+	{
+		long high_res_index = high_res ? tag_loaded(FONT_GROUP_TAG, high_res_names[font]) : NONE;
+
+		forge_menu_fonts[font].tag_index = plain[font];
+		forge_menu_fonts[font].scale = 1.f;
+		forge_menu_fonts[font].line_height = halo_mod_line_height(plain[font]);
+		if (high_res_index != NONE && high_res_index != plain[font] && halo_mod_line_height(high_res_index) > 0)
+		{
+			forge_menu_fonts[font].tag_index = high_res_index;
+			forge_menu_fonts[font].scale =
+				(real)forge_menu_fonts[font].line_height / (real)halo_mod_line_height(high_res_index);
+		}
+	}
+
+	return;
+}
+
+static short forge_menu_line_height(
+	long font)
+{
+	return forge_menu_fonts[font].line_height;
+}
+
+static short forge_menu_text_width(
+	long font,
+	char const *text)
+{
+	return (short)((real)halo_mod_text_width(forge_menu_fonts[font].tag_index, text) * forge_menu_fonts[font].scale +
+		0.999f);
+}
+
 /* the last part of a tag's name, and its folder shortened from the left
 ("...\") to fit the width in the font */
 static void forge_split_tag_name(
@@ -1720,7 +1827,7 @@ static void forge_split_tag_name(
 
 	*name = separator ? separator + 1 : tag_name;
 	_snprintf(folder, folder_size, "%.*s", separator ? (int)(separator - tag_name) : 0, tag_name);
-	while (*folder && halo_mod_text_width(font, folder) > width)
+	while (*folder && forge_menu_text_width(font, folder) > width)
 	{
 		char const *next = separator ? strchr(start, '\\') : NULL;
 
@@ -1801,8 +1908,31 @@ static void forge_menu_text(
 	unsigned long argb,
 	char const *text)
 {
-	halo_mod_draw_text(font, x0, y, x1, (short)(y + halo_mod_line_height(font)),
-		justification, forge_menu_color(argb), text);
+	long tag_index = forge_menu_fonts[font].tag_index;
+	real scale = forge_menu_fonts[font].scale;
+	short height = halo_mod_line_height(tag_index);
+
+	if (scale == 1.f)
+	{
+		halo_mod_draw_text(tag_index, x0, y, x1, (short)(y + height), justification, forge_menu_color(argb), text);
+	}
+	else
+	{
+		/* laid out in a box as wide as x0 to x1 is before the scale, then
+		scaled about the edge (or the middle) the text is justified to */
+		short width = (short)((real)(x1 - x0) / scale);
+		real origin_x = justification == HALO_MOD_TEXT_RIGHT
+			? (real)x1
+			: justification == HALO_MOD_TEXT_CENTER ? (real)(x0 + x1) / 2.f : (real)x0;
+		short left = justification == HALO_MOD_TEXT_RIGHT
+			? (short)(x1 - width)
+			: justification == HALO_MOD_TEXT_CENTER ? (short)(origin_x - (real)width / 2.f) : x0;
+
+		rasterizer_text_set_scale(scale, origin_x, (real)y);
+		halo_mod_draw_text(tag_index, left, y, (short)(left + width), (short)(y + height), justification,
+			forge_menu_color(argb), text);
+		rasterizer_text_set_scale(1.f, 0.f, 0.f);
+	}
 
 	return;
 }
@@ -1819,10 +1949,24 @@ static void forge_menu_fit(
 	int length = (int)strlen(text);
 
 	_snprintf(fitted, fitted_size, "%s", text);
-	while (length > 1 && halo_mod_text_width(font, fitted) > width - 2)
+	if (length > 1 && forge_menu_text_width(font, fitted) > width - 2)
 	{
-		length--;
-		_snprintf(fitted, fitted_size, "%.*s...", length, text);
+		/* the most of it that fits: found by halves, as this is asked of every
+		row each frame and measuring a line is what it costs */
+		int fits = 1;
+		int too_long = length;
+
+		while (too_long - fits > 1)
+		{
+			int middle = (fits + too_long) / 2;
+
+			_snprintf(fitted, fitted_size, "%.*s...", middle, text);
+			if (forge_menu_text_width(font, fitted) > width - 2)
+				too_long = middle;
+			else
+				fits = middle;
+		}
+		_snprintf(fitted, fitted_size, "%.*s...", fits, text);
 	}
 
 	return;
@@ -1852,7 +1996,7 @@ static short forge_menu_hints(
 	short hint_count,
 	boolean draw)
 {
-	short cap_height = (short)(halo_mod_line_height(font) + 4);
+	short cap_height = (short)(forge_menu_line_height(font) + 4);
 	short x = x0;
 	short rows = 1;
 	short hint_index;
@@ -1860,8 +2004,8 @@ static short forge_menu_hints(
 	for (hint_index = 0; hint_index < hint_count; hint_index++)
 	{
 		struct forge_menu_hint const *hint = &hints[hint_index];
-		short keys_width = (short)(halo_mod_text_width(font, hint->keys) * 106 / 100 + 8);
-		short action_width = (short)(halo_mod_text_width(font, hint->action) * 106 / 100 + 2);
+		short keys_width = (short)(forge_menu_text_width(font, hint->keys) * 106 / 100 + 8);
+		short action_width = (short)(forge_menu_text_width(font, hint->action) * 106 / 100 + 2);
 		short width = (short)(keys_width + 4 + action_width);
 
 		if (x > x0 && x + width > x1)
@@ -1906,10 +2050,10 @@ static void forge_render_menu(
 	unsigned long milliseconds = system_milliseconds();
 	real seconds = MIN((real)(milliseconds - forge_menu_look.milliseconds) / MILLISECONDS_PER_SECOND, 0.1f);
 	boolean fresh = milliseconds - forge_menu_look.milliseconds > FORGE_MENU_FRESH_MILLISECONDS;
-	long font = halo_mod_font_for_lines(FORGE_MENU_FONT_LINES);
-	long small_font = halo_mod_font(FALSE);
-	short line_height = halo_mod_line_height(font);
-	short small_height = halo_mod_line_height(small_font);
+	long font = _forge_menu_font_large;
+	long small_font = _forge_menu_font_small;
+	short line_height = forge_menu_line_height(font);
+	short small_height = forge_menu_line_height(small_font);
 	short row_height = (short)(line_height + 3);
 	short section_height = (short)(small_height + 8);
 	short title_height = (short)(line_height + 10);
@@ -1988,6 +2132,22 @@ static void forge_render_menu(
 				forge_menu_text(small_font, (short)(x0 + FORGE_MENU_PADDING), (short)(category_y + 6),
 					(short)(x0 + left_width), HALO_MOD_TEXT_LEFT, FORGE_MENU_ACCENT_DIM_COLOR,
 					category_index == 0 ? "SPAWN" : "TOOLS");
+				/* beside it, how many of the objects the layout keeps are
+				made (the host's, in a system link game) */
+				if (category_index == 0 && forge_authoritative())
+				{
+					short used;
+					short maximum;
+
+					forge_layout_object_budget(&used, &maximum);
+					_snprintf(line, sizeof(line), "%d / %d", used, maximum);
+					forge_menu_text(small_font, x0, (short)(category_y + 6),
+						(short)(x0 + left_width - FORGE_MENU_PADDING), HALO_MOD_TEXT_RIGHT,
+						used >= maximum
+							? FORGE_MENU_BUDGET_FULL_COLOR
+							: used * 10 >= maximum * 9 ? FORGE_MENU_BUDGET_LOW_COLOR : FORGE_MENU_DIM_TEXT_COLOR,
+						line);
+				}
 				category_y += section_height;
 			}
 			if (category_index == forge_globals.category_index)
@@ -2010,7 +2170,7 @@ static void forge_render_menu(
 
 			if (category_index == 0 || category_index == FORGE_CATEGORY_COUNT)
 				category_y += section_height;
-			text_y = (short)(category_y + (category_height - halo_mod_line_height(category_font)) / 2);
+			text_y = (short)(category_y + (category_height - forge_menu_line_height(category_font)) / 2);
 			forge_menu_fit(category_font, (short)(left_width - 2 * FORGE_MENU_PADDING - 12),
 				forge_tab_name(category_index), fitted, sizeof(fitted));
 			forge_menu_text(category_font, (short)(x0 + FORGE_MENU_PADDING + 6), text_y,
@@ -2091,7 +2251,7 @@ static void forge_render_menu(
 				page->row_text(entry_index, label, sizeof(label), value, sizeof(value));
 				/* a mod's value at the right, in brackets on the chosen row: left and right change it */
 				_snprintf(value_text, sizeof(value_text), value[0] ? (selected ? "< %s >" : "%s") : "", value);
-				if (halo_mod_text_width(font, label) + halo_mod_text_width(font, value_text) + 24 > label_width)
+				if (forge_menu_text_width(font, label) + forge_menu_text_width(font, value_text) + 24 > label_width)
 				{
 					/* not both in the large font: both in the small */
 					row_font = small_font;
@@ -2102,7 +2262,7 @@ static void forge_render_menu(
 					forge_menu_fit(row_font, (short)(label_width * 60 / 100), value_text, value, sizeof(value));
 					forge_menu_text(row_font, right_x0, row_text_y, text_x1, HALO_MOD_TEXT_RIGHT,
 						selected ? FORGE_MENU_TITLE_TEXT_COLOR : FORGE_MENU_TEXT_COLOR, value);
-					label_width -= (short)(halo_mod_text_width(row_font, value) + 12);
+					label_width -= (short)(forge_menu_text_width(row_font, value) + 12);
 				}
 				forge_menu_fit(row_font, label_width, label, fitted, sizeof(fitted));
 				forge_menu_text(row_font, (short)(right_x0 + FORGE_MENU_PADDING + 6), row_text_y, text_x1,

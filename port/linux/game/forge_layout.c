@@ -1537,7 +1537,32 @@ void forge_layout_note_spawned(
 	}
 	forge_layout_globals.spawned_count = write;
 	if (forge_layout_globals.spawned_count < FORGE_LAYOUT_MAXIMUM_SPAWNED)
+	{
 		forge_layout_globals.spawned[forge_layout_globals.spawned_count++] = object_index;
+	}
+	else
+	{
+		terminal_printf(global_real_argb_orange,
+			"forge: a layout keeps %d objects at most, this one is not saved with it", FORGE_LAYOUT_MAXIMUM_SPAWNED);
+	}
+
+	return;
+}
+
+void forge_layout_object_budget(
+	short *used,
+	short *maximum)
+{
+	short index;
+
+	/* (those still there: the list is packed only when one is added) */
+	*used = 0;
+	for (index = 0; index < forge_layout_globals.spawned_count; index++)
+	{
+		if (object_try_and_get(forge_layout_globals.spawned[index]))
+			(*used)++;
+	}
+	*maximum = FORGE_LAYOUT_MAXIMUM_SPAWNED;
 
 	return;
 }

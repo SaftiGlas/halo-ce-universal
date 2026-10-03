@@ -98,6 +98,10 @@ other as made), and one they are about to remove (a map's own one is saved
 as removed): call before object_delete */
 void forge_layout_note_placed(long object_index);
 void forge_layout_note_removed(long object_index);
+/* the objects the tools and the mods made that the layout keeps, and the
+most it keeps: one made past that is not saved with it (the spawn menu makes
+none then, and says so) */
+void forge_layout_object_budget(short *used, short *maximum);
 
 /* layouts shown as maps of their own in the multiplayer map list of local
 games (the "Show in the map list" row): after the game's 13 maps, with the
