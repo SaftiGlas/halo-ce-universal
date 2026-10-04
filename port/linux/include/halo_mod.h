@@ -252,5 +252,8 @@ void halo_mod_draw_text(long font, short x0, short y0, short x1, short y1, int j
 	unsigned long argb, char const *text);
 /* a filled box, colour 0xAARRGGBB, blended by its alpha */
 void halo_mod_draw_box(short x0, short y0, short x1, short y1, unsigned long argb);
+/* the same with corners between the screen's units, for shapes thinner than
+one (the display has several pixels to a unit) */
+void halo_mod_draw_box_real(float x0, float y0, float x1, float y1, unsigned long argb);
 
 #endif

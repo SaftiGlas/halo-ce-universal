@@ -155,6 +155,13 @@ the Forge maps' names and descriptions with (text/text_group.c) */
 #define FORGE_CUSTOM_MAP_STRING_COUNT 64
 
 /* for source mods (halo_mod.h), about local player 0 */
+/* a line of text in the tools' menu font (the high-res one with
+display.high_res_text), as halo_mod_draw_text draws one: its line's height,
+a text's width, and the text at the left, right or center of x0 to x1 with
+its line's top at y, colour 0xAARRGGBB */
+short forge_label_height(void);
+short forge_label_width(char const *text);
+void forge_draw_label(short x0, short y, short x1, int justification, unsigned long argb, char const *text);
 /* TRUE while the spawn menu is open or an object is held: the tools then
 have the menu keys, delete included */
 int forge_busy(void);
@@ -190,9 +197,9 @@ struct halo_forge_hold_input
 
 struct halo_forge_hold
 {
-	/* what is held, for the first line of text */
+	/* what is held: the text drawn while it is */
 	char const *name;
-	/* the second line of text, or NULL */
+	/* more about it, or NULL (not drawn: only the name is) */
 	void (*describe)(char *line, unsigned long size);
 	/* once a frame while it is held; returns TRUE when it is done (put
 	down, cancelled or removed). With a NULL input the hold has been cut

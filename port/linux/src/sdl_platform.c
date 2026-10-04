@@ -51,7 +51,7 @@ static long scoreboard_notches;
 static long scoreboard_pages;
 
 /* debug keyboard queue */
-#define KEYSTROKE_QUEUE_SIZE 64
+#define KEYSTROKE_QUEUE_SIZE 512
 static struct platform_keystroke keystroke_queue[KEYSTROKE_QUEUE_SIZE];
 static unsigned long keystroke_head, keystroke_count;
 
@@ -622,6 +622,32 @@ static void queue_keystroke(const SDL_KeyboardEvent *event)
 	keystroke_count++;
 }
 
+/* Ctrl+V: the clipboard's printable text typed into the debug keyboard, so
+the console can be pasted into */
+static void queue_clipboard_paste(void)
+{
+	char *text = SDL_GetClipboardText();
+	const char *c;
+
+	if (!text)
+		return;
+	for (c = text; *c; c++)
+	{
+		struct platform_keystroke *keystroke;
+
+		if ((unsigned char)*c < 32 || (unsigned char)*c >= 127)
+			continue;
+		if (keystroke_count == KEYSTROKE_QUEUE_SIZE)
+			break;
+		keystroke = &keystroke_queue[(keystroke_head + keystroke_count) % KEYSTROKE_QUEUE_SIZE];
+		keystroke->virtual_key = 0;
+		keystroke->ascii = *c;
+		keystroke->flags = 0;
+		keystroke_count++;
+	}
+	SDL_free(text);
+}
+
 BOOL platform_next_keystroke(struct platform_keystroke *keystroke)
 {
 	BOOL result = FALSE;
@@ -823,7 +849,10 @@ void platform_pump_events(void)
 				if (event.key.down)
 					keys_pressed[event.key.scancode] = 1;
 			}
-			queue_keystroke(&event.key);
+			if (event.key.down && event.key.scancode == SDL_SCANCODE_V && (event.key.mod & SDL_KMOD_CTRL))
+				queue_clipboard_paste();
+			else
+				queue_keystroke(&event.key);
 			if (SDL_GetTicks() < scoreboard_open_until_ms && event.key.down &&
 				(event.key.scancode == SDL_SCANCODE_PAGEUP || event.key.scancode == SDL_SCANCODE_PAGEDOWN))
 			{

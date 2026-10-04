@@ -66,7 +66,6 @@ enum
 
 /* 0xAARRGGBB */
 #define FORGE_EDIT_LABEL_COLOR 0xffffff80UL
-#define FORGE_EDIT_HINT_COLOR 0xffc0c0c0UL
 #define FORGE_EDIT_LABEL_BACKGROUND_COLOR 0x90000000UL
 
 /* ---------- structures */
@@ -368,37 +367,26 @@ static void forge_edit_render(
 	short y0;
 	short x1;
 	short y1;
-	long font;
 	struct object_datum *object;
 
+	/* the marked object's name alone, in the tools' menu font */
 	if (forge_edit_globals.marking &&
 		forge_edit_globals.marked_object_index != NONE &&
 		(object = object_try_and_get(forge_edit_globals.marked_object_index)) != NULL &&
-		halo_mod_screen(&x0, &y0, &x1, &y1) &&
-		(font = halo_mod_font(FALSE)) != NONE)
+		halo_mod_screen(&x0, &y0, &x1, &y1))
 	{
-		char label[160];
-		char hint[160];
-		short line_height = halo_mod_line_height(font);
+		char const *label = forge_edit_object_name(object->definition_index);
 		short center_x = (short)((x0 + x1) / 2);
 		short top = (short)((y0 + y1) / 2 + FORGE_EDIT_LABEL_OFFSET);
-		short width;
-
-		_snprintf(label, sizeof(label), "%s", forge_edit_object_name(object->definition_index));
-		_snprintf(hint, sizeof(hint), "%s removes, menu: Edit tab", halo_mod_key_name(HALO_MOD_KEY_DELETE));
-		width = (short)(MAX(halo_mod_text_width(font, label), halo_mod_text_width(font, hint)) +
-			4 * FORGE_EDIT_LABEL_MARGIN);
+		short width = (short)(forge_label_width(label) + 4 * FORGE_EDIT_LABEL_MARGIN);
 
 		halo_mod_draw_box(
 			(short)(center_x - width / 2),
 			(short)(top - FORGE_EDIT_LABEL_MARGIN),
 			(short)(center_x + width / 2),
-			(short)(top + 2 * line_height + FORGE_EDIT_LABEL_MARGIN),
+			(short)(top + forge_label_height() + FORGE_EDIT_LABEL_MARGIN),
 			FORGE_EDIT_LABEL_BACKGROUND_COLOR);
-		halo_mod_draw_text(font, x0, top, x1, (short)(top + line_height),
-			HALO_MOD_TEXT_CENTER, FORGE_EDIT_LABEL_COLOR, label);
-		halo_mod_draw_text(font, x0, (short)(top + line_height), x1, (short)(top + 2 * line_height),
-			HALO_MOD_TEXT_CENTER, FORGE_EDIT_HINT_COLOR, hint);
+		forge_draw_label(x0, top, x1, HALO_MOD_TEXT_CENTER, FORGE_EDIT_LABEL_COLOR, label);
 	}
 
 	/* drawn only after an update: nothing is left over when the game stops

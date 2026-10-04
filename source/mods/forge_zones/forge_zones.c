@@ -9,10 +9,12 @@ Everything is in the dev tools' menu (F3, D-pad right or, flying, X), on the
 enter or A act, LB / RB (Page Up / Page Down, T / V) change tab. So it works on a controller as it does on a
 keyboard, and needs no other key. The rows:
 
-	Show zones      draw the zones in the world (placing one shows them)
-	New zone        left/right: the kind of the next one; enter/A: place it
-	                at the crosshair, on the surface it points at, turned the
-	                way the camera looks, and close the menu
+	Show zones      draw the zones in the world (placing one shows them);
+	                they are drawn only in forge mode (flying), or while
+	                one is held: never on foot
+	New zone        left/right: the kind of the next one; enter/A: close the
+	                menu and hold a new one at the crosshair, on the surface
+	                it points at, turned the way the camera looks
 	Zone            which zone the rows below are about (with the zones
 	                shown, aiming at one with the menu closed chooses it)
 	Kind            kill, gravity or teleport
@@ -21,18 +23,21 @@ keyboard, and needs no other key. The rows:
 	Direction       (teleport) two-way, entrance only, or exit only
 	Width, Length, Height, Resize step
 	Pick up and move
-	                hold the zone like an object: aim to move it, left/right
-	                turn it (V / X: free, or in steps of 15, 45 or 90
-	                degrees), up/down raise and lower it, enter or A put it
-	                down, escape or B put it back, delete, Back or Y remove it.
+	                hold the zone as the tools hold an object: aim to move
+	                it, left/right turn it about the chosen axis (T: yaw,
+	                pitch or roll; V / X: free, or in steps of 15, 45, 90 or
+	                180 degrees), up/down raise and lower it, enter or A put
+	                it down, escape or B put it back, delete, Back or Y
+	                remove it. A new zone is held the same way until it is
+	                put down (escape or B: no zone after all).
 	                With the zones shown, aiming at one and pressing F4 (or
 	                enter / A while flying) picks it up the same way, unless
 	                an object is nearer.
 	Move here       to the crosshair, turned the way the camera looks
 	Remove
 
-A zone is a box standing on the surface it was placed on, turned about the
-vertical only. It works whether it is shown or not:
+A zone is a box standing on the surface it was placed on, turned as an
+object is (yaw, pitch and roll). It works whether it is shown or not:
 - a kill zone kills every living biped (players and AI, also in a vehicle)
   whose middle is in it, at once or after its delay; while local player 0
   counts down, the screen says so
@@ -44,7 +49,7 @@ vertical only. It works whether it is shown or not:
   what rides or is carried) to another teleport zone with the same channel
   number: two zones with a number in common are a pair, as many as share
   it are a ring, each sending to the next. What arrives keeps its place
-  in the box, turned by the difference of the two boxes' directions (its
+  in the box, turned by the difference of the two boxes' yaws (its
   speed too, and the player's view), and cannot go back through the zone
   it arrived in before leaving it. An entrance only zone never receives, an
   exit only zone never sends. Shown, paired teleports have the same colour
@@ -57,6 +62,7 @@ them.
 */
 
 #include "cseries.h"
+#include "camera/director_forge.h"
 #include "camera/observer.h"
 #include "cseries/cseries_windows.h"
 #include "cutscene/cinematics.h"
@@ -118,8 +124,10 @@ the ground, to take it off */
 /* what a teleported object is kept from the floor and walls of the box it
 arrives in */
 #define FORGE_ZONES_TELEPORT_MARGIN 0.05f
-/* world units a second a held zone rises and sinks */
+/* world units a second a held zone rises and sinks, and radians a second it
+turns: the tools' own speeds for an object (port/linux/game/forge.c) */
 #define FORGE_ZONES_HOLD_RAISE_SPEED 2.f
+#define FORGE_ZONES_HOLD_TURN_SPEED _pi
 
 /* 0xAARRGGBB */
 #define FORGE_ZONES_WARNING_COLOR 0xffff4040UL
@@ -138,8 +146,13 @@ struct forge_zone
 	/* a kill or gravity zone's setting */
 	short setting_index;
 	real_point3d center;
+	/* turned as the tools turn an object: about the world's up, then the nose
+	up, then about forward */
 	real yaw;
-	/* half the length (along forward), width (along left) and height */
+	real pitch;
+	real roll;
+	/* half the length (along forward), width (along left) and height (along
+	up) */
 	real_vector3d half_size;
 	/* a teleport zone: its channel, 1 to FORGE_ZONES_MAXIMUM_CHANNEL, and
 	what it does with it (enum forge_zone_direction) */
@@ -255,14 +268,15 @@ static struct
 	boolean drawing;
 } forge_zones_globals = { 0 };
 
-/* for a tick (forge_zones_tick_prepare): each zone's forward axis, and how
-many zones there are of each kind. A tick asks of every object whether each
-zone holds it; working the axes out again each time (a cosine and a sine)
-was most of what the zones cost. */
+/* for a tick (forge_zones_tick_prepare): each zone's axes, and how many
+zones there are of each kind. A tick asks of every object whether each zone
+holds it; working the axes out again each time (cosines and sines) was most
+of what the zones cost. */
 static struct
 {
-	real forward_i[FORGE_ZONES_MAXIMUM_ZONES];
-	real forward_j[FORGE_ZONES_MAXIMUM_ZONES];
+	real_vector3d forward[FORGE_ZONES_MAXIMUM_ZONES];
+	real_vector3d left[FORGE_ZONES_MAXIMUM_ZONES];
+	real_vector3d up[FORGE_ZONES_MAXIMUM_ZONES];
 	short kind_counts[NUMBER_OF_FORGE_ZONE_KINDS];
 } forge_zones_tick_globals;
 
@@ -284,13 +298,20 @@ static void forge_zones_forget_kill_timers(
 	return;
 }
 
+/* the zone's axes: yaw, then pitch, then roll, as the tools turn an object
+(forge_orientation_from_angles, port/linux/game/forge.c) */
 static void forge_zones_axes(
 	struct forge_zone const *zone,
 	real_vector3d *forward,
-	real_vector3d *left)
+	real_vector3d *left,
+	real_vector3d *up)
 {
-	set_real_vector3d(forward, cosine(zone->yaw), sine(zone->yaw), 0.f);
-	set_real_vector3d(left, -forward->j, forward->i, 0.f);
+	set_real_vector3d(forward, cosine(zone->pitch) * cosine(zone->yaw), cosine(zone->pitch) * sine(zone->yaw),
+		sine(zone->pitch));
+	set_real_vector3d(up, -sine(zone->pitch) * cosine(zone->yaw), -sine(zone->pitch) * sine(zone->yaw),
+		cosine(zone->pitch));
+	rotate_vector_about_axis(up, forward, sine(zone->roll), cosine(zone->roll));
+	cross_product3d(up, forward, left);
 
 	return;
 }
@@ -303,13 +324,14 @@ static void forge_zones_to_local(
 {
 	real_vector3d forward;
 	real_vector3d left;
+	real_vector3d up;
 	real_vector3d offset;
 
-	forge_zones_axes(zone, &forward, &left);
+	forge_zones_axes(zone, &forward, &left, &up);
 	vector_from_points3d(&zone->center, point, &offset);
 	local->i = dot_product3d(&offset, &forward);
 	local->j = dot_product3d(&offset, &left);
-	local->k = offset.k;
+	local->k = dot_product3d(&offset, &up);
 
 	return;
 }
@@ -324,29 +346,28 @@ static void forge_zones_tick_prepare(
 	{
 		struct forge_zone const *zone = &forge_zones_globals.zones[zone_index];
 
-		forge_zones_tick_globals.forward_i[zone_index] = cosine(zone->yaw);
-		forge_zones_tick_globals.forward_j[zone_index] = sine(zone->yaw);
+		forge_zones_axes(zone, &forge_zones_tick_globals.forward[zone_index],
+			&forge_zones_tick_globals.left[zone_index], &forge_zones_tick_globals.up[zone_index]);
 		forge_zones_tick_globals.kind_counts[zone->kind]++;
 	}
 
 	return;
 }
 
-/* forge_zones_contains, in a tick, after forge_zones_tick_prepare: its
-height first, which rules most zones out */
+/* whether the zone holds the point, in a tick, after
+forge_zones_tick_prepare */
 static boolean forge_zones_tick_contains(
 	short zone_index,
 	real_point3d const *point)
 {
 	struct forge_zone const *zone = &forge_zones_globals.zones[zone_index];
-	real forward_i = forge_zones_tick_globals.forward_i[zone_index];
-	real forward_j = forge_zones_tick_globals.forward_j[zone_index];
-	real offset_x = point->x - zone->center.x;
-	real offset_y = point->y - zone->center.y;
+	real_vector3d offset;
 
-	return (real)fabs(point->z - zone->center.z) <= zone->half_size.k &&
-		(real)fabs(offset_x * forward_i + offset_y * forward_j) <= zone->half_size.i &&
-		(real)fabs(offset_y * forward_i - offset_x * forward_j) <= zone->half_size.j;
+	vector_from_points3d(&zone->center, point, &offset);
+
+	return (real)fabs(dot_product3d(&offset, &forge_zones_tick_globals.up[zone_index])) <= zone->half_size.k &&
+		(real)fabs(dot_product3d(&offset, &forge_zones_tick_globals.forward[zone_index])) <= zone->half_size.i &&
+		(real)fabs(dot_product3d(&offset, &forge_zones_tick_globals.left[zone_index])) <= zone->half_size.j;
 }
 
 static real forge_zones_setting(
@@ -366,6 +387,7 @@ static boolean forge_zones_ray_hits(
 {
 	real_vector3d forward;
 	real_vector3d left;
+	real_vector3d up;
 	real_vector3d local_origin;
 	real local_direction[3];
 	real start[3];
@@ -374,11 +396,11 @@ static boolean forge_zones_ray_hits(
 	real leave = range;
 	short axis;
 
-	forge_zones_axes(zone, &forward, &left);
+	forge_zones_axes(zone, &forward, &left, &up);
 	forge_zones_to_local(zone, origin, &local_origin);
 	local_direction[0] = dot_product3d(direction, &forward);
 	local_direction[1] = dot_product3d(direction, &left);
-	local_direction[2] = direction->k;
+	local_direction[2] = dot_product3d(direction, &up);
 	start[0] = local_origin.i;
 	start[1] = local_origin.j;
 	start[2] = local_origin.k;
@@ -590,6 +612,12 @@ static void forge_zones_resize(
 	return;
 }
 
+static boolean forge_zones_pick_up(
+	short zone_index,
+	boolean spawned);
+
+/* a new zone at the crosshair, held as a spawned object is until it is put
+down */
 static void forge_zones_new(
 	void)
 {
@@ -633,6 +661,7 @@ static void forge_zones_new(
 	forge_zones_globals.showing = TRUE;
 	forge_zones_describe(&zone, description, sizeof(description));
 	terminal_printf(global_real_argb_green, "forge_zones: new %s", description);
+	forge_zones_pick_up(forge_zones_globals.selected_zone_index, TRUE);
 
 	return;
 }
@@ -652,6 +681,16 @@ static void forge_zones_remove(
 	return;
 }
 
+/* whether the zones are drawn and can be aimed at: shown, and only in forge
+mode (the tools' flying camera) or while the tools hold something or have
+their menu open; never on foot, so a game can be played with them shown */
+static boolean forge_zones_visible(
+	void)
+{
+	return forge_zones_globals.showing && forge_mode_on() &&
+		(director_forge_flying(FORGE_ZONES_LOCAL_PLAYER_INDEX) || forge_busy());
+}
+
 static void forge_zones_update(
 	void)
 {
@@ -665,7 +704,7 @@ static void forge_zones_update(
 
 	/* with the zones shown, aiming at one chooses it, unless the tools' menu
 	is in use (its rows say which zone) or a cutscene plays */
-	if (forge_zones_globals.showing && !forge_busy() && !cinematic_in_progress())
+	if (forge_zones_visible() && !forge_busy() && !cinematic_in_progress())
 	{
 		short aimed_zone_index = forge_zones_aimed_zone(NULL);
 
@@ -706,6 +745,7 @@ static void forge_zones_draw_zone(
 {
 	real_vector3d forward;
 	real_vector3d left;
+	real_vector3d up;
 	real_point3d corners[8];
 	real_argb_color edge_color = forge_zones_zone_color(zone);
 	real_argb_color face_color = edge_color;
@@ -728,17 +768,17 @@ static void forge_zones_draw_zone(
 	edge_color.alpha = selected ? 1.f : 0.6f;
 	face_color.alpha = selected ? 0.25f : 0.12f;
 
-	forge_zones_axes(zone, &forward, &left);
+	forge_zones_axes(zone, &forward, &left, &up);
 	/* corner bits: 1 forward, 2 left, 4 up */
 	for (corner_index = 0; corner_index < 8; corner_index++)
 	{
 		real along = (corner_index & 1) ? zone->half_size.i : -zone->half_size.i;
 		real across = (corner_index & 2) ? zone->half_size.j : -zone->half_size.j;
-		real up = (corner_index & 4) ? zone->half_size.k : -zone->half_size.k;
+		real above = (corner_index & 4) ? zone->half_size.k : -zone->half_size.k;
 
-		corners[corner_index].x = zone->center.x + forward.i * along + left.i * across;
-		corners[corner_index].y = zone->center.y + forward.j * along + left.j * across;
-		corners[corner_index].z = zone->center.z + up;
+		corners[corner_index].x = zone->center.x + forward.i * along + left.i * across + up.i * above;
+		corners[corner_index].y = zone->center.y + forward.j * along + left.j * across + up.j * above;
+		corners[corner_index].z = zone->center.z + forward.k * along + left.k * across + up.k * above;
 	}
 
 	for (index = 0; index < 6; index++)
@@ -799,7 +839,7 @@ static void forge_zones_render_world(
 {
 	short zone_index;
 
-	if (!forge_zones_globals.showing || game_connection() == _game_connection_film_playback)
+	if (!forge_zones_visible() || game_connection() == _game_connection_film_playback)
 		return;
 
 	for (zone_index = 0; zone_index < forge_zones_globals.zone_count; zone_index++)
@@ -980,10 +1020,9 @@ static void forge_zones_teleport(
 	struct forge_zone const *from = &forge_zones_globals.zones[from_index];
 	struct forge_zone const *to = &forge_zones_globals.zones[to_index];
 	real_vector3d local;
-	real_vector3d from_forward;
-	real_vector3d from_left;
 	real_vector3d to_forward;
 	real_vector3d to_left;
+	real_vector3d to_up;
 	real_point3d position;
 	real_vector3d forward = object->object.forward;
 	real_vector3d *velocity = &object->object.translational_velocity;
@@ -999,13 +1038,13 @@ static void forge_zones_teleport(
 	local.i = PIN(local.i / from->half_size.i, -1.f, 1.f) * MAX(to->half_size.i - FORGE_ZONES_TELEPORT_MARGIN, 0.f);
 	local.j = PIN(local.j / from->half_size.j, -1.f, 1.f) * MAX(to->half_size.j - FORGE_ZONES_TELEPORT_MARGIN, 0.f);
 	local.k = MAX(local.k + from->half_size.k, FORGE_ZONES_TELEPORT_MARGIN) - to->half_size.k;
-	forge_zones_axes(to, &to_forward, &to_left);
-	forge_zones_axes(from, &from_forward, &from_left);
-	position.x = to->center.x + to_forward.i * local.i + to_left.i * local.j;
-	position.y = to->center.y + to_forward.j * local.i + to_left.j * local.j;
-	position.z = to->center.z + local.k;
+	forge_zones_axes(to, &to_forward, &to_left, &to_up);
+	position.x = to->center.x + to_forward.i * local.i + to_left.i * local.j + to_up.i * local.k;
+	position.y = to->center.y + to_forward.j * local.i + to_left.j * local.j + to_up.j * local.k;
+	position.z = to->center.z + to_forward.k * local.i + to_left.k * local.j + to_up.k * local.k;
 
-	/* turned by the difference of the boxes' directions */
+	/* turned by the difference of the boxes' directions about the vertical
+	(their yaws: a tilted box does not tilt what goes through it) */
 	forward.i = object->object.forward.i * cosine_turn - object->object.forward.j * sine_turn;
 	forward.j = object->object.forward.i * sine_turn + object->object.forward.j * cosine_turn;
 	velocity->i = velocity_i * cosine_turn - velocity_j * sine_turn;
@@ -1130,25 +1169,42 @@ static void forge_zones_new_map(
 
 /* ---------- picking a zone up */
 
-/* how a held zone turns in steps: free, then these degrees */
-static real const forge_zones_hold_snaps[] = { 0.f, 15.f, 45.f, 90.f };
-static char const *const forge_zones_hold_snap_names[] = { "free", "15 degrees", "45 degrees", "90 degrees" };
+/* as the tools hold an object (port/linux/game/forge.c): the axis left and
+right turn the zone about (T), and how it turns in steps (V / X): free, then
+these degrees */
+enum
+{
+	_forge_zones_hold_axis_yaw = 0,
+	_forge_zones_hold_axis_pitch,
+	_forge_zones_hold_axis_roll,
+	NUMBER_OF_FORGE_ZONES_HOLD_AXES
+};
+
+static char const *const forge_zones_hold_axis_names[NUMBER_OF_FORGE_ZONES_HOLD_AXES] = { "yaw", "pitch", "roll" };
+static real const forge_zones_hold_snaps[] = { 0.f, 15.f, 45.f, 90.f, 180.f };
+static char const *const forge_zones_hold_snap_names[] =
+{
+	"free", "15 degrees", "45 degrees", "90 degrees", "180 degrees"
+};
 
 static struct
 {
 	short zone_index;
 	struct forge_zone original;
 	real height;
+	short axis;
 	short snap_index;
+	/* a new zone, not yet put down: cancelling removes it */
+	boolean spawned;
 } forge_zones_hold_globals = { NONE };
 
 static void forge_zones_hold_describe(
 	char *line,
 	unsigned long size)
 {
-	_snprintf(line, size, "turn step: %s, %.0f degrees, raised %.2f",
+	_snprintf(line, size, "turning: %s, step: %s, raised %.2f",
+		forge_zones_hold_axis_names[forge_zones_hold_globals.axis],
 		forge_zones_hold_snap_names[forge_zones_hold_globals.snap_index],
-		RADIANS_TO_DEGREES(forge_zones_globals.zones[forge_zones_hold_globals.zone_index].yaw),
 		forge_zones_hold_globals.height);
 
 	return;
@@ -1158,6 +1214,7 @@ static int forge_zones_hold_update(
 	struct halo_forge_hold_input const *input)
 {
 	struct forge_zone *zone;
+	real *angle;
 	float point[3];
 	float normal[3];
 
@@ -1169,6 +1226,12 @@ static int forge_zones_hold_update(
 	}
 	zone = &forge_zones_globals.zones[forge_zones_hold_globals.zone_index];
 
+	if (input && input->cancel && forge_zones_hold_globals.spawned)
+	{
+		/* as a spawned object: gone when it is not put down */
+		forge_zones_remove(forge_zones_hold_globals.zone_index);
+		return TRUE;
+	}
 	if (!input || input->cancel)
 	{
 		*zone = forge_zones_hold_globals.original;
@@ -1182,21 +1245,31 @@ static int forge_zones_hold_update(
 	if (input->place)
 		return TRUE;
 
+	if (input->axis_pressed)
+	{
+		forge_zones_hold_globals.axis = (short)((forge_zones_hold_globals.axis + 1) %
+			NUMBER_OF_FORGE_ZONES_HOLD_AXES);
+	}
 	if (input->snap_pressed)
 	{
 		forge_zones_hold_globals.snap_index = (short)((forge_zones_hold_globals.snap_index + 1) %
 			(sizeof(forge_zones_hold_snaps) / sizeof(forge_zones_hold_snaps[0])));
 	}
+	angle = forge_zones_hold_globals.axis == _forge_zones_hold_axis_yaw
+		? &zone->yaw
+		: forge_zones_hold_globals.axis == _forge_zones_hold_axis_pitch ? &zone->pitch : &zone->roll;
 	if (forge_zones_hold_snaps[forge_zones_hold_globals.snap_index] == 0.f)
 	{
 		/* half a circle a second, left is anticlockwise */
-		zone->yaw += ((input->left ? 1.f : 0.f) - (input->right ? 1.f : 0.f)) * input->seconds * _pi;
+		if (input->left != input->right)
+			*angle += (input->left ? 1.f : -1.f) * input->seconds * FORGE_ZONES_HOLD_TURN_SPEED;
 	}
-	else
+	else if (input->left_pressed != input->right_pressed)
 	{
+		/* to the next whole step, as an object */
 		real step = DEGREES_TO_RADIANS(forge_zones_hold_snaps[forge_zones_hold_globals.snap_index]);
 
-		zone->yaw += ((input->left_pressed ? 1.f : 0.f) - (input->right_pressed ? 1.f : 0.f)) * step;
+		*angle = (real)floor(*angle / step + 0.5f) * step + (input->left_pressed ? step : -step);
 	}
 	forge_zones_hold_globals.height += ((input->up ? 1.f : 0.f) - (input->down ? 1.f : 0.f)) * input->seconds *
 		FORGE_ZONES_HOLD_RAISE_SPEED;
@@ -1219,9 +1292,11 @@ static struct halo_forge_hold const forge_zones_hold =
 	forge_zones_hold_update
 };
 
-/* holds the zone; FALSE when the tools cannot take it now */
+/* holds the zone (spawned: a new one, gone when it is not put down); FALSE
+when the tools cannot take it now */
 static boolean forge_zones_pick_up(
-	short zone_index)
+	short zone_index,
+	boolean spawned)
 {
 	boolean picked_up = FALSE;
 
@@ -1230,6 +1305,8 @@ static boolean forge_zones_pick_up(
 		forge_zones_hold_globals.zone_index = zone_index;
 		forge_zones_hold_globals.original = forge_zones_globals.zones[zone_index];
 		forge_zones_hold_globals.height = 0.f;
+		forge_zones_hold_globals.axis = _forge_zones_hold_axis_yaw;
+		forge_zones_hold_globals.spawned = spawned;
 		picked_up = forge_mod_hold_begin(&forge_zones_hold);
 		if (picked_up)
 		{
@@ -1249,7 +1326,7 @@ static int forge_zones_grab(
 	long object_index;
 	short zone_index;
 
-	if (!forge_zones_globals.showing || !halo_mods_authoritative() ||
+	if (!forge_zones_visible() || !halo_mods_authoritative() ||
 		local_player_get_player_index(FORGE_ZONES_LOCAL_PLAYER_INDEX) == NONE)
 	{
 		return FALSE;
@@ -1269,7 +1346,7 @@ static int forge_zones_grab(
 			return FALSE;
 	}
 
-	return forge_zones_pick_up(zone_index);
+	return forge_zones_pick_up(zone_index, FALSE);
 }
 
 /* ---------- the tools' menu page */
@@ -1522,7 +1599,7 @@ static int forge_zones_menu_row_change(
 			(short)(sizeof(forge_zones_resize_steps) / sizeof(forge_zones_resize_steps[0])), direction);
 		break;
 	case _forge_zones_row_pick_up:
-		if (direction == 0 && forge_zones_pick_up(forge_zones_globals.selected_zone_index))
+		if (direction == 0 && forge_zones_pick_up(forge_zones_globals.selected_zone_index, FALSE))
 			close_menu = TRUE;
 		break;
 	case _forge_zones_row_move:
@@ -1581,9 +1658,10 @@ static void forge_zones_layout_save(
 	{
 		struct forge_zone const *zone = &forge_zones_globals.zones[index];
 
-		halo_layout_printf(writer, "zone %d %d %.4f %.4f %.4f %.5f %.4f %.4f %.4f %d %d",
+		halo_layout_printf(writer, "zone %d %d %.4f %.4f %.4f %.5f %.4f %.4f %.4f %d %d %.5f %.5f",
 			zone->kind, zone->setting_index, zone->center.x, zone->center.y, zone->center.z, zone->yaw,
-			zone->half_size.i, zone->half_size.j, zone->half_size.k, zone->channel, zone->direction);
+			zone->half_size.i, zone->half_size.j, zone->half_size.k, zone->channel, zone->direction,
+			zone->pitch, zone->roll);
 	}
 
 	return;
@@ -1605,12 +1683,13 @@ static void forge_zones_layout_load(
 	int setting_index;
 	int channel;
 	int direction;
-	float values[7];
+	/* (a layout saved before zones could tilt has no pitch and roll) */
+	float values[9] = { 0 };
 
 	if (forge_zones_globals.zone_count < FORGE_ZONES_MAXIMUM_ZONES &&
-		sscanf(line, "zone %d %d %f %f %f %f %f %f %f %d %d", &kind, &setting_index,
+		sscanf(line, "zone %d %d %f %f %f %f %f %f %f %d %d %f %f", &kind, &setting_index,
 			&values[0], &values[1], &values[2], &values[3], &values[4], &values[5], &values[6],
-			&channel, &direction) == 11 &&
+			&channel, &direction, &values[7], &values[8]) >= 11 &&
 		kind >= 0 && kind < NUMBER_OF_FORGE_ZONE_KINDS)
 	{
 		memset(&zone, 0, sizeof(zone));
@@ -1620,6 +1699,8 @@ static void forge_zones_layout_load(
 		zone.center.y = values[1];
 		zone.center.z = values[2];
 		zone.yaw = values[3];
+		zone.pitch = values[7];
+		zone.roll = values[8];
 		zone.half_size.i = values[4];
 		zone.half_size.j = values[5];
 		zone.half_size.k = values[6];

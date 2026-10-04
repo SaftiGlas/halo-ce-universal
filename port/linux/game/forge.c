@@ -214,6 +214,16 @@ cyan of Reach's menus */
 #define FORGE_MENU_BUDGET_LOW_COLOR 0xffffb347UL
 #define FORGE_MENU_BUDGET_FULL_COLOR 0xffff5a4aUL
 
+/* the crosshair: its arms' thickness, their distance from the middle, their
+length and the dark edge's width, in the screen's units (480 lines, so they
+are the same size on every display), and its colours */
+#define FORGE_CROSSHAIR_THICKNESS 0.7f
+#define FORGE_CROSSHAIR_GAP 2.5f
+#define FORGE_CROSSHAIR_LENGTH 5.f
+#define FORGE_CROSSHAIR_EDGE 0.4f
+#define FORGE_CROSSHAIR_COLOR 0xffffffffUL
+#define FORGE_CROSSHAIR_EDGE_COLOR 0xa0000000UL
+
 /* where the menu's place is kept (see above) */
 #define FORGE_MENU_STATE_FILE "u:\\forge_ui.txt"
 
@@ -310,13 +320,6 @@ static struct forge_category const forge_categories[FORGE_CATEGORY_COUNT] =
 	{ _object_type_equipment, "Equipment" },
 	{ _object_type_biped, "Bipeds" },
 	{ _object_type_scenery, "Scenery" }
-};
-
-static char const *const forge_axis_names[NUMBER_OF_FORGE_AXES] =
-{
-	"yaw",
-	"pitch",
-	"roll"
 };
 
 /* a step of 0 turns freely while the key is held */
@@ -980,6 +983,8 @@ static void forge_hold_begin(
 {
 	struct object_datum *object = object_get(object_index);
 
+	/* (its name is drawn in the menu's fonts, forge_render_held_name) */
+	forge_menu_fonts_choose();
 	forge_globals.held_object_index = object_index;
 	forge_globals.held_spawned = spawned;
 	forge_globals.held_height = 0.f;
@@ -1639,101 +1644,70 @@ static void forge_draw_line(
 	return;
 }
 
+/* the display's pixels for each of the screen's 480 lines
+(port/linux/src/d3d8_gl.c) */
+float halo_screen_pixel_scale(void);
+
+/* a box of the crosshair, in the display's pixels from the crosshair's
+middle */
+static void forge_crosshair_box(
+	real middle_x,
+	real middle_y,
+	real pixel,
+	long x0,
+	long y0,
+	long x1,
+	long y1,
+	long grow,
+	unsigned long argb)
+{
+	halo_mod_draw_box_real(
+		middle_x + (real)(x0 - grow) * pixel,
+		middle_y + (real)(y0 - grow) * pixel,
+		middle_x + (real)(x1 + grow) * pixel,
+		middle_y + (real)(y1 + grow) * pixel,
+		argb);
+
+	return;
+}
+
+/* four arms about a dot, drawn on the display's pixels rather than the
+screen's units (a character of the terminal font was as coarse as the
+screen): as sharp as the display, each part with a dark edge so it shows
+against anything */
 static void forge_render_crosshair(
-	long font_tag_index,
-	rectangle2d const *window,
-	short line_height)
+	rectangle2d const *window)
 {
-	rectangle2d bounds = *window;
+	real scale = MAX(halo_screen_pixel_scale(), 1.f);
+	real pixel = 1.f / scale;
+	long thickness = MAX((long)(scale * FORGE_CROSSHAIR_THICKNESS + 0.5f), 1);
+	long gap = (long)(scale * FORGE_CROSSHAIR_GAP + 0.5f);
+	long length = (long)(scale * FORGE_CROSSHAIR_LENGTH + 0.5f);
+	long edge = MAX((long)(scale * FORGE_CROSSHAIR_EDGE + 0.5f), 1);
+	/* the parts' near and far sides across their length */
+	long near_side = -(thickness / 2);
+	long far_side = near_side + thickness;
+	/* the middle, on a pixel's corner */
+	real middle_x = (real)(long)((real)(window->x0 + window->x1) / 2.f * scale + 0.5f) * pixel;
+	real middle_y = (real)(long)((real)(window->y0 + window->y1) / 2.f * scale + 0.5f) * pixel;
+	short pass;
 
-	bounds.y0 = (short)((window->y0 + window->y1 - line_height) / 2);
-	bounds.y1 = (short)(bounds.y0 + line_height);
-	forge_draw_line(font_tag_index, &bounds, _text_justification_center, global_real_argb_white, "+");
-
-	return;
-}
-
-/* the first line of the tools' text, under the window's top margin */
-static void forge_first_line_bounds(
-	rectangle2d const *window,
-	short line_height,
-	rectangle2d *bounds)
-{
-	*bounds = *window;
-	bounds->x0 = (short)(window->x0 + FORGE_MENU_MARGIN);
-	bounds->x1 = (short)(window->x1 - FORGE_MENU_MARGIN);
-	bounds->y0 = (short)(window->y0 + FORGE_MENU_MARGIN);
-	bounds->y1 = (short)(bounds->y0 + line_height);
-
-	return;
-}
-
-static void forge_render_held(
-	long font_tag_index,
-	rectangle2d const *window,
-	short line_height)
-{
-	char line[256];
-	rectangle2d bounds;
-
-	forge_first_line_bounds(window, line_height, &bounds);
-	_snprintf(
-		line,
-		NUMBEROF(line),
-		"%s %s",
-		forge_globals.held_spawned ? "placing" : "moving",
-		tag_get_name(object_get(forge_globals.held_object_index)->definition_index));
-	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_yellow, line);
-	offset_rectangle2d(&bounds, 0, line_height);
-
-	_snprintf(
-		line,
-		NUMBEROF(line),
-		"turning: %s (T), step: %s (V/X), right stick orbits, RT + right stick turns",
-		forge_axis_names[forge_globals.held_axis],
-		forge_snaps[forge_globals.held_snap_index].name);
-	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_white, line);
-	offset_rectangle2d(&bounds, 0, line_height);
-
-	forge_draw_line(
-		font_tag_index,
-		&bounds,
-		_text_justification_left,
-		global_real_argb_grey,
-		"aim to move, left/right turn, up/down raise, enter/click/A place, esc/right click/B cancel, delete/Y remove");
-
-	return;
-}
-
-/* what a mod holds (halo_forge.h) */
-static void forge_render_mod_hold(
-	long font_tag_index,
-	rectangle2d const *window,
-	short line_height)
-{
-	char line[256];
-	rectangle2d bounds;
-
-	forge_first_line_bounds(window, line_height, &bounds);
-	_snprintf(line, NUMBEROF(line), "moving %s", forge_globals.mod_hold->name);
-	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_yellow, line);
-	offset_rectangle2d(&bounds, 0, line_height);
-
-	line[0] = 0;
-	if (forge_globals.mod_hold->describe)
-		forge_globals.mod_hold->describe(line, sizeof(line));
-	if (line[0])
+	/* the edges first, then the parts over them */
+	for (pass = 0; pass < 2; pass++)
 	{
-		forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_white, line);
-		offset_rectangle2d(&bounds, 0, line_height);
-	}
+		long grow = pass == 0 ? edge : 0;
+		unsigned long argb = pass == 0 ? FORGE_CROSSHAIR_EDGE_COLOR : FORGE_CROSSHAIR_COLOR;
 
-	forge_draw_line(
-		font_tag_index,
-		&bounds,
-		_text_justification_left,
-		global_real_argb_grey,
-		"aim to move, left/right turn, up/down raise, V/X step, enter/click/A place, esc/right click/B cancel, delete/Y remove");
+		forge_crosshair_box(middle_x, middle_y, pixel, near_side, near_side, far_side, far_side, grow, argb);
+		forge_crosshair_box(middle_x, middle_y, pixel, near_side - gap - length, near_side, near_side - gap, far_side,
+			grow, argb);
+		forge_crosshair_box(middle_x, middle_y, pixel, far_side + gap, near_side, far_side + gap + length, far_side,
+			grow, argb);
+		forge_crosshair_box(middle_x, middle_y, pixel, near_side, near_side - gap - length, far_side, near_side - gap,
+			grow, argb);
+		forge_crosshair_box(middle_x, middle_y, pixel, near_side, far_side + gap, far_side, far_side + gap + length,
+			grow, argb);
+	}
 
 	return;
 }
@@ -1933,6 +1907,23 @@ static void forge_menu_text(
 			forge_menu_color(argb), text);
 		rasterizer_text_set_scale(1.f, 0.f, 0.f);
 	}
+
+	return;
+}
+
+/* what is held, under the window's top margin: its name alone (the last part
+of an object's tag name), in the menu's large font */
+static void forge_render_held_name(
+	rectangle2d const *window,
+	char const *name)
+{
+	char const *separator = strrchr(name, '\\');
+
+	/* (not the fade the menu was last drawn with) */
+	forge_menu_fade = 1.f;
+	forge_menu_text(_forge_menu_font_large, (short)(window->x0 + FORGE_MENU_MARGIN),
+		(short)(window->y0 + FORGE_MENU_MARGIN), (short)(window->x1 - FORGE_MENU_MARGIN), HALO_MOD_TEXT_LEFT,
+		FORGE_MENU_SELECTED_TEXT_COLOR, separator ? separator + 1 : name);
 
 	return;
 }
@@ -2404,16 +2395,17 @@ void forge_render(
 			forge_globals.held_object_index != NONE ||
 			forge_globals.mod_hold)
 		{
-			forge_render_crosshair(font_tag_index, &window, line_height);
+			forge_render_crosshair(&window);
 		}
 		if (forge_globals.mod_hold)
 		{
-			forge_render_mod_hold(font_tag_index, &window, line_height);
+			forge_render_held_name(&window, forge_globals.mod_hold->name);
 		}
 		else if (forge_globals.held_object_index != NONE &&
 			object_try_and_get(forge_globals.held_object_index))
 		{
-			forge_render_held(font_tag_index, &window, line_height);
+			forge_render_held_name(&window,
+				tag_get_name(object_get(forge_globals.held_object_index)->definition_index));
 		}
 		else if (forge_globals.menu_open)
 		{
@@ -2447,6 +2439,56 @@ int forge_mode_on(
 	/* (not in a saved film, which replays what was recorded) */
 	return every_game ||
 		(game_engine_variant_is_forge() && (forge_authoritative() || forge_client()));
+}
+
+/* ---------- text in the menu's font (halo_forge.h) */
+
+/* the menu's fonts are a map's: chosen again in another */
+static void forge_label_fonts(
+	void)
+{
+	static char map_name[256];
+	char const *name = tag_get_name(global_scenario_index);
+
+	if (strcmp(name, map_name) != 0)
+	{
+		forge_menu_fonts_choose();
+		_snprintf(map_name, sizeof(map_name), "%s", name);
+	}
+
+	return;
+}
+
+short forge_label_height(
+	void)
+{
+	forge_label_fonts();
+
+	return forge_menu_line_height(_forge_menu_font_large);
+}
+
+short forge_label_width(
+	char const *text)
+{
+	forge_label_fonts();
+
+	return forge_menu_text_width(_forge_menu_font_large, text);
+}
+
+void forge_draw_label(
+	short x0,
+	short y,
+	short x1,
+	int justification,
+	unsigned long argb,
+	char const *text)
+{
+	forge_label_fonts();
+	/* (not the fade the menu was last drawn with) */
+	forge_menu_fade = 1.f;
+	forge_menu_text(_forge_menu_font_large, x0, y, x1, justification, argb, text);
+
+	return;
 }
 
 /* ---------- a line of text (halo_forge.h) */
@@ -2540,6 +2582,7 @@ int forge_mod_hold_begin(
 
 	if (!forge_globals.mod_hold && forge_globals.held_object_index == NONE)
 	{
+		forge_menu_fonts_choose();
 		forge_globals.mod_hold = hold;
 		begun = TRUE;
 	}

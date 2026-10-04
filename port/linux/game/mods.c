@@ -11,9 +11,12 @@ nothing is registered and this does nothing.
 */
 
 #include "cseries.h"
+#include "bitmaps/bitmaps.h"
+#include "bitmaps/bitmap_group.h"
 #include "cache/cache_files.h"
 #include "cutscene/cinematics.h"
 #include "game/game.h"
+#include "game/game_globals.h"
 #include "game/players.h"
 #include "interface/interface.h"
 #include "math/integer_math.h"
@@ -390,6 +393,55 @@ void halo_mod_draw_box(
 
 	set_rectangle2d(&bounds, x0, y0, x1, y1);
 	draw_quad(&bounds, (pixel32)argb);
+
+	return;
+}
+
+/* as draw_quad (cutscene/cinematics.c), with corners between the screen's
+units: the screen is drawn with several of the display's pixels to a unit, so
+thin shapes can be as sharp as the display */
+void halo_mod_draw_box_real(
+	float x0,
+	float y0,
+	float x1,
+	float y1,
+	unsigned long argb)
+{
+	struct game_globals *game_globals = scenario_get_game_globals();
+	struct rasterizer_dynamic_screen_geometry_parameters parameters;
+	struct dynamic_screen_vertex vertices[4];
+	short vertex_index;
+
+	if (game_globals->rasterizer_data.count <= 0)
+		return;
+
+	for (vertex_index = 0; vertex_index < NUMBEROF(vertices); vertex_index++)
+	{
+		/* clockwise from the top left */
+		vertices[vertex_index].position.x = vertex_index == 1 || vertex_index == 2 ? x1 : x0;
+		vertices[vertex_index].position.y = vertex_index >= 2 ? y1 : y0;
+		vertices[vertex_index].color = (pixel32)argb;
+		vertices[vertex_index].texture_coordinates.x = 0.f;
+		vertices[vertex_index].texture_coordinates.y = 0.f;
+	}
+
+	csmemset(&parameters, 0, sizeof(parameters));
+	parameters.framebuffer_blend_function = 0;
+	parameters.map_texture_scale[0].i = 1.f;
+	parameters.map_texture_scale[0].j = 1.f;
+	parameters.map_scale[0].i = 1.f;
+	parameters.map_scale[0].j = 1.f;
+	parameters.meter_parameters = NULL;
+	parameters.point_sampled = FALSE;
+	parameters.map[0] = TAG_BLOCK_GET_ELEMENT(
+		&bitmap_group_get(TAG_BLOCK_GET_ELEMENT(&game_globals->rasterizer_data, 0,
+			struct game_globals_rasterizer_data)->default_textures[0].index)->bitmaps,
+		1,
+		struct bitmap_data);
+
+	rasterizer_globals.current_lock_operation = _rasterizer_lock_cinematics;
+	rasterizer_psuedo_dynamic_screen_quad_draw(&parameters, vertices);
+	rasterizer_globals.current_lock_operation = _rasterizer_lock_none;
 
 	return;
 }
