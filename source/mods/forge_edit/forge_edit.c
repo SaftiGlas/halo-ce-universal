@@ -4,7 +4,7 @@ FORGE_EDIT.C
 A source mod (mods/forge_edit): copy, paste and remove objects, with the
 dev tools' crosshair (port/linux/game/forge.c).
 
-All of it is on the "Edit" tab of the dev tools' menu (F3, D-pad right or, flying,
+All of it is on the "Edit" tab of the dev tools' menu (1, D-pad right or, flying,
 X; LB / RB, Page Up / Page Down, or T / V change tab): up and down choose a
 row, enter or A act, so it works on a controller as on a keyboard, and no
 Ctrl key is used. The rows:

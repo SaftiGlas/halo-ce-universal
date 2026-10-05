@@ -4,7 +4,7 @@ FORGE_ZONES.C
 A source mod (mods/forge_zones): kill, gravity and teleport zones,
 boxes placed with the dev tools' crosshair (port/linux/game/forge.c).
 
-Everything is in the dev tools' menu (F3, D-pad right or, flying, X), on the
+Everything is in the dev tools' menu (1, D-pad right or, flying, X), on the
 "Zones" tab: up and down choose a row, left and right change its value,
 enter or A act, LB / RB (Page Up / Page Down, T / V) change tab. So it works on a controller as it does on a
 keyboard, and needs no other key. The rows:

@@ -895,11 +895,19 @@ int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
 
 #define PAD_BUTTON(button) (gamepad && SDL_GetGamepadButton(gamepad, (button)))
 #define PAD_TRIGGER(axis) (gamepad && SDL_GetGamepadAxis(gamepad, (axis)) > 8192)
-	keys->toggle_flying = k[SDL_SCANCODE_F2] || (!captured && PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_UP));
-	keys->menu = k[SDL_SCANCODE_F3] || (!captured && PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_RIGHT));
-	keys->up = k[SDL_SCANCODE_SPACE] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
-	keys->down = k[SDL_SCANCODE_LCTRL] || k[SDL_SCANCODE_C] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+	keys->toggle_flying = k[SDL_SCANCODE_HOME] || (!captured && PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_UP));
+	keys->menu = k[SDL_SCANCODE_1] || (!captured && PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_RIGHT));
+	keys->up = k[SDL_SCANCODE_R] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
+	keys->down = k[SDL_SCANCODE_F] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
 	keys->fast = k[SDL_SCANCODE_LSHIFT] || k[SDL_SCANCODE_RSHIFT] || PAD_TRIGGER(SDL_GAMEPAD_AXIS_LEFT_TRIGGER);
+	if (!forge_typing())
+	{
+		bindings_read();
+#define MOVE_KEY(action) (input_held(&input, bindings[action][0]) || input_held(&input, bindings[action][1]))
+		keys->move_forward = MOVE_KEY(HALO_KEYBOARD_MOVE_FORWARD) - MOVE_KEY(HALO_KEYBOARD_MOVE_BACKWARD);
+		keys->move_right = MOVE_KEY(HALO_KEYBOARD_STRAFE_RIGHT) - MOVE_KEY(HALO_KEYBOARD_STRAFE_LEFT);
+#undef MOVE_KEY
+	}
 	keys->faster = k[SDL_SCANCODE_UP] != 0;
 	keys->slower = k[SDL_SCANCODE_DOWN] != 0;
 	keys->menu_up = k[SDL_SCANCODE_UP] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_UP);
@@ -908,8 +916,8 @@ int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
 	keys->menu_right = k[SDL_SCANCODE_RIGHT] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
 	keys->menu_select = k[SDL_SCANCODE_RETURN] || k[SDL_SCANCODE_KP_ENTER] ||
 		(mouse && m[SDL_BUTTON_LEFT]) || PAD_BUTTON(SDL_GAMEPAD_BUTTON_SOUTH);
-	keys->menu_close = k[SDL_SCANCODE_ESCAPE] || k[SDL_SCANCODE_BACKSPACE] ||
-		(mouse && m[SDL_BUTTON_RIGHT]) || PAD_BUTTON(SDL_GAMEPAD_BUTTON_EAST);
+	keys->menu_close = k[SDL_SCANCODE_ESCAPE] || k[SDL_SCANCODE_BACKSPACE] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_EAST);
+	keys->mouse_right = mouse && m[SDL_BUTTON_RIGHT];
 	keys->grab = k[SDL_SCANCODE_F4] != 0;
 	keys->rotation_axis = k[SDL_SCANCODE_T] != 0;
 	keys->rotation_snap = k[SDL_SCANCODE_V] != 0;

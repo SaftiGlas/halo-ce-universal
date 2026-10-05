@@ -2,7 +2,7 @@
 FORGE_AI.C
 
 A source mod (mods/forge_ai): AI characters in any map, from the dev tools'
-menu (in forge mode: F3, D-pad right or X), on the "AI" tab. A keyboard and
+menu (in forge mode: 1, D-pad right or X), on the "AI" tab. A keyboard and
 a controller work alike.
 
 - Character: the actor variants the map has (tags of the group actv whose

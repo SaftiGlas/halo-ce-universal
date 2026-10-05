@@ -171,7 +171,7 @@ menu of Halo: Reach, with the categories down its left side, that keeps its
 place), `gravity` (the map's gravity, with the tick and new map hooks) and
 `forge_zones` (kill, gravity and teleport zones placed at the crosshair).
 `forge_ai`, `forge_edit`, `gravity` and `forge_zones` are tabs of the dev tools'
-menu (F3, D-pad right or, flying, X; LB / RB, Page Up / Page Down or T / V change tab) that work with a
+menu (1, D-pad right or, flying, X; LB / RB, Page Up / Page Down or T / V change tab) that work with a
 controller alone: a mod adds a tab with `struct halo_mod_menu` in
 `halo_mod.h`, rows of a label and a value that left and right change and
 that enter or A act on.
@@ -292,13 +292,13 @@ development.
 
 | Keyboard and mouse | Controller | Effect |
 | --- | --- | --- |
-| F2 | D-pad up | forge mode: detach the camera from the player to fly freely, through walls, with a crosshair; again moves the player (or the vehicle they ride) to the camera, facing its way, and returns the camera to the player |
-| F3, flying | flying, D-pad right or X | open or close the spawn menu (only in forge mode; landing closes it) |
+| home | D-pad up | forge mode: detach the camera from the player to fly freely, through walls, with a crosshair; again moves the player (or the vehicle they ride) to the camera, facing its way, and returns the camera to the player |
+| 1, flying | flying, D-pad right or X | open or close the spawn menu (only in forge mode; landing closes it) |
 | F4, and flying also enter or left click | flying, A | pick up the object under the crosshair |
 | delete (with `forge_edit`) | flying, Y | remove the object under the crosshair |
 
 Flying, W A S D (the left stick) move, the mouse (the right stick) looks,
-space and left ctrl or C (RB and LB) go straight up and down, shift
+R and F (RB and LB) go straight up and down at half that speed, shift
 (LT) is 4 times faster, and the up and down arrows change
 the speed. The player stands still meanwhile. Z (right stick
 click) hands the controls back to the player and leaves the camera where
@@ -324,10 +324,10 @@ surface there, up to 200 world units away, until it is placed:
 | T | | choose the axis: yaw, pitch, roll |
 | V | X | choose the step: free (turns while held), 15, 45, 90 or 180 degrees |
 | | flying, right stick | orbit the camera around the object, which then stays that far in front of the camera as it flies |
-| | flying, RT + right stick | turn the object: left and right its yaw, up and down its pitch |
+| flying, right mouse button + mouse | flying, RT + right stick | turn the object: left and right its yaw, up and down its pitch (the mouse by the chosen step) |
 | | flying, RT + left stick | forward and back: take the camera nearer to the object and further away |
 | enter, left click | A | put it down |
-| escape, backspace, right click | B | cancel: a spawned object goes, a picked up one returns to its place |
+| escape, backspace | B | cancel: a spawned object goes, a picked up one returns to its place |
 | delete | back, Y | remove it from the map |
 
 With the tools on, while the camera flies the D-pad's up and right, the

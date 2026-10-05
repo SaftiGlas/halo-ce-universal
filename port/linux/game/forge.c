@@ -8,11 +8,11 @@ game/game_engine.c), or in every game with HALO_FORGE=all (see
 port/linux/README.md, "Dev tools"). The byte-matching build never compiles
 this file.
 
-	F2 / D-pad up
+	Home / D-pad up
 	        detach the camera from the player and fly it freely, through
 	        walls, with a crosshair (forge mode); again moves the player to
 	        the camera and returns the camera to the player
-	F3 / D-pad right or X, only while flying
+	1 / D-pad right or X, only while flying
 	        open or close the spawn menu: every vehicle, weapon, equipment,
 	        biped and scenery object of the map (the menu is part of forge
 	        mode: landing the camera closes it)
@@ -22,7 +22,7 @@ this file.
 	        remove the object under the crosshair (Delete with forge_edit)
 
 While flying: W A S D (left stick) move, the mouse (right stick) looks,
-space and left ctrl or C (RB and LB) rise and sink straight up and down,
+R and F (RB and LB) rise and sink straight up and down,
 shift (the left trigger, LT) is faster, and the arrows' up and down change the
 speed. Z (right stick click) hands the controls back to the player and
 leaves the camera where it is, as the game's own debug flying camera does
@@ -50,15 +50,18 @@ first time it opens after the game starts. A closed menu does nothing else.
 
 A taken or picked up object is held where the crosshair points (or, not
 flying, where the player looks), standing on the surface there, until it
-is placed:
+is placed; the crosshair is green meanwhile:
 	left, right     turn it about the chosen axis
 	up, down        raise and lower it
 	T               choose the axis: yaw, pitch or roll
 	V / X           choose the step: free, or 15, 45, 90 or 180 degrees
 	enter, left mouse button / A
 	                put it down
-	escape, backspace, right mouse button / B
+	escape, backspace / B
 	                cancel: a spawned object goes, a picked up one returns
+	right mouse button, held while flying
+	                the mouse turns it: left and right about its yaw, up and
+	                down about its pitch, by the chosen step
 	delete / back, Y
 	                remove it from the map
 While flying, the right stick orbits the camera around the held object,
@@ -222,6 +225,8 @@ are the same size on every display), and its colours */
 #define FORGE_CROSSHAIR_LENGTH 5.f
 #define FORGE_CROSSHAIR_EDGE 0.4f
 #define FORGE_CROSSHAIR_COLOR 0xffffffffUL
+/* while an object is held */
+#define FORGE_CROSSHAIR_HELD_COLOR 0xff40ff40UL
 #define FORGE_CROSSHAIR_EDGE_COLOR 0xa0000000UL
 
 /* where the menu's place is kept (see above) */
@@ -264,6 +269,10 @@ struct forge_globals
 	real held_distance;
 	/* the right trigger turns it with the right stick */
 	boolean held_turning;
+	/* the mouse turns it (its right button, flying): the yaw and pitch it
+	has turned to, before the snap's steps */
+	boolean held_mouse_turning;
+	real held_mouse_angles[NUMBER_OF_FORGE_AXES];
 
 	boolean active;
 	boolean menu_open;
@@ -292,6 +301,7 @@ struct forge_globals
 	struct forge_key menu_right_key;
 	struct forge_key menu_select_key;
 	struct forge_key menu_close_key;
+	struct forge_key mouse_right_key;
 	struct forge_key grab_key;
 	struct forge_key rotation_axis_key;
 	struct forge_key rotation_snap_key;
@@ -1216,8 +1226,14 @@ static void forge_hold(
 	/* the controller's right stick: with the right trigger it turns the
 	object, else (camera/director.c) it orbits the camera around it, which
 	from then on holds the object in front of it */
-	forge_globals.held_turning = flying && keys->pad_turn;
-	if (forge_globals.held_turning)
+	forge_globals.held_turning = flying && (keys->pad_turn || keys->mouse_right);
+	if (flying && keys->mouse_right && !forge_globals.held_mouse_turning)
+	{
+		forge_globals.held_mouse_angles[_forge_axis_yaw] = forge_globals.held_angles[_forge_axis_yaw];
+		forge_globals.held_mouse_angles[_forge_axis_pitch] = forge_globals.held_angles[_forge_axis_pitch];
+	}
+	forge_globals.held_mouse_turning = flying && keys->mouse_right;
+	if (flying && keys->pad_turn)
 	{
 		forge_globals.held_angles[_forge_axis_yaw] -= keys->pad_look_x * FORGE_TURN_SPEED * seconds;
 		forge_globals.held_angles[_forge_axis_pitch] += keys->pad_look_y * FORGE_TURN_SPEED * seconds;
@@ -1227,7 +1243,7 @@ static void forge_hold(
 		forge_globals.held_anchored = FALSE;
 	}
 	else if (!forge_globals.held_anchored &&
-		(forge_globals.held_turning || keys->pad_look_x != 0.f || keys->pad_look_y != 0.f))
+		(keys->pad_turn || keys->pad_look_x != 0.f || keys->pad_look_y != 0.f))
 	{
 		real_vector3d to_object;
 
@@ -1418,6 +1434,7 @@ static void forge_update_keys(
 	boolean toggle_flying = forge_key_pressed(&forge_globals.toggle_flying_key, keys->toggle_flying, FALSE, milliseconds);
 	boolean menu = forge_key_pressed(&forge_globals.menu_key, keys->menu, FALSE, milliseconds);
 	boolean close = forge_key_pressed(&forge_globals.menu_close_key, keys->menu_close, FALSE, milliseconds);
+	boolean mouse_right = forge_key_pressed(&forge_globals.mouse_right_key, keys->mouse_right, FALSE, milliseconds);
 	boolean up = forge_key_pressed(&forge_globals.menu_up_key, keys->menu_up, TRUE, milliseconds);
 	boolean down = forge_key_pressed(&forge_globals.menu_down_key, keys->menu_down, TRUE, milliseconds);
 	boolean left = forge_key_pressed(&forge_globals.menu_left_key, keys->menu_left, TRUE, milliseconds);
@@ -1500,7 +1517,7 @@ static void forge_update_keys(
 			input.axis_pressed = rotation_axis;
 			input.snap_pressed = rotation_snap || pad_menu;
 			input.place = select;
-			input.cancel = close;
+			input.cancel = close || mouse_right;
 			input.delete_pressed = remove_object || pad_remove;
 			if (forge_globals.mod_hold->update(&input))
 				forge_globals.mod_hold = NULL;
@@ -1522,7 +1539,7 @@ static void forge_update_keys(
 		}
 		else if (forge_globals.menu_open)
 		{
-			if (menu || close || pad_menu)
+			if (menu || close || mouse_right || pad_menu)
 			{
 				forge_globals.menu_open = FALSE;
 			}
@@ -1575,8 +1592,7 @@ static void forge_update_keys(
 		}
 		else if ((menu || pad_menu) && !flying)
 		{
-			if (menu)
-				terminal_printf(global_real_argb_orange, "forge: the menu is for forge mode (F2 / D-pad up)");
+			/* the menu belongs to forge mode: on foot, 1 is the player's */
 		}
 		else if (menu || pad_menu)
 		{
@@ -1605,6 +1621,7 @@ static void forge_update_keys(
 	{
 		forge_globals.held_anchored = FALSE;
 		forge_globals.held_turning = FALSE;
+		forge_globals.held_mouse_turning = FALSE;
 	}
 
 	/* a closed menu's place is written once, whichever way it closed */
@@ -1621,7 +1638,7 @@ static void forge_update_keys(
 		forge_globals.mod_hold != NULL ||
 		(forge_globals.keys_captured &&
 			(keys->menu_up || keys->menu_down || keys->menu_left || keys->menu_right ||
-			keys->menu_select || keys->menu_close || keys->rotation_axis || keys->rotation_snap ||
+			keys->menu_select || keys->menu_close || keys->mouse_right || keys->rotation_axis || keys->rotation_snap ||
 			keys->remove_object || keys->tab_previous || keys->tab_next || keys->pad_menu ||
 			keys->pad_remove));
 	halo_linux_forge_capture_menu_keys(forge_globals.keys_captured);
@@ -1676,7 +1693,8 @@ screen's units (a character of the terminal font was as coarse as the
 screen): as sharp as the display, each part with a dark edge so it shows
 against anything */
 static void forge_render_crosshair(
-	rectangle2d const *window)
+	rectangle2d const *window,
+	unsigned long color)
 {
 	real scale = MAX(halo_screen_pixel_scale(), 1.f);
 	real pixel = 1.f / scale;
@@ -1696,7 +1714,7 @@ static void forge_render_crosshair(
 	for (pass = 0; pass < 2; pass++)
 	{
 		long grow = pass == 0 ? edge : 0;
-		unsigned long argb = pass == 0 ? FORGE_CROSSHAIR_EDGE_COLOR : FORGE_CROSSHAIR_COLOR;
+		unsigned long argb = pass == 0 ? FORGE_CROSSHAIR_EDGE_COLOR : color;
 
 		forge_crosshair_box(middle_x, middle_y, pixel, near_side, near_side, far_side, far_side, grow, argb);
 		forge_crosshair_box(middle_x, middle_y, pixel, near_side - gap - length, near_side, near_side - gap, far_side,
@@ -2395,7 +2413,10 @@ void forge_render(
 			forge_globals.held_object_index != NONE ||
 			forge_globals.mod_hold)
 		{
-			forge_render_crosshair(&window);
+			forge_render_crosshair(
+				&window,
+				forge_globals.held_object_index != NONE || forge_globals.mod_hold ?
+					FORGE_CROSSHAIR_HELD_COLOR : FORGE_CROSSHAIR_COLOR);
 		}
 		if (forge_globals.mod_hold)
 		{
@@ -2526,6 +2547,36 @@ int forge_camera_turning(
 	void)
 {
 	return forge_globals.held_object_index != NONE && forge_globals.held_turning;
+}
+
+/* left and right about the yaw, up and down about the pitch, as the right
+stick; with a step chosen (V), by that step */
+void forge_camera_turn_held(
+	float yaw,
+	float pitch)
+{
+	if (forge_camera_turning() && forge_globals.held_mouse_turning)
+	{
+		real step = forge_snaps[forge_globals.held_snap_index].step;
+		real deltas[NUMBER_OF_FORGE_AXES] = { 0.f };
+		short axis;
+
+		deltas[_forge_axis_yaw] = yaw;
+		deltas[_forge_axis_pitch] = pitch;
+		for (axis = 0; axis < NUMBER_OF_FORGE_AXES; axis++)
+		{
+			real *angle = &forge_globals.held_mouse_angles[axis];
+
+			if (deltas[axis] != 0.f)
+			{
+				*angle += deltas[axis];
+				forge_globals.held_angles[axis] =
+					step == 0.f ? *angle : (real)floor(*angle / step + 0.5f) * step;
+			}
+		}
+	}
+
+	return;
 }
 
 float forge_camera_orbit_distance(

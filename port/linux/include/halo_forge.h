@@ -16,11 +16,16 @@ halo_linux_source_fixups.h, and the platform layer, which reads their keys
 /* keyboard, mouse / first gamepad */
 struct halo_linux_forge_keys
 {
-	int toggle_flying; /* F2 / D-pad up */
-	int menu; /* F3 / D-pad right, only while flying */
-	int up; /* space / right shoulder (RB) */
-	int down; /* left ctrl, C / left shoulder (LB) */
+	int toggle_flying; /* home / D-pad up */
+	int menu; /* 1 / D-pad right, only while flying */
+	int up; /* R / right shoulder (RB) */
+	int down; /* F / left shoulder (LB) */
 	int fast; /* shift / left trigger (LT) */
+	/* the keyboard's move keys ([controls], W A S D), which in the game are
+	actions rather than controller 1's left stick: -1 to 1, forward and right
+	positive */
+	int move_forward;
+	int move_right;
 	int faster; /* while flying, the speed: arrow up and down */
 	int slower;
 	int menu_up; /* arrows / D-pad */
@@ -28,7 +33,10 @@ struct halo_linux_forge_keys
 	int menu_left;
 	int menu_right;
 	int menu_select; /* enter, left button / A */
-	int menu_close; /* escape, backspace, right button / B */
+	int menu_close; /* escape, backspace / B */
+	/* the right mouse button: closes the menu, and held while flying the
+	mouse turns what is held */
+	int mouse_right;
 	int grab; /* F4 */
 	int rotation_axis; /* T */
 	int rotation_snap; /* V */
@@ -74,6 +82,8 @@ farthest it may be; and, after each update of the flying camera, where it
 is and looks */
 int forge_menu_is_open(void);
 int forge_camera_turning(void);
+/* the mouse's look while the right button turns a held object, radians */
+void forge_camera_turn_held(float yaw, float pitch);
 float forge_camera_orbit_distance(void);
 float forge_camera_zoom(float step);
 void forge_flying_camera_moved(float const position[3], float const forward[3]);

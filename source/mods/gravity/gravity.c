@@ -3,7 +3,7 @@ GRAVITY.C
 
 A source mod (mods/gravity): the gravity of the whole map.
 
-The dev tools' menu (F3 / D-pad right) has a "Gravity" tab with one row:
+The dev tools' menu (1 / D-pad right) has a "Gravity" tab with one row:
 left and right change the gravity (normal, low, very low, moon, high, very
 high), so it works on a controller as it does on a keyboard. While it is
 not normal, the top right of the screen says which it is.

@@ -3,7 +3,7 @@ SKY.C
 
 A source mod (mods/sky): the look of the sky and of the fog.
 
-The dev tools' menu (F3 / D-pad right) has a "Sky" tab with one row, the
+The dev tools' menu (1 / D-pad right) has a "Sky" tab with one row, the
 look: left and right change it, so it works on a controller as it does on a
 keyboard. The looks, in order: the map's own sky and
 fog; the map's sky tinted, with a fog to match, for a sunset, a night and

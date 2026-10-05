@@ -19,7 +19,7 @@ struct halo_layout_writer;
 
 /* ---------- hooks */
 
-/* a page of the dev tools' menu (F3, D-pad right or, flying, X; Forge games)
+/* a page of the dev tools' menu (1, D-pad right or, flying, X; Forge games)
 that a mod adds after the map's object tabs: rows of a label and a value, driven with
 the menu's own keys and buttons, so it works on a keyboard and a
 controller alike. Up and down choose a row; left and right change its

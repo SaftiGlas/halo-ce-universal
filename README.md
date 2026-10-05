@@ -109,8 +109,8 @@ In a Forge game:
 
 | Keyboard | Controller | Effect |
 | --- | --- | --- |
-| F2 | D-pad up | The camera flies. Push again to land. |
-| F3 | D-pad right or X (while the camera flies) | The menu opens: the objects to spawn, and the tabs of the mods. |
+| Home | D-pad up | The camera flies. Push again to land. |
+| 1 | D-pad right or X (while the camera flies) | The menu opens: the objects to spawn, and the tabs of the mods. |
 | F4, Enter or left mouse button | A (while the camera flies) | Pick up the object under the crosshair. |
 | Enter, Escape, Delete | A, B, Y | Put down, cancel or remove the object that you hold. |
 | Page Up, Page Down | LB, RB | The previous and the next tab of the menu. |

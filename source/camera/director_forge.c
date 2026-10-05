@@ -152,8 +152,8 @@ debug camera, and faster again with shift (the left trigger), and it stays insid
 flying_camera_update's +/-5000 bound */
 #define FORGE_SPEED_SCALE 2.f
 #define FORGE_FAST_SCALE 4.f
-/* world units a second straight up or down, the stick's full push */
-#define FORGE_VERTICAL_SPEED 1.6f
+/* world units a second straight up or down, before the speed scales */
+#define FORGE_VERTICAL_SPEED 0.8f
 /* world units a second nearer to or further from a turned object */
 #define FORGE_ZOOM_SPEED 2.f
 #define FORGE_CAMERA_POSITION_BOUND 4900.f
@@ -882,6 +882,8 @@ static boolean director_update_controls(
 	boolean forge_fast = FALSE;
 	real forge_rise = 0.f;
 	real forge_speed_change = 0.f;
+	real forge_move_forward = 0.f;
+	real forge_move_right = 0.f;
 
 	csmemset(controls, 0, sizeof(*controls));
 	controls->local_player_index = local_player_index;
@@ -932,7 +934,7 @@ static boolean director_update_controls(
 					gamepad->buttons[_gamepad_analog_button_left_trigger] != 0);
 				{
 					/* the dev tools (port/linux/game/forge.c) fly straight up and
-					down on their own keys and buttons (space and ctrl, the
+					down on their own keys and buttons (R and F, the
 					shoulders), not through the height variable's slow
 					acceleration, nor on the triggers, which the mouse's buttons
 					also press; controller 1 is the keyboard. The menu has those
@@ -944,7 +946,18 @@ static boolean director_update_controls(
 						forge_active = TRUE;
 						forge_fast = keys.fast != 0;
 						if (!forge_menu_is_open())
+						{
 							forge_rise = (real)((keys.up != 0) - (keys.down != 0));
+							/* the keyboard's move keys are not on the left stick:
+							its full push, diagonals on the unit circle */
+							forge_move_forward = (real)keys.move_forward;
+							forge_move_right = (real)keys.move_right;
+							if (keys.move_forward && keys.move_right)
+							{
+								forge_move_forward *= 0.70710678f;
+								forge_move_right *= 0.70710678f;
+							}
+						}
 						if (!forge_busy())
 							forge_speed_change = (real)((keys.faster != 0) - (keys.slower != 0));
 						SET_FLAG(control_flags, _camera_control_up_bit, FALSE);
@@ -990,6 +1003,13 @@ static boolean director_update_controls(
 						controls->facing_delta.yaw += mouse_yaw;
 						controls->facing_delta.pitch += mouse_pitch;
 					}
+					if (gamepad->sticks[_gamepad_stick_left].x == 0 && gamepad->sticks[_gamepad_stick_left].y == 0)
+					{
+						controls->position_delta.i = forge_move_forward * 32767.f *
+							director->debug_input_scale * director_globals.dtime * 0.00005f;
+						controls->position_delta.j = forge_move_right * 32767.f *
+							director->debug_input_scale * director_globals.dtime * -0.00005f;
+					}
 					controls->position_delta.i *= speed_scale;
 					controls->position_delta.j *= speed_scale;
 					controls->position_delta.k += forge_rise * FORGE_VERTICAL_SPEED * speed_scale *
@@ -997,12 +1017,14 @@ static boolean director_update_controls(
 
 					if (forge_camera_turning())
 					{
-						/* the right stick turns the held object instead, and the
+						/* the right stick (or the mouse, its right button held)
+						turns the held object instead, and the
 						left stick's forward and back take the camera nearer to it
 						and further away */
 						real step = (real)gamepad->sticks[_gamepad_stick_left].y / 32767.f *
 							FORGE_ZOOM_SPEED * speed_scale * director_globals.dtime;
 
+						forge_camera_turn_held(mouse_yaw, mouse_pitch);
 						controls->facing_delta.yaw = 0.f;
 						controls->facing_delta.pitch = 0.f;
 						controls->position_delta.i = 0.f;

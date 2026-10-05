@@ -269,7 +269,7 @@ def choose_imports(mods_dir: Path) -> None:
             [
                 f"--prompt={donor} > ",
                 "--header", f"space/tab: bring this tag (and what it needs) into the maps   esc: done\n"
-                            "actv: an AI character, added from the AI tab of the forge menu (F3, the forge_ai mod);\n"
+                            "actv: an AI character, added from the AI tab of the forge menu (1, the forge_ai mod);\n"
                             "scen: scenery, placed from the Scenery tab.",
                 "--header-first", "--track", "--id-nth=1", "--multi=0",
                 "--bind", f"space:{toggle}", "--bind", f"tab:{toggle}",
