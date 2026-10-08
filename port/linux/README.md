@@ -297,12 +297,28 @@ development.
 
 | Keyboard and mouse | Controller | Effect |
 | --- | --- | --- |
-| home | D-pad up | forge mode: detach the camera from the player to fly freely, through walls, with a crosshair; again moves the player (or the vehicle they ride) to the camera, facing its way, and returns the camera to the player |
+| home | D-pad up | forge mode: the player becomes the monitor (343 Guilty Spark) and flies; again gives the player their body back where the monitor is. Without the monitor (below), detach the camera from the player to fly freely, through walls; again moves the player (or the vehicle they ride) to the camera, facing its way, and returns the camera to the player |
 | 1, flying | flying, D-pad right or X | open or close the spawn menu (only in forge mode; landing closes it) |
 | F4, and flying also enter or left click | flying, A | pick up the object under the crosshair |
 | delete (with `forge_edit`) | flying, Y | remove the object under the crosshair |
 
-Flying, W A S D (the left stick) move, the mouse (the right stick) looks,
+**The monitor.** In a Forge game the builder flies as the monitor
+(`game/forge_monitor.c`): the player's unit becomes the monitor biped, which
+other players see, in split screen and in system link alike, and which
+walls stop. It flies as the free camera does: W A S D (the left stick) fly
+it level, the way the view faces whatever its pitch, R and F (RB and LB)
+raise and lower it straight up and down, and shift (LT) is faster. Its own
+eye's lens flare is not drawn in its view. It takes no damage, and cannot
+fly while dead or in a vehicle. Landing gives the player a new body with the game
+type's starting weapons, where the monitor is: in the air, it falls. The
+monitor's tags are not in the multiplayer maps: they come from The Maw
+(`c40.map`) as a Forge game's map loads (`game.forge_monitor`, on by
+default), which takes a second or two. Every machine of a system link game
+needs that map and the same setting; a machine without them does not see
+the other builders' monitors. With `game.forge_monitor = false`, or without
+The Maw, forge mode flies the camera free of the player, as follows.
+
+Flying the free camera, W A S D (the left stick) move, the mouse (the right stick) looks,
 R and F (RB and LB) go straight up and down at half that speed, shift
 (LT) is 4 times faster, and the up and down arrows change
 the speed. The player stands still meanwhile. Z (right stick
@@ -503,6 +519,7 @@ the setting for one start of the game. It has priority over the file.
 | `game.start_variant` | `""` | `HALO_START_VARIANT` | With a multiplayer `start_map`: the game variant (`"slayer"`, `"team_slayer"`, `"ctf"`, `"king"`, `"oddball"`, `"race"`...). |
 | `game.start_difficulty` | `""` | `HALO_START_DIFFICULTY` | With a campaign `start_map`: `"easy"`, `"normal"`, `"hard"` or `"impossible"`. Empty: normal. |
 | `game.import` | `""` | `HALO_IMPORT` | Tags to bring into the maps from other maps: `"donor:group:tag name"` with `\|` between them, for example `"a30:scen:scenery\rocks\boulder_granite_large\boulder_granite_large"`. The launcher sets it from `mods.json`. |
+| `game.forge_monitor` | `true` | `HALO_FORGE_MONITOR` | In a Forge game, the builder flies as the monitor, whose tags come from The Maw (`c40.map`) as the map loads; `false`, or without that map, flies the camera free of the player. Refer to "Dev tools". |
 | `game.import_into` | `""` | `HALO_IMPORT_INTO` | The maps `game.import` applies to, `"bloodgulch,wizard"`. Empty: every map but the menu's. |
 | `paths.data` | `""` | `HALO_DATA_ROOT` | The data root. Refer to "Start the game". |
 | `paths.saves` | `""` | `HALO_SAVE_ROOT` | The save root. Refer to "Files and folders". |

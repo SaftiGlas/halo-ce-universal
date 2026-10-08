@@ -151,11 +151,43 @@ enum
 {
 	_forge_edit_spawn = 0,
 	_forge_edit_move,
-	_forge_edit_remove
+	_forge_edit_remove,
+	/* the client's player becomes the monitor, or gets its body back
+	(forge_monitor.c); nothing else of the message is read */
+	_forge_edit_monitor_enter,
+	_forge_edit_monitor_leave
 };
 int forge_layout_client_edit(int kind, long object_index, long definition_index, float const original[3],
 	float const position[3], float const forward[3], float const up[3]);
-void forge_layout_handle_edit(void const *payload, unsigned long size);
+void forge_layout_handle_edit(long machine_index, void const *payload, unsigned long size);
+
+/* the builder as the monitor (port/linux/game/forge_monitor.c): a player
+flies in Forge while their unit is the monitor biped, which comes from The
+Maw (c40.map) as a Forge game's map loads (game.forge_monitor). */
+/* whether the map that is loading gets the monitor's tags (tag_import.c) */
+int forge_monitor_import_wanted(void);
+/* the monitor's biped in this map, or -1 (NONE): Forge then flies its
+camera free of the player (camera/director_forge.c) */
+long forge_monitor_definition(void);
+int forge_unit_is_monitor(long unit_index);
+int forge_player_is_monitor(long player_index);
+/* the game's machine only: makes the player the monitor or gives them
+their body back; FALSE when that cannot be now */
+int forge_monitor_set(long player_index, int monitor);
+/* local player 0's rise (1) and sink (-1) keys and fast key, which are the
+monitor's jump, crouch and exact facing (game/player_control.c) */
+void forge_monitor_set_keys(int rise, int fast);
+unsigned long forge_monitor_control_flags(short local_player_index, unsigned long flags);
+/* a local player's look (yaw, pitch) and throttle (forward, left) of this
+frame, before the game takes them (game/player_control.c): while the monitor
+turns what it holds they are the held object's, as the free camera's are */
+void forge_monitor_control_input(short local_player_index, float facing_delta[2], float throttle[2], float seconds);
+/* whether a unit's lens flares are left out of the view being drawn: the
+monitor's own in first person (objects/object_lights.c) */
+int forge_monitor_hides_lens_flares(long unit_index);
+/* TRUE while a local player flies in Forge: as the monitor, or with the
+camera free of them; for the tools and for mods */
+int forge_flying(short local_player_index);
 /* the base map's name as the game shows it ("Blood Gulch") */
 char const *forge_custom_map_base_title(short index);
 /* string indices, past the end of every string list, that the menus show

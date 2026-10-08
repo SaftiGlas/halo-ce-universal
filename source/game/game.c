@@ -465,6 +465,15 @@ void game_set_game_variant(
 	return;
 }
 
+/* port: whether the variant set, which the next map is played with, is
+Forge: known before the map's tags load, unlike the game engine's
+(port/linux/game/forge_monitor.c) */
+boolean game_variant_set_is_forge(
+	void)
+{
+	return game_variant_global.game_engine_index != 0 && (game_variant_global.flags & GAME_VARIANT_FORGE_FLAG) != 0;
+}
+
 void game_set_game_variant_options(
 	struct game_variant_options const *options)
 {

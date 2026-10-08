@@ -340,7 +340,7 @@ static void forge_edit_update(
 	if (forge_busy() || cinematic_in_progress())
 		return;
 
-	forge_edit_globals.marking = director_forge_flying(FORGE_EDIT_LOCAL_PLAYER_INDEX);
+	forge_edit_globals.marking = forge_flying(FORGE_EDIT_LOCAL_PLAYER_INDEX);
 	if (forge_edit_globals.marking || delete_object)
 		forge_edit_globals.marked_object_index = forge_edit_marked_object();
 

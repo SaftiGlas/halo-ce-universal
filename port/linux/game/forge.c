@@ -9,9 +9,12 @@ port/linux/README.md, "Dev tools"). The byte-matching build never compiles
 this file.
 
 	Home / D-pad up
+	        forge mode: the player becomes the monitor and flies
+	        (forge_monitor.c); again gives them their body back.
+	        Without the monitor (game.forge_monitor off, or no c40.map):
 	        detach the camera from the player and fly it freely, through
-	        walls, with a crosshair (forge mode); again moves the player to
-	        the camera and returns the camera to the player
+	        walls; again moves the player to the camera and returns the
+	        camera to the player
 	1 / D-pad right or X, only while flying
 	        open or close the spawn menu: every vehicle, weapon, equipment,
 	        biped and scenery object of the map (the menu is part of forge
@@ -21,10 +24,12 @@ this file.
 	Y, while flying
 	        remove the object under the crosshair (Delete with forge_edit)
 
-While flying: W A S D (left stick) move, the mouse (right stick) looks,
-R and F (RB and LB) rise and sink straight up and down,
-shift (the left trigger, LT) is faster, and the arrows' up and down change the
-speed. Z (right stick click) hands the controls back to the player and
+While flying: W A S D (left stick) move level, the way the view faces
+whatever its pitch, the mouse (right stick) looks, R and F (RB and LB) rise
+and sink straight up and down, and shift (the left trigger, LT) is faster:
+the monitor flies its unit so (units/bipeds.c), the free camera itself. The
+rest of this paragraph is the free camera's: the arrows' up and down change
+the speed. Z (right stick click) hands the controls back to the player and
 leaves the camera where it is, as the game's own debug flying camera does
 (camera/director.c).
 
@@ -48,9 +53,9 @@ written to u:\forge_ui.txt (forge_ui.txt in the directory u/ of the save
 root, ~/.local/share/halo-linux/u/) when the menu closes, and read back the
 first time it opens after the game starts. A closed menu does nothing else.
 
-A taken or picked up object is held where the crosshair points (or, not
-flying, where the player looks), standing on the surface there, until it
-is placed; the crosshair is green meanwhile:
+A taken or picked up object is held where the crosshair (the middle of the
+view, which is not drawn) points, standing on the surface there, until it
+is placed:
 	left, right     turn it about the chosen axis
 	up, down        raise and lower it
 	T               choose the axis: yaw, pitch or roll
@@ -216,18 +221,6 @@ cyan of Reach's menus */
 /* the count of objects when few more can be made, and when none can */
 #define FORGE_MENU_BUDGET_LOW_COLOR 0xffffb347UL
 #define FORGE_MENU_BUDGET_FULL_COLOR 0xffff5a4aUL
-
-/* the crosshair: its arms' thickness, their distance from the middle, their
-length and the dark edge's width, in the screen's units (480 lines, so they
-are the same size on every display), and its colours */
-#define FORGE_CROSSHAIR_THICKNESS 0.7f
-#define FORGE_CROSSHAIR_GAP 2.5f
-#define FORGE_CROSSHAIR_LENGTH 5.f
-#define FORGE_CROSSHAIR_EDGE 0.4f
-#define FORGE_CROSSHAIR_COLOR 0xffffffffUL
-/* while an object is held */
-#define FORGE_CROSSHAIR_HELD_COLOR 0xff40ff40UL
-#define FORGE_CROSSHAIR_EDGE_COLOR 0xa0000000UL
 
 /* where the menu's place is kept (see above) */
 #define FORGE_MENU_STATE_FILE "u:\\forge_ui.txt"
@@ -709,9 +702,32 @@ static void forge_return_to_player(
 static void forge_toggle_flying(
 	short local_player_index)
 {
+	long player_index = local_player_get_player_index(local_player_index);
+
 	if (director_forge_flying(local_player_index))
 	{
 		forge_return_to_player(local_player_index);
+	}
+	else if (player_index != NONE && forge_monitor_definition() != NONE)
+	{
+		/* the builder as the monitor (forge_monitor.c), which a client asks
+		the host for */
+		boolean monitor = forge_player_is_monitor(player_index);
+
+		if (forge_client())
+		{
+			forge_layout_client_edit(monitor ? _forge_edit_monitor_leave : _forge_edit_monitor_enter, NONE, NONE,
+				&global_origin3d->x, &global_origin3d->x, &global_forward3d->i, &global_up3d->i);
+		}
+		else if (!forge_authoritative() || !forge_monitor_set(player_index, !monitor))
+		{
+			terminal_printf(global_real_argb_orange, monitor ?
+				"forge: the monitor stays" : "forge: no monitor now (dead, or in a vehicle)");
+		}
+		else
+		{
+			terminal_printf(global_real_argb_green, monitor ? "forge: on foot" : "forge: flying as the monitor");
+		}
 	}
 	else if (*director_camera_scripted)
 	{
@@ -1212,7 +1228,7 @@ static void forge_hold(
 	real seconds)
 {
 	struct object_datum *object = object_get(forge_globals.held_object_index);
-	boolean flying = director_forge_flying(FORGE_LOCAL_PLAYER_INDEX);
+	boolean flying = forge_flying(FORGE_LOCAL_PLAYER_INDEX);
 	real_point3d point;
 	real_vector3d normal;
 
@@ -1359,6 +1375,67 @@ static long forge_debug_menu_tab(
 	return result;
 }
 
+/* debug.forge_test_monitor (port_config.c), for automated tests of the
+builder as the monitor (forge_monitor.c): some seconds into a game the
+tools' flying key is pressed, and again later; TRUE at those moments. In
+between the monitor rises (forge_debug_monitor_rises), and what the player's
+unit is and where is logged every two seconds. */
+void platform_log(char const *format, ...);
+
+static boolean forge_debug_monitor_enabled(
+	void)
+{
+	static long enabled = -1;
+
+	if (enabled < 0)
+		enabled = config_integer("debug.forge_test_monitor");
+
+	return enabled > 0;
+}
+
+static boolean forge_debug_monitor_toggle(
+	void)
+{
+	static long last_time;
+	static short step;
+	static long logged_time;
+	long player_index = local_player_get_player_index(FORGE_LOCAL_PLAYER_INDEX);
+	long unit_index = player_index != NONE ? player_get(player_index)->unit_index : NONE;
+	boolean toggle = FALSE;
+
+	if (!forge_debug_monitor_enabled() || unit_index == NONE)
+		return FALSE;
+	/* (a new game starts over) */
+	if (game_time_get() < last_time)
+	{
+		step = 0;
+		logged_time = 0;
+	}
+	last_time = game_time_get();
+	if (step < 2 && game_time_get() >= 300 + step * 300)
+	{
+		step++;
+		toggle = TRUE;
+	}
+	if (game_time_get() - logged_time >= 60)
+	{
+		struct object_datum *object = object_get(unit_index);
+
+		logged_time = game_time_get();
+		platform_log("forge monitor test: the player is %s at %.2f %.2f %.2f%s",
+			tag_get_name(object->definition_index), object->object.position.x, object->object.position.y,
+			object->object.position.z, toggle ? ", and presses the flying key" : "");
+	}
+
+	return toggle;
+}
+
+static boolean forge_debug_monitor_rises(
+	void)
+{
+	return forge_debug_monitor_enabled();
+}
+
 /* the line being typed: the keys that went down (and those held, again and
 again) type, backspace deletes, enter takes the line, escape leaves it */
 static void forge_text_entry_update(
@@ -1448,7 +1525,10 @@ static void forge_update_keys(
 	boolean tab_next = forge_key_pressed(&forge_globals.tab_next_key, keys->tab_next, FALSE, milliseconds);
 	boolean pad_menu = forge_key_pressed(&forge_globals.pad_menu_key, keys->pad_menu, FALSE, milliseconds);
 	boolean pad_remove = forge_key_pressed(&forge_globals.pad_remove_key, keys->pad_remove, FALSE, milliseconds);
-	boolean flying = forge_globals.active && director_forge_flying(FORGE_LOCAL_PLAYER_INDEX);
+	boolean flying = forge_globals.active && forge_flying(FORGE_LOCAL_PLAYER_INDEX);
+	/* as the monitor (forge_monitor.c), whose view is the flying camera */
+	boolean monitor = forge_globals.active &&
+		forge_player_is_monitor(local_player_get_player_index(FORGE_LOCAL_PLAYER_INDEX));
 
 	/* a held object that is gone (a new map, a revert, a deletion) is let go */
 	if (forge_globals.held_object_index != NONE &&
@@ -1481,7 +1561,7 @@ static void forge_update_keys(
 	}
 	else
 	{
-		if (toggle_flying)
+		if (toggle_flying || forge_debug_monitor_toggle())
 			forge_toggle_flying(FORGE_LOCAL_PLAYER_INDEX);
 
 		{
@@ -1611,11 +1691,27 @@ static void forge_update_keys(
 			forge_remove_at_crosshair(FORGE_LOCAL_PLAYER_INDEX);
 		}
 	}
+	/* (it may have changed: the toggle, a death) */
+	flying = forge_globals.active && forge_flying(FORGE_LOCAL_PLAYER_INDEX);
+	monitor = forge_globals.active && forge_player_is_monitor(local_player_get_player_index(FORGE_LOCAL_PLAYER_INDEX));
 	if (!flying)
 	{
 		/* the menu belongs to forge mode */
 		forge_globals.camera_valid = FALSE;
 		forge_globals.menu_open = FALSE;
+	}
+	/* the monitor rises and sinks with the flying camera's keys (in the
+	menu they are its tabs'), and what it holds is held in front of its view */
+	forge_monitor_set_keys(
+		monitor && !forge_globals.menu_open && !forge_text_entry_globals.active
+			? (forge_debug_monitor_rises() ? 1 : (keys->up != 0) - (keys->down != 0))
+			: 0,
+		monitor && !forge_text_entry_globals.active && keys->fast);
+	if (monitor && !director_forge_flying(FORGE_LOCAL_PLAYER_INDEX))
+	{
+		struct observer_result const *camera = observer_get_camera(FORGE_LOCAL_PLAYER_INDEX);
+
+		forge_flying_camera_moved(&camera->position.x, &camera->forward.i);
 	}
 	if (forge_globals.held_object_index == NONE)
 	{
@@ -1657,75 +1753,6 @@ static void forge_draw_line(
 {
 	draw_string_set_draw_mode(font_tag_index, _text_style_plain, justification, 0, color);
 	rasterizer_draw_string(bounds, NULL, NULL, 0, string);
-
-	return;
-}
-
-/* the display's pixels for each of the screen's 480 lines
-(port/linux/src/d3d8_gl.c) */
-float halo_screen_pixel_scale(void);
-
-/* a box of the crosshair, in the display's pixels from the crosshair's
-middle */
-static void forge_crosshair_box(
-	real middle_x,
-	real middle_y,
-	real pixel,
-	long x0,
-	long y0,
-	long x1,
-	long y1,
-	long grow,
-	unsigned long argb)
-{
-	halo_mod_draw_box_real(
-		middle_x + (real)(x0 - grow) * pixel,
-		middle_y + (real)(y0 - grow) * pixel,
-		middle_x + (real)(x1 + grow) * pixel,
-		middle_y + (real)(y1 + grow) * pixel,
-		argb);
-
-	return;
-}
-
-/* four arms about a dot, drawn on the display's pixels rather than the
-screen's units (a character of the terminal font was as coarse as the
-screen): as sharp as the display, each part with a dark edge so it shows
-against anything */
-static void forge_render_crosshair(
-	rectangle2d const *window,
-	unsigned long color)
-{
-	real scale = MAX(halo_screen_pixel_scale(), 1.f);
-	real pixel = 1.f / scale;
-	long thickness = MAX((long)(scale * FORGE_CROSSHAIR_THICKNESS + 0.5f), 1);
-	long gap = (long)(scale * FORGE_CROSSHAIR_GAP + 0.5f);
-	long length = (long)(scale * FORGE_CROSSHAIR_LENGTH + 0.5f);
-	long edge = MAX((long)(scale * FORGE_CROSSHAIR_EDGE + 0.5f), 1);
-	/* the parts' near and far sides across their length */
-	long near_side = -(thickness / 2);
-	long far_side = near_side + thickness;
-	/* the middle, on a pixel's corner */
-	real middle_x = (real)(long)((real)(window->x0 + window->x1) / 2.f * scale + 0.5f) * pixel;
-	real middle_y = (real)(long)((real)(window->y0 + window->y1) / 2.f * scale + 0.5f) * pixel;
-	short pass;
-
-	/* the edges first, then the parts over them */
-	for (pass = 0; pass < 2; pass++)
-	{
-		long grow = pass == 0 ? edge : 0;
-		unsigned long argb = pass == 0 ? FORGE_CROSSHAIR_EDGE_COLOR : color;
-
-		forge_crosshair_box(middle_x, middle_y, pixel, near_side, near_side, far_side, far_side, grow, argb);
-		forge_crosshair_box(middle_x, middle_y, pixel, near_side - gap - length, near_side, near_side - gap, far_side,
-			grow, argb);
-		forge_crosshair_box(middle_x, middle_y, pixel, far_side + gap, near_side, far_side + gap + length, far_side,
-			grow, argb);
-		forge_crosshair_box(middle_x, middle_y, pixel, near_side, near_side - gap - length, far_side, near_side - gap,
-			grow, argb);
-		forge_crosshair_box(middle_x, middle_y, pixel, near_side, far_side + gap, far_side, far_side + gap + length,
-			grow, argb);
-	}
 
 	return;
 }
@@ -2409,15 +2436,6 @@ void forge_render(
 		rectangle2d window = render.camera.window_bounds;
 
 		offset_rectangle2d(&window, -render.camera.viewport_bounds.x0, -render.camera.viewport_bounds.y0);
-		if (director_forge_flying(FORGE_LOCAL_PLAYER_INDEX) ||
-			forge_globals.held_object_index != NONE ||
-			forge_globals.mod_hold)
-		{
-			forge_render_crosshair(
-				&window,
-				forge_globals.held_object_index != NONE || forge_globals.mod_hold ?
-					FORGE_CROSSHAIR_HELD_COLOR : FORGE_CROSSHAIR_COLOR);
-		}
 		if (forge_globals.mod_hold)
 		{
 			forge_render_held_name(&window, forge_globals.mod_hold->name);

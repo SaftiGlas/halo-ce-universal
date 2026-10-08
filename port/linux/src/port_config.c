@@ -268,6 +268,11 @@ static const struct config_setting config_settings[] =
 	{ "game.import_into", _config_string, "\"\"", "HALO_IMPORT_INTO", _environment_value, _platform_desktop,
 		"The maps game.import applies to, with commas between: \"bloodgulch,wizard\";\n"
 		"empty for every map but the menu's." },
+	{ "game.forge_monitor", _config_boolean, "true", "HALO_FORGE_MONITOR", _environment_value, _platform_desktop,
+		"In a Forge game, the builder flies as the monitor (343 Guilty Spark),\n"
+		"whose tags come from The Maw (c40.map) as the map loads; false, or\n"
+		"without that map, flies the camera free of the player. Every machine of\n"
+		"a system link game needs the same." },
 	{ "paths.data", _config_string, "\"\"", "HALO_DATA_ROOT", _environment_value, _platform_desktop,
 		"The folder holding the game data's maps folder; empty looks in the\n"
 		"working directory and its assets folder. Windows paths are easiest in\n"
@@ -437,6 +442,11 @@ static const struct config_setting config_settings[] =
 		"forge variant): 1, the host spawns a scenery object a few seconds in, and a\n"
 		"client asks it to spawn one, then to move it and to remove it; both log what\n"
 		"they send and take. 0 never." },
+	{ "debug.forge_test_monitor", _config_integer, "0", "HALO_FORGE_TEST_MONITOR", _environment_value, _platform_desktop,
+		"For automated tests of Forge's monitor (game.forge_monitor): 1, each\n"
+		"machine's player becomes the monitor ten seconds into a game, rises, and\n"
+		"lands ten seconds later; what the player's unit is and where is logged\n"
+		"every two seconds. 0 never." },
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens; 0 never." },
 	{ "debug.hidden_window", _config_boolean, "false", "HALO_HIDDEN_WINDOW", _environment_set_is_true, _platform_desktop,

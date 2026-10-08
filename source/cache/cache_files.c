@@ -1254,6 +1254,8 @@ long scenario_tags_load(
 			tags_header_register_vertex_and_index_buffers(cache_file_globals.tag_header);
 			/* tags brought in from other maps (port/linux/game/tag_import.c) */
 			halo_tag_import(cache_file_globals.tag_header, (void **)&global_tag_instances, stripped_scenario_name);
+			/* (the tags it added count) */
+			global_tag_count = cache_file_globals.tag_header->tag_count;
 			cache_file_globals.tags_loaded = TRUE;
 			/* port: a PAL map played as the NTSC maps are (port/linux/game/pal_tags.c) */
 			{

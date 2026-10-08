@@ -247,11 +247,11 @@ static int forge_typing(void)
 menu), the shoulder buttons (which rise and sink) and the left trigger
 (faster) belong to the dev tools: the game would otherwise also switch
 cameras on the held right shoulder (black) */
-static volatile int forge_flying = FALSE;
+static volatile int forge_flying_keys = FALSE;
 
 void halo_linux_forge_set_flying(int flying)
 {
-	forge_flying = flying;
+	forge_flying_keys = flying;
 }
 
 /* while the camera flies, the D-pad's up and right, the shoulder buttons
@@ -259,7 +259,7 @@ and the left trigger belong to the dev tools; while they are captured, the
 D-pad, A, B, X, Y, start, back and the triggers too */
 static void forge_filter_gamepad(XINPUT_GAMEPAD *pad)
 {
-	if (forge_flying || forge_menu_keys_captured)
+	if (forge_flying_keys || forge_menu_keys_captured)
 	{
 		pad->wButtons &= ~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_RIGHT);
 		pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] = 0;

@@ -688,7 +688,7 @@ static boolean forge_zones_visible(
 	void)
 {
 	return forge_zones_globals.showing && forge_mode_on() &&
-		(director_forge_flying(FORGE_ZONES_LOCAL_PLAYER_INDEX) || forge_busy());
+		(forge_flying(FORGE_ZONES_LOCAL_PLAYER_INDEX) || forge_busy());
 }
 
 static void forge_zones_update(

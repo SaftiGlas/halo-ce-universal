@@ -70,6 +70,10 @@ enum
 	IMPORT_INFLATE_CHUNK = 0x100000
 };
 
+/* Forge's monitor, of The Maw (port/linux/game/forge_monitor.c) */
+#define IMPORT_MONITOR_DONOR "c40"
+#define IMPORT_MONITOR_REQUEST IMPORT_MONITOR_DONOR ":bipd:characters\\monitor\\monitor"
+
 /* offsets of pixel data that cache_file_read serves from the store */
 #define HALO_IMPORT_PIXEL_BASE 0x40000000L
 
@@ -836,6 +840,16 @@ void halo_tag_import(
 	char done[IMPORT_MAXIMUM_DONORS][64];
 	short done_count = 0;
 
+	/* Forge's monitor (port/linux/game/forge_monitor.c), before any other
+	and alone, so that its tags have the same indices on every machine of a
+	system link game whatever else each brings in */
+	if (forge_monitor_import_wanted() && _stricmp(map_name, "ui") != 0 &&
+		_stricmp(map_name, IMPORT_MONITOR_DONOR) != 0 &&
+		import_parse_requests(IMPORT_MONITOR_REQUEST, requests) == 1)
+	{
+		import_from_donor((struct import_tag_header *)tag_header, (struct import_instance **)instances,
+			map_name, requests[0].donor, requests, 1);
+	}
 	if (!*setting || !import_map_listed(config_string("game.import_into"), map_name))
 		return;
 	request_count = import_parse_requests(setting, requests);

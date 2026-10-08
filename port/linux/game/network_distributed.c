@@ -2191,9 +2191,14 @@ static void distributed_handle_unit_state(
 			network_player_detach_unit(player_index);
 		network_player_attach_unit(player_index, state->unit_index);
 		/* (a unit of a life this machine missed the end of, no player's
-		now: unit_kill_no_statistics is for players' units only) */
-		if (unit_index != NONE && unit_index != state->unit_index)
+		now: unit_kill_no_statistics is for players' units only; not the
+		body a Forge builder left for the monitor's or the monitor they
+		left, which the host removes: forge_monitor.c) */
+		if (unit_index != NONE && unit_index != state->unit_index &&
+			!forge_unit_is_monitor(unit_index) && !forge_unit_is_monitor(state->unit_index))
+		{
 			unit_kill(unit_index);
+		}
 	}
 	unit_index = state->unit_index;
 	/* the seat it rides: a client's own player's, once it has ridden
@@ -4087,7 +4092,7 @@ void network_distributed_handle_message(
 		forge_layout_handle_message(entries, size - sizeof(header));
 		break;
 	case _distributed_message_forge_edit:
-		forge_layout_handle_edit(entries, size - sizeof(header));
+		forge_layout_handle_edit(machine_index, entries, size - sizeof(header));
 		break;
 	case _distributed_message_client_identity:
 		/* (a client's Discord user, as it tells it: kept only of what is

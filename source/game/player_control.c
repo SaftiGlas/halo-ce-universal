@@ -639,6 +639,9 @@ static void handle_one_player_input(
 	{
 		csmemset(&input, 0, sizeof(input));
 	}
+	/* port: while Forge's monitor turns what it holds, the look turns that
+	and forward and back take it nearer and further (port/linux/game/forge_monitor.c) */
+	forge_monitor_control_input(local_player_index, &input.facing_delta.yaw, &input.throttle.i, time_delta_sec);
 
 	if (game_connection() == _game_connection_local)
 	{
@@ -774,7 +777,9 @@ static void handle_one_player_input(
 		}
 	}
 
-	player->control_flags = input.unit_control_flags;
+	/* port: Forge's monitor rises and sinks by the tools' keys
+	(port/linux/game/forge_monitor.c) */
+	player->control_flags = forge_monitor_control_flags(local_player_index, input.unit_control_flags);
 	player->throttle = input.throttle;
 	player->primary_trigger = input.primary_trigger;
 	match_assert_valid_real(

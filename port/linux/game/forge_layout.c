@@ -1926,6 +1926,7 @@ static long forge_layout_edit_object(
 }
 
 void forge_layout_handle_edit(
+	long machine_index,
 	void const *payload,
 	unsigned long size)
 {
@@ -1940,6 +1941,24 @@ void forge_layout_handle_edit(
 		return;
 	}
 	csmemcpy((byte *)&message + header_size, payload, sizeof(message) - header_size);
+	/* the client's player becomes the monitor or gets its body back
+	(forge_monitor.c): the first of that machine's players, whom its tools
+	act on */
+	if (message.kind == _forge_edit_monitor_enter || message.kind == _forge_edit_monitor_leave)
+	{
+		struct data_iterator iterator;
+
+		data_iterator_new(&iterator, player_data);
+		while (data_iterator_next(&iterator))
+		{
+			if (distributed_machine_has_player(machine_index, (short)DATUM_INDEX_TO_ABSOLUTE_INDEX(iterator.datum_index)))
+			{
+				forge_monitor_set(iterator.datum_index, message.kind == _forge_edit_monitor_enter);
+				break;
+			}
+		}
+		return;
+	}
 	/* (what cannot be, from a message: not taken) */
 	if (!tag_index_is_group(message.definition_index, OBJECT_DEFINITION_TAG) ||
 		!TEST_FLAG(FORGE_LAYOUT_OBJECT_MASK, object_definition_get(message.definition_index)->object.type) ||
