@@ -91,6 +91,14 @@ struct halo_mod
 	void (*layout_save)(struct halo_layout_writer *writer);
 	void (*layout_clear)(void);
 	void (*layout_load)(char const *line);
+
+	/* X on a controller while flying, with nothing held and the menu
+	closed: return TRUE, and how far from the camera it is, when the
+	crosshair is on something the mod's page is about (a zone, a spawn, an
+	object). The tools' menu then opens on the page of the mod whose thing
+	is nearest, and the page's opened hook chooses it; with none, the menu
+	opens where it was. May be NULL */
+	int (*properties)(float *distance);
 };
 
 /* writes one line of a mod's part of a layout (layout_save) */
@@ -116,6 +124,9 @@ int halo_mods_remove(void);
 short halo_mods_count(void);
 struct halo_mod const *halo_mods_get(short index);
 short halo_mods_menu_page_count(void);
+/* the menu page (as halo_mods_menu_page counts them) of the mod whose thing
+under the crosshair is nearest (the properties hook), or -1 (NONE) */
+short halo_mods_properties_page(void);
 struct halo_mod_menu const *halo_mods_menu_page(short index);
 
 /* registers a struct halo_mod of the unit before the game starts */

@@ -16,7 +16,8 @@ keyboard, and needs no other key. The rows:
 	                menu and hold a new one at the crosshair, on the surface
 	                it points at, turned the way the camera looks
 	Zone            which zone the rows below are about (with the zones
-	                shown, aiming at one with the menu closed chooses it)
+	                shown, aiming at one with the menu closed chooses it,
+	                and X on a controller opens the menu here on it)
 	Kind            kill, gravity or teleport
 	Setting         a kill zone's delay, a gravity zone's gravity (below zero
 	                it lifts), a teleport zone's channel (a number)
@@ -1349,6 +1350,24 @@ static int forge_zones_grab(
 	return forge_zones_pick_up(zone_index, FALSE);
 }
 
+/* X on a zone: the tools' menu opens on the tab, which chooses it. A zone
+the camera is in is as far as a zone can be, so that what the crosshair
+points at inside it comes first */
+static int forge_zones_properties(
+	float *distance)
+{
+	real zone_distance;
+
+	if (!forge_zones_visible() || local_player_get_player_index(FORGE_ZONES_LOCAL_PLAYER_INDEX) == NONE ||
+		forge_zones_aimed_zone(&zone_distance) == NONE)
+	{
+		return FALSE;
+	}
+	*distance = zone_distance > 0.f ? zone_distance : FORGE_ZONES_SELECT_RANGE;
+
+	return TRUE;
+}
+
 /* ---------- the tools' menu page */
 
 /* the rows, in order; a zone's own rows come only with a zone chosen */
@@ -1726,7 +1745,8 @@ static struct halo_mod const forge_zones_mod =
 	NULL,
 	forge_zones_layout_save,
 	forge_zones_layout_clear,
-	forge_zones_layout_load
+	forge_zones_layout_load,
+	forge_zones_properties
 };
 
 HALO_MOD_REGISTER(forge_zones_mod)

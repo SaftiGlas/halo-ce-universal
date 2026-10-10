@@ -10,6 +10,8 @@ row, enter or A act, so it works on a controller as on a keyboard, and no
 Ctrl key is used. The rows:
 
 	At the crosshair  the object the dev tools would pick up, or nothing
+	                  (X on a controller, flying, with the crosshair on an
+	                  object opens the menu on this tab)
 	Copy              copy it: its tag, turn and scale
 	Paste             place a copy where the crosshair points
 	Remove            remove it
@@ -41,6 +43,7 @@ removed objects back itself.
 #include "cseries.h"
 #include "camera/director.h"
 #include "camera/director_forge.h"
+#include "camera/observer.h"
 #include "cutscene/cinematics.h"
 #include "game/game.h"
 #include "game/players.h"
@@ -519,6 +522,23 @@ static int forge_edit_remove(
 	return TRUE;
 }
 
+/* X on an object: the tools' menu opens on the tab, whose rows are about
+the object at the crosshair */
+static int forge_edit_properties(
+	float *distance)
+{
+	long object_index = local_player_get_player_index(FORGE_EDIT_LOCAL_PLAYER_INDEX) != NONE
+		? forge_edit_marked_object()
+		: NONE;
+
+	if (object_index == NONE)
+		return FALSE;
+	*distance = distance3d(&observer_get_camera(FORGE_EDIT_LOCAL_PLAYER_INDEX)->position,
+		&object_get(object_index)->object.bounding_sphere_center);
+
+	return TRUE;
+}
+
 static struct halo_mod const forge_edit_mod =
 {
 	"forge_edit",
@@ -529,7 +549,11 @@ static struct halo_mod const forge_edit_mod =
 	NULL,
 	&forge_edit_menu,
 	NULL,
-	forge_edit_remove
+	forge_edit_remove,
+	NULL,
+	NULL,
+	NULL,
+	forge_edit_properties
 };
 
 HALO_MOD_REGISTER(forge_edit_mod)

@@ -11,7 +11,7 @@ A layout holds:
 	the map's own objects that the tools moved or removed: found again by
 	        their tag and the place the map puts them
 	each mod's part (halo_mod.h, layout_save / layout_clear / layout_load):
-	        zones, AI characters and waypoints, gravity, the sky
+	        spawns, zones, AI characters and waypoints, gravity, the sky
 
 The map's own objects are noted when the map has placed them (the new map
 hook, forge_layout_new_map), before a layout is loaded. Objects that the
@@ -29,8 +29,9 @@ map in every local game, if any.
 
 The "Map" tab of the tools' menu: choose a layout (left, right), name and
 describe it, save it, load it, play it in every game on the map, show it in
-the map list, reset the map to its own look, delete it. In a system link
-game the tab is the host's.
+the map list, reset the map to its own look, remove every object of the
+map (asked twice: the map's own come back with the reset, the tools' do
+not), delete it. In a system link game the tab is the host's.
 
 System link: the host's game is the game. What it changes reaches its
 clients as its objects do (units and items, network_objects.c) and, for the
@@ -95,7 +96,11 @@ enum
 	FORGE_LAYOUT_MAXIMUM_TEXT = 65536,
 	/* how often the host looks whether its clients' part of the layout has
 	changed (ticks) */
-	FORGE_LAYOUT_SYNC_INTERVAL_TICKS = 15
+	FORGE_LAYOUT_SYNC_INTERVAL_TICKS = 15,
+	/* the game's object data array, and how long the Map tab's "Remove all
+	objects" waits to be chosen again (ticks) */
+	FORGE_LAYOUT_MAXIMUM_OBJECTS = 2048,
+	FORGE_LAYOUT_CONFIRM_TICKS = 150
 };
 
 /* what is kept: units (not the players', who come later), items, scenery
@@ -123,6 +128,7 @@ enum
 	_forge_layout_row_play,
 	_forge_layout_row_listed,
 	_forge_layout_row_reset,
+	_forge_layout_row_remove_all,
 	_forge_layout_row_delete,
 	NUMBER_OF_FORGE_LAYOUT_ROWS
 };
@@ -188,6 +194,9 @@ static struct
 	boolean slot_listed[FORGE_LAYOUT_SLOT_COUNT + 1];
 	/* the slot whose name or description is being typed */
 	short typing_slot;
+	/* when "Remove all objects" was chosen and waits to be chosen again
+	(NONE: it does not) */
+	long remove_all_time;
 
 	/* the layouts in the map list, and the one chosen there to play (its
 	base map and slot; -1 none), kept until another map is chosen */
@@ -221,7 +230,7 @@ static struct
 	unsigned long received_length;
 	char received_text[FORGE_LAYOUT_MAXIMUM_TEXT];
 	unsigned long applied_checksum;
-} forge_layout_globals = { "", 0, { { 0 } }, 0, { 0 }, 0, 0, 0, { { 0 } }, { { 0 } }, { 0 }, 0, 0, { { 0 } }, -1, 0 };
+} forge_layout_globals = { "", 0, { { 0 } }, 0, { 0 }, 0, 0, 0, { { 0 } }, { { 0 } }, { 0 }, 0, NONE, 0, { { 0 } }, -1, 0 };
 
 /* the multiplayer maps (interface/ui_widget_event_handler_functions.c) */
 static char const *const forge_layout_multiplayer_maps[FORGE_LAYOUT_MULTIPLAYER_MAP_COUNT] =
@@ -565,6 +574,54 @@ static void forge_layout_reset(
 	forge_layout_globals.current_slot = 0;
 
 	return;
+}
+
+/* every object of the map goes: the map's own and the tools', but not the
+players, what they ride and what they carry. The map's own are removed as
+the tools remove one (saved as removed, back with forge_layout_reset); how
+many went */
+static short forge_layout_remove_all(
+	void)
+{
+	static long object_indices[FORGE_LAYOUT_MAXIMUM_OBJECTS];
+	struct object_iterator iterator;
+	struct object_datum *object;
+	short count = 0;
+	short removed_count = 0;
+	short index;
+
+	object_iterator_new(&iterator, FORGE_LAYOUT_OBJECT_MASK, 0);
+	while ((object = (struct object_datum *)object_iterator_next(&iterator)) != NULL &&
+		count < FORGE_LAYOUT_MAXIMUM_OBJECTS)
+	{
+		/* (what something carries goes or stays with it) */
+		if (object->object.parent_object_index == NONE)
+			object_indices[count++] = iterator.index;
+	}
+	for (index = 0; index < count; index++)
+	{
+		struct data_iterator player_iterator;
+		struct player_datum *player;
+		boolean players = FALSE;
+
+		data_iterator_new(&player_iterator, player_data);
+		while ((player = (struct player_datum *)data_iterator_next(&player_iterator)) != NULL)
+		{
+			if (player->unit_index != NONE && object_try_and_get(player->unit_index) &&
+				object_get_ultimate_parent(player->unit_index) == object_indices[index])
+			{
+				players = TRUE;
+			}
+		}
+		if (!players && object_try_and_get(object_indices[index]))
+		{
+			forge_layout_note_removed(object_indices[index]);
+			object_delete(object_indices[index]);
+			removed_count++;
+		}
+	}
+
+	return removed_count;
 }
 
 /* ---------- saving */
@@ -1174,6 +1231,16 @@ static short forge_layout_menu_row_count(
 	return NUMBER_OF_FORGE_LAYOUT_ROWS;
 }
 
+/* whether "Remove all objects" has been chosen once, a moment ago */
+static boolean forge_layout_remove_all_asked(
+	void)
+{
+	long asked_time = forge_layout_globals.remove_all_time;
+
+	return asked_time != NONE && game_time_get() >= asked_time &&
+		game_time_get() - asked_time < FORGE_LAYOUT_CONFIRM_TICKS;
+}
+
 static void forge_layout_menu_row_text(
 	short row,
 	char *label,
@@ -1220,6 +1287,10 @@ static void forge_layout_menu_row_text(
 	case _forge_layout_row_reset:
 		_snprintf(label, label_size, "Reset the map");
 		break;
+	case _forge_layout_row_remove_all:
+		_snprintf(label, label_size, "Remove all objects");
+		_snprintf(value, value_size, "%s", forge_layout_remove_all_asked() ? "again to confirm" : "");
+		break;
 	case _forge_layout_row_delete:
 		_snprintf(label, label_size, "Delete it");
 		break;
@@ -1233,7 +1304,10 @@ static int forge_layout_menu_row_change(
 	int direction)
 {
 	short chosen = forge_layout_globals.chosen_slot;
+	boolean remove_all_asked = forge_layout_remove_all_asked();
 
+	/* (any other row: not asked any more) */
+	forge_layout_globals.remove_all_time = NONE;
 	if (!forge_layout_authoritative())
 	{
 		if (direction == 0 || row != _forge_layout_row_layout)
@@ -1348,6 +1422,26 @@ static int forge_layout_menu_row_change(
 			terminal_printf(global_real_argb_green, "forge: the map is back to its own look");
 		}
 		break;
+	case _forge_layout_row_remove_all:
+		if (direction != 0)
+		{
+			/* nothing */
+		}
+		else if (!remove_all_asked)
+		{
+			forge_layout_globals.remove_all_time = game_time_get();
+			terminal_printf(global_real_argb_orange,
+				"forge: choose it again to remove every object (Reset the map brings back only the map's own)");
+		}
+		else
+		{
+			/* (weapons and powerups come back where the map spawns them:
+			the Spawns tab, mods/forge_spawns) */
+			terminal_printf(global_real_argb_green, "forge: removed %d objects (items return at their spawns)",
+				forge_layout_remove_all());
+			forge_layout_host_sync(TRUE);
+		}
+		break;
 	case _forge_layout_row_delete:
 		if (direction == 0 && chosen != 0)
 		{
@@ -1372,6 +1466,7 @@ static int forge_layout_menu_row_change(
 static void forge_layout_menu_opened(
 	void)
 {
+	forge_layout_globals.remove_all_time = NONE;
 	forge_layout_read_slots();
 	if (forge_layout_globals.chosen_slot && !forge_layout_globals.slot_names[forge_layout_globals.chosen_slot][0])
 		forge_layout_globals.chosen_slot = 0;

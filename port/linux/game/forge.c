@@ -18,7 +18,10 @@ this file.
 	1 / D-pad right or X, only while flying
 	        open or close the spawn menu: every vehicle, weapon, equipment,
 	        biped and scenery object of the map (the menu is part of forge
-	        mode: landing the camera closes it)
+	        mode: landing the camera closes it). X with the crosshair on a
+	        spawn point, a zone or an object opens it on the tab that is
+	        about that thing (the mods' properties hook, halo_mod.h), with
+	        it chosen
 	F4, and while flying also enter, the left mouse button or A
 	        pick up the object under the crosshair
 	Y, while flying
@@ -1672,8 +1675,14 @@ static void forge_update_keys(
 		}
 		else if (menu || pad_menu)
 		{
+			/* X on something a mod's page is about (a spawn, a zone, an
+			object) opens the menu on that page, which chooses it */
+			short page_index = pad_menu ? halo_mods_properties_page() : NONE;
+
 			if (!forge_globals.menu_state_loaded)
 				forge_menu_state_load();
+			if (page_index != NONE)
+				forge_globals.category_index = (short)(NUMBEROF(forge_categories) + page_index);
 			forge_menu_open();
 		}
 		else if (grab || (select && flying))

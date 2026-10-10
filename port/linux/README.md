@@ -168,9 +168,13 @@ pathfinding, which multiplayer maps have),
 `forge_edit` (copy, paste, remove and undo the object under the crosshair),
 `forge_ui` (a patch of `game/forge.c`: the dev tools' menu after the forge
 menu of Halo: Reach, with the categories down its left side, that keeps its
-place), `gravity` (the map's gravity, with the tick and new map hooks) and
-`forge_zones` (kill, gravity and teleport zones placed at the crosshair).
-`forge_ai`, `forge_edit`, `gravity` and `forge_zones` are tabs of the dev tools'
+place), `gravity` (the map's gravity, with the tick and new map hooks),
+`forge_zones` (kill, gravity and teleport zones placed at the crosshair) and
+`forge_spawns` (the map's player spawns and item spawns: shown as posts,
+moved, removed, added and given a team, game types, an item collection and
+a respawn time; a changed kind replaces the map's own list, and "Restore
+the map's own" gives it back).
+`forge_ai`, `forge_edit`, `gravity`, `forge_zones` and `forge_spawns` are tabs of the dev tools'
 menu (1, D-pad right or, flying, X; LB / RB, Page Up / Page Down or T / V change tab) that work with a
 controller alone: a mod adds a tab with `struct halo_mod_menu` in
 `halo_mod.h`, rows of a label and a value that left and right change and
@@ -298,7 +302,7 @@ development.
 | Keyboard and mouse | Controller | Effect |
 | --- | --- | --- |
 | home | D-pad up | forge mode: the player becomes the monitor (343 Guilty Spark) and flies; again gives the player their body back where the monitor is. Without the monitor (below), detach the camera from the player to fly freely, through walls; again moves the player (or the vehicle they ride) to the camera, facing its way, and returns the camera to the player |
-| 1, flying | flying, D-pad right or X | open or close the spawn menu (only in forge mode; landing closes it) |
+| 1, flying | flying, D-pad right or X | open or close the spawn menu (only in forge mode; landing closes it). X with the crosshair on a spawn point, a zone or an object opens it on that thing's tab (Spawns, Zones, Edit) with it chosen |
 | F4, and flying also enter or left click | flying, A | pick up the object under the crosshair |
 | delete (with `forge_edit`) | flying, Y | remove the object under the crosshair |
 
@@ -362,10 +366,14 @@ it too, and LB and RB change tab.
 
 **Layouts** (`game/forge_layout.c`): the **Map** tab of the menu saves
 what Forge changed in the map (the objects spawned, the map's own objects
-moved or removed, zones, AI characters and waypoints, gravity, the sky) as
+moved or removed, the spawns, zones, AI characters and waypoints, gravity, the sky) as
 a layout: choose one with left and right (or a new one), Save, Load it,
 Play on this map (it then loads in every local game on the map, whatever
-the game type), Reset the map, Delete it. Up to 16 a map, in
+the game type), Reset the map, Remove all objects (choose it twice: every
+vehicle, weapon, piece of equipment, scenery and device goes, the players
+stay; Reset the map brings back the map's own, not what Forge placed; items
+still return at their spawns until those are removed on the Spawns tab),
+Delete it. Up to 16 a map, in
 `u/forge/<map>/layout_NN.txt` of the save root; new ones are called
 "Layout N". The **Name** and **Description** rows change what a layout is
 called and what the map list says about it: select the row and type on the

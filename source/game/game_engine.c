@@ -8363,6 +8363,13 @@ static long random_item(
 	return NONE;
 }
 
+/* port: an item of the collection, as the map's item spawn points make one
+(the Spawns tab, mods/forge_spawns), or NONE */
+long game_engine_random_item(
+	long item_collection_index)
+{
+	return item_collection_index != NONE ? random_item(item_collection_index) : NONE;
+}
 
 static void game_engine_update_item_spawn(
 	void)
