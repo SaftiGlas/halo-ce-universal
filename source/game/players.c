@@ -1717,6 +1717,24 @@ static void network_player_log_idle_action(
 	}
 }
 
+/* ... and gives up the one it has (the host's unit for it is another) */
+void network_player_detach_unit(
+	long player_index)
+{
+	struct player_datum *player = player_get(player_index);
+	struct unit_datum *unit = player->unit_index != NONE ?
+		(struct unit_datum *)object_try_and_get_and_verify_type(player->unit_index, _object_mask_unit) : NULL;
+
+	if (unit)
+	{
+		unit->unit.player_index = NONE;
+		unit_set_actively_controlled(player->unit_index, FALSE);
+	}
+	player->unit_index = NONE;
+	if (player->local_player_index != NONE)
+		player_control_new_unit(player->local_player_index, NONE);
+}
+
 /* port: Forge's monitor (port/linux/game/forge_monitor.c): the player's
 unit made again as one of another definition, at position and facing as it
 does, with the player's colour; the unit it had goes, with what it carries.
@@ -1790,24 +1808,6 @@ static real player_flying_throttle(
 	}
 
 	return throttle;
-}
-
-/* ... and gives up the one it has (the host's unit for it is another) */
-void network_player_detach_unit(
-	long player_index)
-{
-	struct player_datum *player = player_get(player_index);
-	struct unit_datum *unit = player->unit_index != NONE ?
-		(struct unit_datum *)object_try_and_get_and_verify_type(player->unit_index, _object_mask_unit) : NULL;
-
-	if (unit)
-	{
-		unit->unit.player_index = NONE;
-		unit_set_actively_controlled(player->unit_index, FALSE);
-	}
-	player->unit_index = NONE;
-	if (player->local_player_index != NONE)
-		player_control_new_unit(player->local_player_index, NONE);
 }
 
 /* Exact: January emits this private dead-unit replacement helper from the

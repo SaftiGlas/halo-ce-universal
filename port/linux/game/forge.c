@@ -724,10 +724,6 @@ static void forge_toggle_flying(
 			terminal_printf(global_real_argb_orange, monitor ?
 				"forge: the monitor stays" : "forge: no monitor now (dead, or in a vehicle)");
 		}
-		else
-		{
-			terminal_printf(global_real_argb_green, monitor ? "forge: on foot" : "forge: flying as the monitor");
-		}
 	}
 	else if (*director_camera_scripted)
 	{

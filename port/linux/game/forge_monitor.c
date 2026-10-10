@@ -25,7 +25,10 @@ game/players.c makes the first two the throttle's third part), so a client's
 host flies its monitor as it does.
 
 In first person the monitor's own lens flares (its eye's) are not drawn:
-they would fill the view (objects/object_lights.c, forge_monitor_hides_lens_flares).
+they would fill the view (objects/object_lights.c,
+forge_monitor_hides_lens_flares). While it turns what it holds (the right
+trigger, or the right mouse button, forge.c), the look and the throttle are
+the held object's, as the free camera's are (forge_monitor_control_input).
 */
 
 #include "cseries.h"
@@ -64,9 +67,6 @@ is turned, and how much faster with the fast key: the free camera's
 extern struct cache_file_tag_instance *global_tag_instances;
 /* the platform layer's (port/linux/src/port_config.c) */
 int config_boolean(const char *name);
-/* game/game.c, game/players.c */
-boolean game_variant_set_is_forge(void);
-long player_replace_unit(long player_index, long definition_index, real_point3d const *position);
 
 /* ---------- globals */
 

@@ -308,18 +308,20 @@ other players see, in split screen and in system link alike, and which
 walls stop. It flies as the free camera does: W A S D (the left stick) fly
 it level, the way the view faces whatever its pitch, R and F (RB and LB)
 raise and lower it straight up and down, and shift (LT) is faster. Its own
-eye's lens flare is not drawn in its view. It takes no damage, and cannot
-fly while dead or in a vehicle. Landing gives the player a new body with the game
-type's starting weapons, where the monitor is: in the air, it falls. The
-monitor's tags are not in the multiplayer maps: they come from The Maw
+eye's lens flare is not drawn in its view. With an object held, the right
+trigger (or the right mouse button) turns it with the right stick (the
+mouse) while the left stick's forward and back bring it nearer and take it
+further. It takes no damage, and cannot fly while dead or in a vehicle.
+Landing gives the player a new body with the game type's starting weapons,
+where the monitor is: in the air, it falls. The monitor's tags are not in the multiplayer maps: they come from The Maw
 (`c40.map`) as a Forge game's map loads (`game.forge_monitor`, on by
 default), which takes a second or two. Every machine of a system link game
 needs that map and the same setting; a machine without them does not see
 the other builders' monitors. With `game.forge_monitor = false`, or without
 The Maw, forge mode flies the camera free of the player, as follows.
 
-Flying the free camera, W A S D (the left stick) move, the mouse (the right stick) looks,
-R and F (RB and LB) go straight up and down at half that speed, shift
+Flying the free camera, W A S D (the left stick) move, the mouse (the
+right stick) looks, R and F (RB and LB) go straight up and down at half that speed, shift
 (LT) is 4 times faster, and the up and down arrows change
 the speed. The player stands still meanwhile. Z (right stick
 click) hands the controls back to the player and leaves the camera where
@@ -335,8 +337,9 @@ tags can be spawned, as the cache file holds nothing else.
 
 A taken or picked up object (anything but projectiles, sound scenery and
 placeholders; the player's own unit, vehicle and weapons excepted) is held
-where the crosshair (or, not flying, the view) points, standing on the
-surface there, up to 200 world units away, until it is placed:
+where the crosshair (the middle of the view: none is drawn) points,
+standing on the surface there, up to 200 world units away, until it is
+placed:
 
 | Keyboard and mouse | Controller | Effect |
 | --- | --- | --- |
@@ -519,8 +522,8 @@ the setting for one start of the game. It has priority over the file.
 | `game.start_variant` | `""` | `HALO_START_VARIANT` | With a multiplayer `start_map`: the game variant (`"slayer"`, `"team_slayer"`, `"ctf"`, `"king"`, `"oddball"`, `"race"`...). |
 | `game.start_difficulty` | `""` | `HALO_START_DIFFICULTY` | With a campaign `start_map`: `"easy"`, `"normal"`, `"hard"` or `"impossible"`. Empty: normal. |
 | `game.import` | `""` | `HALO_IMPORT` | Tags to bring into the maps from other maps: `"donor:group:tag name"` with `\|` between them, for example `"a30:scen:scenery\rocks\boulder_granite_large\boulder_granite_large"`. The launcher sets it from `mods.json`. |
-| `game.forge_monitor` | `true` | `HALO_FORGE_MONITOR` | In a Forge game, the builder flies as the monitor, whose tags come from The Maw (`c40.map`) as the map loads; `false`, or without that map, flies the camera free of the player. Refer to "Dev tools". |
 | `game.import_into` | `""` | `HALO_IMPORT_INTO` | The maps `game.import` applies to, `"bloodgulch,wizard"`. Empty: every map but the menu's. |
+| `game.forge_monitor` | `true` | `HALO_FORGE_MONITOR` | In a Forge game, the builder flies as the monitor, whose tags come from The Maw (`c40.map`) as the map loads; `false`, or without that map, flies the camera free of the player. Refer to "Dev tools". |
 | `paths.data` | `""` | `HALO_DATA_ROOT` | The data root. Refer to "Start the game". |
 | `paths.saves` | `""` | `HALO_SAVE_ROOT` | The save root. Refer to "Files and folders". |
 | `network.address` | `""` | `HALO_NET_ADDRESS` | The IPv4 address of this machine for system link. Refer to "Play on one computer". |
@@ -545,6 +548,7 @@ the setting for one start of the game. It has priority over the file.
 | `debug.update_answer` | `""` | `HALO_UPDATE_ANSWER` | The answer to the update question, for automatic tests: `yes`, `no` or `never`. Empty: the game asks. |
 | `debug.forge_menu_tab` | `-1` | `HALO_FORGE_MENU_TAB` | With the dev tools on (a Forge game), a few seconds into a game: open their menu on this tab (0 is the first), for screenshots of it (`debug.screenshot_directory`). `-1`: never. |
 | `debug.forge_test_edit` | `0` | `HALO_FORGE_TEST_EDIT` | For automated tests of Forge in system link (with `debug.network_test` and the `forge` variant): `1`, the host spawns a scenery object a few seconds in, and a client asks it to spawn one, then to move it and to remove it; both log what they send and take. |
+| `debug.forge_test_monitor` | `0` | `HALO_FORGE_TEST_MONITOR` | For automated tests of Forge's monitor (`game.forge_monitor`): `1`, each machine's player becomes the monitor ten seconds into a game, rises, and lands ten seconds later; what the player's unit is and where is logged every two seconds. |
 | `debug.exit_after` | `0.0` | `HALO_EXIT_AFTER` | The game stops after this number of seconds. `0`: never. |
 | `debug.screenshot_directory`, `debug.screenshot_every` | `""`, `0` | `HALO_SCREENSHOT_DIR`, `HALO_SCREENSHOT_EVERY` | The game writes each Nth frame to this folder as a BMP file. |
 | `debug.hidden_window`, `debug.null_renderer` | `false` | `HALO_HIDDEN_WINDOW`, `HALO_NULL_RENDERER` | `true`: no visible window, or no graphics. |
