@@ -2279,7 +2279,7 @@ static void game_options_menu_update_text_desc(
 	struct widget_instance *extended_description;
 	struct widget_instance *spinner_list;
 	struct ui_widget_definition *definition;
-	long description_index;
+	long description_index = 0;
 
 	match_vassert(
 		"c:\\halo\\SOURCE\\interface\\ui_widget_game_data_input_functions.c",
@@ -2341,12 +2341,6 @@ static void game_options_menu_update_text_desc(
 		}
 	}
 
-	/* BUG (preserved for exact matching): description_index is assigned only when the
-	 * list has a focused child. Without one, January stores the low word of the widget
-	 * argument slot instead (0x4e1ce0: +0xa4 branches to +0x119 mov dx,[ebp+8]; the slot
-	 * is never written). Whether a game options list is updated without a focused child
-	 * is not shown. A corrected build should initialise description_index to 0.
-	 * Source-policy approval pending (2026-09-27 audit). */
 	extended_description->parameters.text_box.string_list_index = (short)description_index;
 	return;
 }
@@ -2358,7 +2352,7 @@ static void game_options_menu_update_pic_desc(
 	struct widget_instance *extended_description;
 	struct widget_instance *spinner_list;
 	struct ui_widget_definition *definition;
-	long description_index;
+	long description_index = 0;
 
 	match_vassert(
 		"c:\\halo\\SOURCE\\interface\\ui_widget_game_data_input_functions.c",
@@ -2410,11 +2404,6 @@ static void game_options_menu_update_pic_desc(
 		}
 	}
 
-	/* BUG (preserved for exact matching): as in game_options_menu_update_text_desc,
-	 * without a focused child January stores the low word of the widget argument slot
-	 * (0x4e1ea0 +0x119 mov dx,[ebp+8]). Whether that occurs is not shown. A corrected
-	 * build should initialise description_index to 0. Source-policy approval pending
-	 * (2026-09-27 audit). */
 	extended_description->animation.current_frame_index = (short)description_index;
 	return;
 }
@@ -2943,14 +2932,15 @@ static void multiplayer_game_directions(
 
 	if (server)
 	{
+		/* port: one machine and one player may start (server_alone) */
 		boolean waiting_for_machines = !network_game_is_splitscreen_local() &&
 			game &&
-			game->machine_count < 2;
+			game->machine_count < 1;
 
 		if (!waiting_for_machines &&
 			network_game_is_splitscreen_local() &&
 			game &&
-			game->player_count < 2)
+			game->player_count < 1)
 		{
 			widget->parameters.text_box.string_list_index =
 				_multiplayer_game_text_string_waiting_for_player;
