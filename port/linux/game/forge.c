@@ -159,7 +159,10 @@ enum
 	FORGE_KEY_REPEAT_INTERVAL_MILLISECONDS = 70,
 	/* surfaces of objects the aim passes through (the player's own vehicle,
 	objects that cannot be picked up) */
-	FORGE_MAXIMUM_AIM_TESTS = 4
+	FORGE_MAXIMUM_AIM_TESTS = 4,
+	/* with a mod's objects held along with one (forge_hold_object), which
+	the aim passes through too */
+	FORGE_MAXIMUM_GROUP_AIM_TESTS = 32
 };
 
 /* draw_string's justifications (text/draw_string.c) */
@@ -269,6 +272,8 @@ struct forge_globals
 	has turned to, before the snap's steps */
 	boolean held_mouse_turning;
 	real held_mouse_angles[NUMBER_OF_FORGE_AXES];
+	/* a mod's objects go with it (forge_hold_object), or NULL */
+	struct halo_forge_object_hold const *held_group;
 
 	boolean active;
 	boolean menu_open;
@@ -510,13 +515,19 @@ static boolean forge_aim(
 	real_point3d origin = camera->position;
 	real_vector3d ray;
 	boolean hit = FALSE;
+	/* what goes with the held object is no surface to put it on */
+	struct halo_forge_object_hold const *group =
+		ignore_object_index != NONE && ignore_object_index == forge_globals.held_object_index
+			? forge_globals.held_group
+			: NULL;
+	short test_count = group && group->with ? FORGE_MAXIMUM_GROUP_AIM_TESTS : FORGE_MAXIMUM_AIM_TESTS;
 	short test_index;
 
 	if (camera->location.cluster_index == NONE)
 		return FALSE;
 
 	scale_vector3d(&camera->forward, FORGE_AIM_RANGE, &ray);
-	for (test_index = 0; !hit && test_index < FORGE_MAXIMUM_AIM_TESTS; test_index++)
+	for (test_index = 0; !hit && test_index < test_count; test_index++)
 	{
 		struct collision_result collision;
 
@@ -531,8 +542,8 @@ static boolean forge_aim(
 		}
 
 		if (collision.type == _collision_result_object &&
-			player_object_index != NONE &&
-			collision.object_index == player_object_index)
+			((player_object_index != NONE && collision.object_index == player_object_index) ||
+				(group && group->with && group->with(collision.object_index))))
 		{
 			/* through the player's own vehicle */
 			origin.x = collision.point.x + camera->forward.i * FORGE_AIM_STEP;
@@ -1012,6 +1023,7 @@ static void forge_hold_begin(
 	forge_menu_fonts_choose();
 	forge_globals.held_object_index = object_index;
 	forge_globals.held_spawned = spawned;
+	forge_globals.held_group = NULL;
 	forge_globals.held_height = 0.f;
 	forge_globals.held_anchored = FALSE;
 	forge_globals.held_turning = FALSE;
@@ -1199,6 +1211,25 @@ static void forge_hold_place(
 	is every tick (network_objects.c) and see it move as it is held */
 	if (game_connection() == _game_connection_network_server)
 		SET_FLAG(object->object.flags, _object_at_rest_bit, FALSE);
+	/* a mod's objects that go with it follow */
+	if (forge_globals.held_group && forge_globals.held_group->moved)
+		forge_globals.held_group->moved(forge_globals.held_object_index);
+
+	return;
+}
+
+/* the held object is no longer held, without being put down: a mod's
+objects that went with it are told */
+static void forge_hold_release(
+	void)
+{
+	struct halo_forge_object_hold const *group = forge_globals.held_group;
+	long object_index = forge_globals.held_object_index;
+
+	forge_globals.held_object_index = NONE;
+	forge_globals.held_group = NULL;
+	if (group && group->ended)
+		group->ended(object_index, FALSE);
 
 	return;
 }
@@ -1295,6 +1326,12 @@ static void forge_hold_end(
 	long object_index = forge_globals.held_object_index;
 	struct object_datum *object = object_get(object_index);
 	char const *name = tag_get_name(object->definition_index);
+
+	/* a mod's objects that go with it: put down with it, or gone with it
+	(told before it is removed) */
+	if (forge_globals.held_group && forge_globals.held_group->ended)
+		forge_globals.held_group->ended(object_index, !cancel && !remove_object);
+	forge_globals.held_group = NULL;
 
 	if (forge_client())
 	{
@@ -1533,7 +1570,7 @@ static void forge_update_keys(
 	if (forge_globals.held_object_index != NONE &&
 		!object_try_and_get(forge_globals.held_object_index))
 	{
-		forge_globals.held_object_index = NONE;
+		forge_hold_release();
 	}
 
 	/* the entries are the tags of the map they were listed in: a new map
@@ -1547,7 +1584,7 @@ static void forge_update_keys(
 		}
 		forge_globals.menu_open = FALSE;
 		/* what was held stays where it is */
-		forge_globals.held_object_index = NONE;
+		forge_hold_release();
 		forge_text_entry_globals.active = FALSE;
 	}
 	else if (forge_text_entry_globals.active)
@@ -2448,8 +2485,9 @@ void forge_render(
 		else if (forge_globals.held_object_index != NONE &&
 			object_try_and_get(forge_globals.held_object_index))
 		{
-			forge_render_held_name(&window,
-				tag_get_name(object_get(forge_globals.held_object_index)->definition_index));
+			forge_render_held_name(&window, forge_globals.held_group && forge_globals.held_group->name
+				? forge_globals.held_group->name
+				: tag_get_name(object_get(forge_globals.held_object_index)->definition_index));
 		}
 		else if (forge_globals.menu_open)
 		{
@@ -2658,6 +2696,23 @@ int forge_mod_hold_begin(
 	{
 		forge_menu_fonts_choose();
 		forge_globals.mod_hold = hold;
+		begun = TRUE;
+	}
+
+	return begun;
+}
+
+int forge_hold_object(
+	long object_index,
+	struct halo_forge_object_hold const *hold)
+{
+	boolean begun = FALSE;
+
+	if (forge_globals.active && forge_authoritative() && !forge_globals.mod_hold &&
+		forge_globals.held_object_index == NONE && object_try_and_get(object_index))
+	{
+		forge_hold_begin(object_index, TRUE);
+		forge_globals.held_group = hold;
 		begun = TRUE;
 	}
 

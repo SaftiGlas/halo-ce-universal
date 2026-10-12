@@ -253,4 +253,30 @@ struct halo_forge_hold
 object is held. The hold is called from the next frame on. */
 int forge_mod_hold_begin(struct halo_forge_hold const *hold);
 
+/* an object a mod has just made, held as the tools hold one they spawned:
+moved with the crosshair, turned about each axis, raised, orbited by the
+flying camera, and put down, or removed when it is cancelled. Other objects
+of the mod's may go with it (a prefab's). */
+struct halo_forge_object_hold
+{
+	/* what is held: the text drawn while it is, or NULL for the object's
+	tag */
+	char const *name;
+	/* each time the tools have put the held object somewhere: the place to
+	put what goes with it; may be NULL */
+	void (*moved)(long object_index);
+	/* TRUE for an object that goes with the held one: the crosshair points
+	through it, as through the held one; may be NULL */
+	int (*with)(long object_index);
+	/* once, when it is let go: placed TRUE when it was put down (the layout
+	keeps it), FALSE when it is about to be removed, or is gone already (a
+	new map, a checkpoint); may be NULL */
+	void (*ended)(long object_index, int placed);
+};
+
+/* starts holding the object; FALSE when the tools hold something already,
+or this machine's game is not the game's (a system link client). hold may
+be NULL: the object alone. */
+int forge_hold_object(long object_index, struct halo_forge_object_hold const *hold);
+
 #endif

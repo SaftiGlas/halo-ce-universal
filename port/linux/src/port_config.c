@@ -588,6 +588,11 @@ static const struct config_setting config_settings[] =
 		"machine's player becomes the monitor ten seconds into a game, rises, and\n"
 		"lands ten seconds later; what the player's unit is and where is logged\n"
 		"every two seconds. 0 never." },
+	{ "debug.forge_test_prefab", _config_integer, "0", "HALO_FORGE_TEST_PREFAB", _environment_value, _platform_desktop,
+		"For automated tests of Forge's prefabs: in a local Forge game, a few seconds\n"
+		"in, once, select this many of the map's objects, save them as a prefab and\n"
+		"place it beside them; how many were selected, read back and made is logged.\n"
+		"0 never." },
 	{ "debug.exit_after", _config_real, "0.0", "HALO_EXIT_AFTER", _environment_value, _platform_all,
 		"Quit this many seconds after the window opens; 0 never." },
 	{ "debug.hidden_window", _config_boolean, "false", "HALO_HIDDEN_WINDOW", _environment_set_is_true, _platform_desktop,

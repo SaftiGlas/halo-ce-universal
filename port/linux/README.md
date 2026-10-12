@@ -218,6 +218,11 @@ crosshair, and waypoints for them to patrol, with the game's own AI and
 pathfinding, which multiplayer maps have),
 `checkpoint_handler` (F5 and F9 take and restore checkpoints),
 `forge_edit` (copy, paste, remove and undo the object under the crosshair),
+`forge_prefabs` (several objects selected with the crosshair and saved together
+as a prefab of the map, `forge/<map>/prefab_NN.txt` in the save root beside
+its layouts, then placed again as often as wanted: its objects are made and
+held together at the crosshair, turned, raised and orbited by the camera as
+one held object is, until they are put down),
 `forge_ui` (a patch of `game/forge.c`: the dev tools' menu after the forge
 menu of Halo: Reach, with the categories down its left side, that keeps its
 place), `gravity` (the map's gravity, with the tick and new map hooks),
@@ -226,7 +231,7 @@ place), `gravity` (the map's gravity, with the tick and new map hooks),
 moved, removed, added and given a team, game types, an item collection and
 a respawn time; a changed kind replaces the map's own list, and "Restore
 the map's own" gives it back).
-`forge_ai`, `forge_edit`, `gravity`, `forge_zones` and `forge_spawns` are tabs of the dev tools'
+`forge_ai`, `forge_edit`, `forge_prefabs`, `gravity`, `forge_zones` and `forge_spawns` are tabs of the dev tools'
 menu (1, D-pad right or, flying, X; LB / RB, Page Up / Page Down or T / V change tab) that work with a
 controller alone: a mod adds a tab with `struct halo_mod_menu` in
 `halo_mod.h`, rows of a label and a value that left and right change and
@@ -403,6 +408,7 @@ development.
 | 1, flying | flying, D-pad right or X | open or close the spawn menu (only in forge mode; landing closes it). X with the crosshair on a spawn point, a zone or an object opens it on that thing's tab (Spawns, Zones, Edit) with it chosen |
 | F4, and flying also enter or left click | flying, A | pick up the object under the crosshair |
 | delete (with `forge_edit`) | flying, Y | remove the object under the crosshair |
+| B, flying (with `forge_prefabs`) | the Prefab tab's Select row | select the object under the crosshair for a prefab, or leave it out again; the Prefab tab saves the selection as a prefab of the map and places saved ones |
 
 **The monitor.** In a Forge game the builder flies as the monitor
 (`game/forge_monitor.c`): the player's unit becomes the monitor biped, which
@@ -686,6 +692,7 @@ the setting for one start of the game. It has priority over the file.
 | `debug.forge_menu_tab` | `-1` | `HALO_FORGE_MENU_TAB` | With the dev tools on (a Forge game), a few seconds into a game: open their menu on this tab (0 is the first), for screenshots of it (`debug.screenshot_directory`). `-1`: never. |
 | `debug.forge_test_edit` | `0` | `HALO_FORGE_TEST_EDIT` | For automated tests of Forge in system link (with `debug.network_test` and the `forge` variant): `1`, the host spawns a scenery object a few seconds in, and a client asks it to spawn one, then to move it and to remove it; both log what they send and take. |
 | `debug.forge_test_monitor` | `0` | `HALO_FORGE_TEST_MONITOR` | For automated tests of Forge's monitor (`game.forge_monitor`): `1`, each machine's player becomes the monitor ten seconds into a game, rises, and lands ten seconds later; what the player's unit is and where is logged every two seconds. |
+| `debug.forge_test_prefab` | `0` | `HALO_FORGE_TEST_PREFAB` | For automated tests of Forge's prefabs: in a local Forge game, a few seconds in, once, select this many of the map's objects, save them as a prefab and place it beside them; how many were selected, read back and made is logged. `0` never. |
 | `debug.exit_after` | `0.0` | `HALO_EXIT_AFTER` | The game stops after this number of seconds. `0`: never. |
 | `debug.screenshot_directory`, `debug.screenshot_every` | `""`, `0` | `HALO_SCREENSHOT_DIR`, `HALO_SCREENSHOT_EVERY` | The game writes each Nth frame to this folder as a BMP file. |
 | `debug.hidden_window`, `debug.null_renderer` | `false` | `HALO_HIDDEN_WINDOW`, `HALO_NULL_RENDERER` | `true`: no visible window, or no graphics. |
