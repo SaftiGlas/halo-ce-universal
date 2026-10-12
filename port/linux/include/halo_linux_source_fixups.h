@@ -42,6 +42,9 @@ unsigned char halo_tag_import_read(long offset, long size, void *buffer);
 /* the sky's look (port/linux/src/skyfx.c) */
 #include "halo_sky.h"
 
+/* the port's menus' screen for one of ui.map's, by name, else the name
+(port/linux/game/menu_tags.c) */
+char const *pc_menus_screen(char const *name);
 /* the Custom Edition tag cache window, or NULL unless the
 game.custom_edition setting reserved it (port/linux/src/xbox_memory.c) */
 void *halo_custom_edition_tag_cache(void);
