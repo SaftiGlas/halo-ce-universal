@@ -1,7 +1,7 @@
 /*
 FORGE_PREFABS.C
 
-A source mod (mods/forge_prefabs): several objects selected with the dev
+One of Forge's parts (halo_mod.h, mods.c): several objects selected with the dev
 tools' crosshair (port/linux/game/forge.c), saved together as a prefab, and
 placed again as often as wanted.
 
@@ -12,7 +12,7 @@ flying, X; LB / RB, Page Up / Page Down, or T / V change tab). The rows:
 	Select            select it, or leave it out again (B on a keyboard
 	                  while the camera flies, with the menu closed; an
 	                  object's popup, X on it, has a row for it too:
-	                  mods/forge_edit)
+	                  forge_edit.c)
 	Clear             select nothing
 	Save              the selection as a new prefab; its name is typed on
 	                  the keyboard
@@ -441,7 +441,7 @@ static boolean forge_prefabs_save(
 		return FALSE;
 	}
 	fprintf(file, "name %s\n", name);
-	fprintf(file, "# a Forge prefab (source/mods/forge_prefabs/forge_prefabs.c)\n");
+	fprintf(file, "# a Forge prefab (port/linux/game/forge_prefabs.c)\n");
 	fprintf(file, "version %d\n", FORGE_PREFABS_VERSION);
 	fprintf(file, "map %s\n", tag_get_name(global_scenario_index));
 	for (index = 0; index < forge_prefabs_globals.selected_count; index++)
@@ -1316,7 +1316,7 @@ static struct halo_mod_menu const forge_prefabs_menu =
 	forge_prefabs_menu_opened
 };
 
-/* ---------- for an object's popup (mods/forge_edit) */
+/* ---------- for an object's popup (forge_edit.c) */
 
 int forge_prefabs_object_selected(
 	long object_index)
@@ -1341,7 +1341,7 @@ void forge_prefabs_object_toggle(
 
 /* ---------- the mod */
 
-static struct halo_mod const forge_prefabs_mod =
+struct halo_mod const forge_prefabs_mod =
 {
 	"forge_prefabs",
 	forge_prefabs_update,
@@ -1357,5 +1357,3 @@ static struct halo_mod const forge_prefabs_mod =
 	NULL,
 	NULL
 };
-
-HALO_MOD_REGISTER(forge_prefabs_mod)

@@ -8866,7 +8866,7 @@ static long random_item(
 }
 
 /* port: an item of the collection, as the map's item spawn points make one
-(the Spawns tab, mods/forge_spawns), or NONE */
+(the Spawns tab, port/linux/game/forge_spawns.c), or NONE */
 long game_engine_random_item(
 	long item_collection_index)
 {

@@ -719,9 +719,6 @@ def generate_linux_build(n: Writer, sln: Any, layout: Optional[LinuxLayout] = No
             inputs=objects,
             variables={
                 "ldflags": " ".join(["--target=i686-linux-gnu", "-m32", "-no-pie", "-g", *sysroot_ldflags,
-                                     # where each window's sky is drawn, for the sky mod
-                                     # (port/linux/game/sky_state.c)
-                                     "-Wl,--wrap=render_sky",
                                      *extra_ldflags,
                                      # (posix_trace_marker.c's, which the GPU driver's calls must reach)
                                      *(f"-Wl,--export-dynamic-symbol={name}"

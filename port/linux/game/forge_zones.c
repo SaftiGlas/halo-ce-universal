@@ -1,7 +1,7 @@
 /*
 FORGE_ZONES.C
 
-A source mod (mods/forge_zones): kill, gravity and teleport zones,
+One of Forge's parts (halo_mod.h, mods.c): kill, gravity and teleport zones,
 boxes placed with the dev tools' crosshair (port/linux/game/forge.c).
 
 Everything is in the dev tools' menu (1, D-pad right or, flying, X), on the
@@ -1743,7 +1743,7 @@ static void forge_zones_layout_load(
 	return;
 }
 
-static struct halo_mod const forge_zones_mod =
+struct halo_mod const forge_zones_mod =
 {
 	"forge_zones",
 	forge_zones_update,
@@ -1759,5 +1759,3 @@ static struct halo_mod const forge_zones_mod =
 	forge_zones_layout_load,
 	forge_zones_properties
 };
-
-HALO_MOD_REGISTER(forge_zones_mod)

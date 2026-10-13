@@ -1,7 +1,7 @@
 /*
 GRAVITY.C
 
-A source mod (mods/gravity): the gravity of the whole map.
+One of Forge's parts (halo_mod.h, mods.c): the gravity of the whole map.
 
 The dev tools' menu (1 / D-pad right) has a "Gravity" tab with one row:
 left and right change the gravity (normal, low, very low, moon, high, very
@@ -251,7 +251,7 @@ static void gravity_layout_load(
 
 /* ---------- the mod */
 
-static struct halo_mod const gravity_mod =
+struct halo_mod const gravity_mod =
 {
 	"gravity",
 	gravity_update,
@@ -266,5 +266,3 @@ static struct halo_mod const gravity_mod =
 	gravity_layout_clear,
 	gravity_layout_load
 };
-
-HALO_MOD_REGISTER(gravity_mod)

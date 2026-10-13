@@ -1479,7 +1479,7 @@ static int forge_layout_menu_row_change(
 		else
 		{
 			/* (weapons and powerups come back where the map spawns them:
-			the Spawns tab, mods/forge_spawns) */
+			the Spawns tab, forge_spawns.c) */
 			terminal_printf(global_real_argb_green, "forge: removed %d objects (items return at their spawns)",
 				forge_layout_remove_all());
 			forge_layout_host_sync(TRUE);
@@ -1529,7 +1529,7 @@ static struct halo_mod_menu const forge_layout_menu =
 static void forge_layout_debug_update(
 	void);
 
-static struct halo_mod const forge_layout_mod =
+struct halo_mod const forge_layout_mod =
 {
 	"forge_layout",
 	forge_layout_debug_update,
@@ -1539,8 +1539,6 @@ static struct halo_mod const forge_layout_mod =
 	NULL,
 	&forge_layout_menu
 };
-
-HALO_MOD_REGISTER(forge_layout_mod)
 
 /* debug.forge_layout_save (port_config.c): a few seconds into a local game,
 saves the layout to that slot, once, and logs where local player 0 is, for

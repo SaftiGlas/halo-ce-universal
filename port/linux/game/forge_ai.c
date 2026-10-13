@@ -1,7 +1,7 @@
 /*
 FORGE_AI.C
 
-A source mod (mods/forge_ai): AI characters in any map, from the dev tools'
+One of Forge's parts (halo_mod.h, mods.c): AI characters in any map, from the dev tools'
 menu (in forge mode: 1, D-pad right or X), on the "AI" tab. A keyboard and
 a controller work alike.
 
@@ -1117,7 +1117,7 @@ static void forge_ai_render_world(
 	return;
 }
 
-static struct halo_mod const forge_ai_mod =
+struct halo_mod const forge_ai_mod =
 {
 	"forge_ai",
 	forge_ai_update,
@@ -1132,5 +1132,3 @@ static struct halo_mod const forge_ai_mod =
 	forge_ai_layout_clear,
 	forge_ai_layout_load
 };
-
-HALO_MOD_REGISTER(forge_ai_mod)

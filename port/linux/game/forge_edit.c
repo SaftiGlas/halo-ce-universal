@@ -1,7 +1,7 @@
 /*
 FORGE_EDIT.C
 
-A source mod (mods/forge_edit): an object's popup, with the dev tools'
+One of Forge's parts (halo_mod.h, mods.c): an object's popup, with the dev tools'
 crosshair (port/linux/game/forge.c): move it, copy it, change its size,
 turn and height, remove it.
 
@@ -27,7 +27,7 @@ right button closes it. The rows:
 	Roll              about its length, by 15 degrees
 	Height            up and down, by a twentieth of a world unit
 	Prefab            select it for a prefab, or leave it out again
-	                  (mods/forge_prefabs)
+	                  (forge_prefabs.c)
 	Remove            remove it
 	Undo remove       bring back the last removed object (the last 16, one
 	                  at a time)
@@ -156,7 +156,7 @@ static struct
 
 long config_integer(char const *name);
 
-/* the prefab an object is selected for (mods/forge_prefabs/forge_prefabs.c) */
+/* the prefab an object is selected for (forge_prefabs.c) */
 int forge_prefabs_object_selected(long object_index);
 void forge_prefabs_object_toggle(long object_index);
 
@@ -876,7 +876,7 @@ static int forge_edit_properties(
 	return TRUE;
 }
 
-static struct halo_mod const forge_edit_mod =
+struct halo_mod const forge_edit_mod =
 {
 	"forge_edit",
 	forge_edit_update,
@@ -893,5 +893,3 @@ static struct halo_mod const forge_edit_mod =
 	forge_edit_properties,
 	&forge_edit_popup
 };
-
-HALO_MOD_REGISTER(forge_edit_mod)

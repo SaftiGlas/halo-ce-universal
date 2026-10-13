@@ -1,7 +1,7 @@
 /*
 HALO_SKY.H
 
-Between the game, the sky mod and the renderer of the native ports: how the
+Between the game, Forge's sky tab and the renderer of the ports: how the
 sky looks (port/linux/src/skyfx.c keeps it and draws it), and where the
 game draws the sky of each window (port/linux/game/sky_state.c is the
 game's side).
@@ -10,7 +10,7 @@ game's side).
 #ifndef __HALO_SKY_H
 #define __HALO_SKY_H
 
-/* ---------- how the sky looks: for source mods (halo_mod.h) */
+/* ---------- how the sky looks: for Forge's parts (halo_mod.h) */
 
 struct halo_sky_appearance
 {
@@ -66,6 +66,9 @@ d3d8_gl.c. after_sky FALSE: before the map's sky is drawn; returns TRUE when
 the sky was drawn here instead, and the game must not draw its own.
 after_sky TRUE: after the map's sky, for its tint. */
 int halo_sky_draw(const struct halo_sky_view *view, int after_sky);
+/* draws a window's sky: the map's (render_sky), or the renderer's own, and
+the tint over it (port/linux/game/sky_state.c, called by render/render.c) */
+void halo_sky_render(void);
 /* TRUE when the look is anything but the map's own sky, so the game need
 not compute the view for nothing */
 int halo_sky_changed(void);

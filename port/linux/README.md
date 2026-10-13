@@ -211,12 +211,14 @@ file:
   the surface point it points at, where an object would be placed there,
   and whether the tools' menu is open or they hold an object
 
-`mods/` holds examples, and `mods/TESTING.md` how to try them:
+Forge's own parts are not source mods: they are built into the game on
+every platform (`game/forge_ai.c` and the files beside it, listed in
+`game/mods.c`, which gives the menu's tabs the same order in every build).
+They use the same hooks:
 `forge_ai` (an AI tab in the dev tools' menu: add characters, such as the
 grunts and hunters that the launcher brings in from campaign maps, at the
 crosshair, and waypoints for them to patrol, with the game's own AI and
 pathfinding, which multiplayer maps have),
-`checkpoint_handler` (F5 and F9 take and restore checkpoints),
 `forge_edit` (an object's popup: X with the crosshair on an object, flying, shows
 its rows beside the crosshair, to move it, duplicate it, change its size,
 turn, tilt, roll and height, select it for a prefab, remove it and undo a removal),
@@ -225,9 +227,7 @@ as a prefab of the map, `forge/<map>/prefab_NN.txt` in the save root beside
 its layouts, then placed again as often as wanted: its objects are made and
 held together at the crosshair, turned, raised and orbited by the camera as
 one held object is, until they are put down),
-`forge_ui` (a patch of `game/forge.c`: the dev tools' menu after the forge
-menu of Halo: Reach, with the categories down its left side, that keeps its
-place), `gravity` (the map's gravity, with the tick and new map hooks),
+`gravity` (the map's gravity, with the tick and new map hooks),
 `forge_zones` (kill, gravity and teleport zones placed at the crosshair) and
 `forge_spawns` (the map's player spawns and item spawns: shown as posts,
 moved, removed, added and given a team, game types, an item collection and

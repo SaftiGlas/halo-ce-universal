@@ -336,7 +336,9 @@ static void render_window(
 	if (!bink_playback_in_progress())
 	{
 		build_sprite_prepare_for_window();
-		render_sky();
+		/* port: the map's sky (render_sky), or the look Forge's sky tab gives
+		it (port/linux/game/sky_state.c) */
+		halo_sky_render();
 		first_person_weapon_render_update();
 		lights_preprocess_scene();
 		render_objects();

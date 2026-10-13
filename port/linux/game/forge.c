@@ -45,7 +45,7 @@ and RB, go to the previous and next tab on every page; X closes the menu too.
 The mouse's wheel chooses as up and down do, and with the left button held
 on a mod's row changes its value as left and right do.
 
-The menu (with the forge_ui mod, mods/forge_ui) is drawn after the forge
+The menu is drawn after the forge
 menu of Halo: Reach: a dark panel with the categories down its left side
 (the map's objects under "spawn", the mods' pages under "tools"), the
 chosen category's rows beside them with a scroll bar, the chosen object's
@@ -1030,7 +1030,7 @@ static void forge_menu_state_save(
 	{
 		short category_index;
 
-		fprintf(file, "# the forge menu's place (mods/forge_ui): its category, and in each\n");
+		fprintf(file, "# the forge menu's place: its category, and in each\n");
 		fprintf(file, "# category the first row shown and the chosen tag\n");
 		fprintf(file, "category %d\n", forge_globals.category_index);
 		for (category_index = 0; category_index < FORGE_CATEGORY_COUNT; category_index++)

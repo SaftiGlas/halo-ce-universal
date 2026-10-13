@@ -347,7 +347,7 @@ static const struct config_setting config_settings[] =
 	{ "game.import_into", _config_string, "\"\"", "HALO_IMPORT_INTO", _environment_value, _platform_desktop,
 		"The maps game.import applies to, with commas between: \"bloodgulch,wizard\";\n"
 		"empty for every map but the menu's." },
-	{ "game.forge_monitor", _config_boolean, "true", "HALO_FORGE_MONITOR", _environment_value, _platform_desktop,
+	{ "game.forge_monitor", _config_boolean, "true", "HALO_FORGE_MONITOR", _environment_value, _platform_all,
 		"In a Forge game, the builder flies as the monitor (343 Guilty Spark),\n"
 		"whose tags come from The Maw (c40.map) as the map loads; false, or\n"
 		"without that map, flies the camera free of the player. Every machine of\n"

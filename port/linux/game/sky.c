@@ -1,7 +1,7 @@
 /*
 SKY.C
 
-A source mod (mods/sky): the look of the sky and of the fog.
+One of Forge's parts (halo_mod.h, mods.c): the look of the sky and of the fog.
 
 The dev tools' menu (1 / D-pad right) has a "Sky" tab with one row, the
 look: left and right change it, so it works on a controller as it does on a
@@ -339,7 +339,7 @@ static void sky_layout_load(
 
 /* ---------- the mod */
 
-static struct halo_mod const sky_mod =
+struct halo_mod const sky_mod =
 {
 	"sky",
 	NULL,
@@ -354,5 +354,3 @@ static struct halo_mod const sky_mod =
 	sky_layout_clear,
 	sky_layout_load
 };
-
-HALO_MOD_REGISTER(sky_mod)

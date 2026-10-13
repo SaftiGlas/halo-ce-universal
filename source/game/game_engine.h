@@ -503,7 +503,7 @@ real game_engine_get_starting_location_rating(
 	long player_index,
 	struct player_starting_location const *starting_location);
 /* port: an item of the collection, as the map's item spawn points make one
-(mods/forge_spawns), or NONE */
+(port/linux/game/forge_spawns.c), or NONE */
 long game_engine_random_item(
 	long item_collection_index);
 boolean game_engine_should_spawn_player(

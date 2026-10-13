@@ -1,11 +1,11 @@
 /*
 SKYFX.C
 
-The sky of the native ports (see skyfx.h): what a source mod sets with
+The sky of the ports (see skyfx.h): what Forge's sky tab sets with
 halo_sky_set_appearance (halo_sky.h), and its drawing.
 
 The game draws each window's sky first, right after the window begins
-(render_sky in render/render_sky.c). The Linux link wraps that function
+(render_sky in render/render_sky.c), through halo_sky_render
 (port/linux/game/sky_state.c): before it, the renderer draws the shader's
 sky over the window's viewport, with the direction each pixel looks along,
 and the game's own sky is skipped; after it, the tint multiplies what the
@@ -21,11 +21,12 @@ it from the appearance's numbers. World z is up.
 
 #include <SDL3/SDL.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
-#ifdef HALO_ANDROID
+#ifdef HALO_GLES
 #define SKYFX_SHADER_VERSION "#version 300 es\nprecision highp float;\nprecision highp int;\n"
 #define SKYFX_NDC_SIGN 1.0f
 #else
@@ -156,9 +157,12 @@ static const char skyfx_fragment_body[] =
 
 /* ---------- globals */
 
+/* a pthread mutex, as the platform layer's other locks are: the Android
+guest has no SDL spinlock */
+static pthread_mutex_t skyfx_lock = PTHREAD_MUTEX_INITIALIZER;
+
 static struct
 {
-	SDL_SpinLock lock;
 	struct halo_sky_appearance appearance;
 	int initialized;
 	int changed;
@@ -316,19 +320,19 @@ void halo_sky_set_appearance(const struct halo_sky_appearance *appearance)
 		halo_sky_default_appearance(&defaults);
 		appearance = &defaults;
 	}
-	SDL_LockSpinlock(&skyfx.lock);
+	pthread_mutex_lock(&skyfx_lock);
 	skyfx.appearance = *appearance;
 	skyfx.initialized = TRUE;
 	skyfx.changed = appearance->procedural || appearance->tint_amount > 0.001f;
-	SDL_UnlockSpinlock(&skyfx.lock);
+	pthread_mutex_unlock(&skyfx_lock);
 }
 
 void halo_sky_get_appearance(struct halo_sky_appearance *appearance)
 {
-	SDL_LockSpinlock(&skyfx.lock);
+	pthread_mutex_lock(&skyfx_lock);
 	skyfx_use_defaults();
 	*appearance = skyfx.appearance;
-	SDL_UnlockSpinlock(&skyfx.lock);
+	pthread_mutex_unlock(&skyfx_lock);
 }
 
 int halo_sky_changed(void)

@@ -1,7 +1,7 @@
 /*
 FORGE_SPAWNS.C
 
-A source mod (mods/forge_spawns): the map's spawn points, shown, moved,
+One of Forge's parts (halo_mod.h, mods.c): the map's spawn points, shown, moved,
 removed and added with the dev tools' crosshair (port/linux/game/forge.c).
 
 A map has two kinds, both lists of its scenario and neither an object:
@@ -1323,7 +1323,7 @@ static void forge_spawns_layout_load(
 
 /* ---------- the mod */
 
-static struct halo_mod const forge_spawns_mod =
+struct halo_mod const forge_spawns_mod =
 {
 	"forge_spawns",
 	forge_spawns_update,
@@ -1339,5 +1339,3 @@ static struct halo_mod const forge_spawns_mod =
 	forge_spawns_layout_load,
 	forge_spawns_properties
 };
-
-HALO_MOD_REGISTER(forge_spawns_mod)

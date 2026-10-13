@@ -1,10 +1,9 @@
 /*
 SKYFX.H
 
-The sky of the native ports (skyfx.c): a sky a shader draws instead of the
-map's sky model, and a tint over the map's sky, both set by source mods
-through halo_sky.h. Only the port draws them; the game's code is not
-changed.
+The sky of the ports (skyfx.c): a sky a shader draws instead of the map's
+sky model, and a tint over the map's sky, both set by Forge's sky tab
+through halo_sky.h. Only the port draws them.
 */
 
 #ifndef __HALO_LINUX_SKYFX_H

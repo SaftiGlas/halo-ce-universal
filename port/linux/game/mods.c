@@ -1,13 +1,12 @@
 /*
 MODS.C
 
-The hooks of source mods (mods/, tools/mod_overlay.py; see
-port/linux/README.md, "Source mods"): each mod's unit registers a struct
-halo_mod (halo_mod.h) before the game starts, and the dev tools' own hooks
+The hooks of Forge's parts (halo_mod.h): each part is a struct halo_mod of
+its own file, listed in halo_mod_parts below, and the dev tools' own hooks
 in main/main.c and interface/interface.c (forge_update, forge_render) call
-every mod's first, in registration order; game/game.c calls the tick and
-new map hooks, render/render.c the world drawing hooks. Without mods
-nothing is registered and this does nothing.
+every part's first, in the list's order; game/game.c calls the tick and new
+map hooks, render/render.c the world drawing hooks. The list is the same in
+every build, so the menu's tabs and the order of the hooks are too.
 */
 
 #include "cseries.h"
@@ -39,11 +38,34 @@ nothing is registered and this does nothing.
 
 /* ---------- globals */
 
+/* Forge's parts, in the order of their menu tabs and of their hooks */
+extern struct halo_mod const forge_ai_mod;
+extern struct halo_mod const forge_edit_mod;
+extern struct halo_mod const forge_prefabs_mod;
+extern struct halo_mod const forge_spawns_mod;
+extern struct halo_mod const forge_zones_mod;
+extern struct halo_mod const gravity_mod;
+extern struct halo_mod const sky_mod;
+extern struct halo_mod const forge_layout_mod;
+
 static struct
 {
 	short count;
 	struct halo_mod const *mods[HALO_MOD_MAXIMUM_COUNT];
-} halo_mod_globals;
+} halo_mod_globals =
+{
+	8,
+	{
+		&forge_ai_mod,
+		&forge_edit_mod,
+		&forge_prefabs_mod,
+		&forge_spawns_mod,
+		&forge_zones_mod,
+		&gravity_mod,
+		&sky_mod,
+		&forge_layout_mod
+	}
+};
 
 /* the fonts chosen (for so many lines) and the map they were chosen in */
 #define HALO_MOD_FONT_CACHE_COUNT 4

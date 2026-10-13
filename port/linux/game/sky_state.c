@@ -1,16 +1,13 @@
 /*
 SKY_STATE.C
 
-The game's side of the sky of the native ports (port/linux/src/skyfx.c,
+The game's side of the sky of the ports (port/linux/src/skyfx.c,
 halo_sky.h): where each window's sky is drawn, and the direction each of
 its pixels looks along, for a sky the renderer draws itself and for the
 tint over the map's sky.
 
-The game's code is not changed. The Linux link wraps render_sky
-(--wrap=render_sky, tools/linux_build.py): the game's one call of it, in
-render_window (render/render.c) right after the window begins, comes here
-first. Builds without the wrap (Windows, Android, the web) leave the
-function out, and the sky then is always the map's.
+The game's one call of render_sky, in render_window (render/render.c) right
+after the window begins, is a call of halo_sky_render here, in every build.
 */
 
 #include "cseries.h"
@@ -19,7 +16,8 @@ function out, and the sky then is always the map's.
 
 #include "halo_sky.h"
 
-#if !defined(_WIN32) && !defined(HALO_ANDROID) && !defined(HALO_WEB)
+/* render/render_sky.c's */
+void render_sky(void);
 
 /* ---------- private code */
 
@@ -45,11 +43,7 @@ static void sky_screen_direction(
 
 /* ---------- public code */
 
-/* render/render_sky.c, reached through the linker's wrap */
-void __real_render_sky(
-	void);
-
-void __wrap_render_sky(
+void halo_sky_render(
 	void)
 {
 	if (halo_sky_changed() && render.visible_sky_model && !render.camera.mirrored)
@@ -69,15 +63,13 @@ void __wrap_render_sky(
 		}
 
 		if (!halo_sky_draw(&view, FALSE))
-			__real_render_sky();
+			render_sky();
 		halo_sky_draw(&view, TRUE);
 	}
 	else
 	{
-		__real_render_sky();
+		render_sky();
 	}
 
 	return;
 }
-
-#endif
