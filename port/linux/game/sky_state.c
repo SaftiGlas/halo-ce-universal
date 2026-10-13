@@ -9,8 +9,8 @@ tint over the map's sky.
 The game's code is not changed. The Linux link wraps render_sky
 (--wrap=render_sky, tools/linux_build.py): the game's one call of it, in
 render_window (render/render.c) right after the window begins, comes here
-first. Builds without the wrap (Windows, Android) leave the function out,
-and the sky then is always the map's.
+first. Builds without the wrap (Windows, Android, the web) leave the
+function out, and the sky then is always the map's.
 */
 
 #include "cseries.h"
@@ -19,7 +19,7 @@ and the sky then is always the map's.
 
 #include "halo_sky.h"
 
-#if !defined(_WIN32) && !defined(HALO_ANDROID)
+#if !defined(_WIN32) && !defined(HALO_ANDROID) && !defined(HALO_WEB)
 
 /* ---------- private code */
 

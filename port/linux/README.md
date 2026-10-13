@@ -151,7 +151,7 @@ Characters work too: an `actv` tag (an actor variant, such as
 `characters\grunt\grunt minor plasma pistol` of a30 or `characters\hunter\hunter`
 of b30) brings its body, animations, sounds, weapon and actor, and the
 `forge_ai` mod (below) adds them as AI. Vehicles, weapons of their own and
-skies are not tried (`mods/FORGE_PLAN.md`). Each map load reads the
+skies are not tried. Each map load reads the
 donor map, which takes a second or two, and the tags exist on this machine
 only, so use it in local games. It works through `game.import` and
 `game.import_into` (below), `game/tag_import.c`: the donor's tag data is
@@ -693,6 +693,7 @@ the setting for one start of the game. It has priority over the file.
 | `crash_reports.upload` | `"ask"` | `HALO_CRASH_REPORTS` | Windows only. `"yes"`: the game sends a report of each crash to the developers. `"no"`: the game sends no reports. `"ask"`: the game asks at the next crash and writes the answer here. Refer to "Crash reports" in [port/windows/README.md](../windows/README.md#crash-reports). |
 | `debug.update_answer` | `""` | `HALO_UPDATE_ANSWER` | The answer to the update question, for automatic tests: `yes`, `no` or `never`. Empty: the game asks. |
 | `debug.forge_menu_tab` | `-1` | `HALO_FORGE_MENU_TAB` | With the dev tools on (a Forge game), a few seconds into a game: open their menu on this tab (0 is the first), for screenshots of it (`debug.screenshot_directory`); `100` opens an object's popup instead, on the first object of the map, and `101` the popup of a held object. `-1`: never. |
+| `debug.forge_layout_save` | `0` | `HALO_FORGE_LAYOUT_SAVE` | For automated tests: in a local game, save the Forge layout to this slot (`1` to `16`) a few seconds in, once, and log where the player is; `0` never. |
 | `debug.forge_test_edit` | `0` | `HALO_FORGE_TEST_EDIT` | For automated tests of Forge in system link (with `debug.network_test` and the `forge` variant): `1`, the host spawns a scenery object a few seconds in, and a client asks it to spawn one, then to move it and to remove it; both log what they send and take. |
 | `debug.forge_test_monitor` | `0` | `HALO_FORGE_TEST_MONITOR` | For automated tests of Forge's monitor (`game.forge_monitor`): `1`, each machine's player becomes the monitor ten seconds into a game, rises, and lands ten seconds later; what the player's unit is and where is logged every two seconds. |
 | `debug.forge_test_prefab` | `0` | `HALO_FORGE_TEST_PREFAB` | For automated tests of Forge's prefabs: in a local Forge game, a few seconds in, once, select this many of the map's objects, save them as a prefab and place it beside them; how many were selected, read back and made is logged. `0` never. |

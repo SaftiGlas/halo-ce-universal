@@ -431,7 +431,7 @@ void console_startup(
 		fclose(file);
 	}
 
-	/* a map to start, from the settings (port/linux/game/start_map.c) */
+	/* port: a map to start, from the settings (port/linux/game/start_map.c) */
 	halo_start_map();
 
 	return;

@@ -207,7 +207,7 @@ static wchar_t *const fallback_multiplayer_game_text_strings[] =
 typedef char fallback_multiplayer_game_text_string_count_check[
 	NUMBEROF(fallback_multiplayer_game_text_strings) == 184 - FIRST_FALLBACK_MULTIPLAYER_GAME_TEXT_STRING ? 1 : -1];
 
-/* the Forge game type, the last default game variant (saved
+/* port: the Forge game type, the last default game variant (saved
 games/playlist_profile.c): its name, and its description in the game type
 list (whose default descriptions start at 10) */
 #define DEFAULT_GAME_VARIANT_NAMES_TAG_NAME "ui\\default_multiplayer_game_setting_names"
@@ -221,7 +221,7 @@ static wchar_t *fallback_string(long tag_index, short string_index)
 	char const *tag_name = tag_get_name(tag_index);
 	short fallback_index = string_index - FIRST_FALLBACK_MULTIPLAYER_GAME_TEXT_STRING;
 
-	/* the Forge maps of the multiplayer map list (port/linux/game/
+	/* port: the Forge maps of the multiplayer map list (port/linux/game/
 	forge_layout.c): their names, and a description */
 	if (string_index >= FORGE_CUSTOM_MAP_NAME_STRING &&
 		string_index < FORGE_CUSTOM_MAP_NAME_STRING + FORGE_CUSTOM_MAP_STRING_COUNT)

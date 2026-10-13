@@ -353,7 +353,7 @@ void game_tick(
 	game speed, set before it joined too, put back) */
 	profile_scope(game_tick_cheats_enforce_section, cheats_network_client_enforce();)
 	profile_scope(game_tick_remove_quitting_players_section, remove_quitting_players_from_game();)
-	/* source mods' tick hooks, local games only (port/linux/game/mods.c) */
+	/* port: source mods' tick hooks, local games only (port/linux/game/mods.c) */
 	halo_mods_tick();
 	profile_scope(game_tick_allegiance_section, game_allegiance_update();)
 	profile_scope(game_tick_units_section, units_update();)
@@ -718,7 +718,7 @@ void game_initialize_for_new_map(
 	/* (the map's objects, placed as on the host: a distributed client's own
 	from now on go elsewhere, port/linux/game/network_objects.c) */
 	network_objects_placed();
-	/* source mods' new map hooks (port/linux/game/mods.c) */
+	/* port: source mods' new map hooks (port/linux/game/mods.c) */
 	halo_mods_new_map();
 	ui_widgets_safe_to_load(TRUE);
 

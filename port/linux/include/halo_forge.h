@@ -103,6 +103,11 @@ int forge_text_entry_begin(char const *prompt, char const *initial, unsigned lon
 	void (*done)(char const *text));
 
 /* layouts (port/linux/game/forge_layout.c) */
+/* the name of a map's folder of u:\forge, where its layouts and prefabs
+are kept: the last part of its scenario's name, without what would make
+it another folder */
+void forge_map_folder_name(char const *scenario_name, char *name, unsigned long size);
+
 /* a new map, after the mods' new map hooks: notes the map's own objects,
 then, in a local game, loads the layout chosen to play on the map */
 void forge_layout_new_map(void);

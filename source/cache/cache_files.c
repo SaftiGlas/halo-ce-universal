@@ -622,7 +622,7 @@ void scenario_tags_unload(
 		custom_edition_cache_tags_unload();
 	else
 		tags_header_deregister_vertex_and_index_buffers(cache_file_globals.tag_header);
-	/* what tags brought in from other maps took (port/linux/game/tag_import.c) */
+	/* port: what tags brought in from other maps took (port/linux/game/tag_import.c) */
 	halo_tag_import_release();
 	cache_file_globals.tags_loaded = FALSE;
 	global_tag_instances = NULL;
@@ -1290,7 +1290,7 @@ long scenario_tags_load(
 			global_tag_instances = cache_file_globals.tag_header->tag_instances;
 			global_tag_count = cache_file_globals.tag_header->tag_count;
 			tags_header_register_vertex_and_index_buffers(cache_file_globals.tag_header);
-			/* tags brought in from other maps (port/linux/game/tag_import.c) */
+			/* port: tags brought in from other maps (port/linux/game/tag_import.c) */
 			halo_tag_import(cache_file_globals.tag_header, (void **)&global_tag_instances, stripped_scenario_name);
 			/* (the tags it added count) */
 			global_tag_count = cache_file_globals.tag_header->tag_count;

@@ -261,7 +261,7 @@ def generate_web_build(n: Writer, sln: Any) -> None:
         abi, "-std=gnu11", "-D_GNU_SOURCE", "-D_FILE_OFFSET_BITS=64", "-w", f"-I{platform_dir}",
     ])
     for source in sorted(platform_dir.glob("*.c")):
-        if source.name in WEB_EXCLUDE:
+        if source.name in WEB_EXCLUDE or source.name in config.get("excluded_platform_sources", []):
             continue
         add_object(source, posix_cflags if source.name.startswith("posix_") else platform_cflags)
     for source in hud_assets_build(n, "web", build_dir / "generated" / "hud_hires_assets.c"):

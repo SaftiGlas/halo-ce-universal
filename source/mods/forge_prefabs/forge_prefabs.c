@@ -945,7 +945,6 @@ static void forge_prefabs_new_map(
 	void)
 {
 	char const *scenario_name = global_scenario_index != NONE ? tag_get_name(global_scenario_index) : NULL;
-	char const *separator = scenario_name ? strrchr(scenario_name, '\\') : NULL;
 
 	forge_prefabs_globals.selected_count = 0;
 	forge_prefabs_globals.holding = FALSE;
@@ -954,11 +953,7 @@ static void forge_prefabs_new_map(
 	forge_prefabs_globals.delete_time = NONE;
 	forge_prefabs_globals.map_name[0] = 0;
 	if (scenario_name)
-	{
-		_snprintf(forge_prefabs_globals.map_name, sizeof(forge_prefabs_globals.map_name), "%s",
-			separator ? separator + 1 : scenario_name);
-		forge_prefabs_globals.map_name[sizeof(forge_prefabs_globals.map_name) - 1] = 0;
-	}
+		forge_map_folder_name(scenario_name, forge_prefabs_globals.map_name, sizeof(forge_prefabs_globals.map_name));
 	forge_prefabs_read_slots();
 
 	return;

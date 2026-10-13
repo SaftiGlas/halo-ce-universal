@@ -37,8 +37,8 @@ settings game.start_map, ... of config.toml; port/linux/game/start_map.c).
 "import" lists tags (donor map, tag group, name) that the game brings into
 the multiplayer maps (or "import_into": those maps) from the donor maps:
 the tag and everything it refers to, so a rock of Halo's first level can
-stand in Blood Gulch and be placed from the forge menu. Scenery works so
-far; see mods/FORGE_PLAN.md. The game reads HALO_IMPORT and HALO_IMPORT_INTO
+stand in Blood Gulch and be placed from the forge menu. Scenery and AI
+characters work so far. The game reads HALO_IMPORT and HALO_IMPORT_INTO
 (game.import and game.import_into in config.toml;
 port/linux/game/tag_import.c). Each map load reads the donor map, which
 takes a second or two.
@@ -237,7 +237,7 @@ def show_maps() -> None:
 
 # what the fzf list offers to bring in: AI characters (actor variants, with their bodies, animations,
 # sounds and weapons) and scenery. Any other group can be named on the command line (--group);
-# a biped alone has no AI and lies asleep (mods/FORGE_PLAN.md)
+# a biped alone has no AI and lies asleep
 IMPORT_GROUPS = {"actv": "AI characters", "scen": "scenery"}
 
 

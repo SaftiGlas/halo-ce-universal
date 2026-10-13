@@ -687,11 +687,13 @@ static byte const local_player_controller_bitmap_frames[2][MAXIMUM_LOCAL_PLAYERS
 	{{3, 5, 4}, {6, 8, 7}, {9, 11, 10}, {12, 14, 13}}
 };
 
+/* port: the Forge map a level of the multiplayer level list is, or NONE
+(ui_widget_event_handler_functions.c) */
+short ui_widget_port_forge_level(short level_index);
+
 /* port: the display index of a Custom Edition multiplayer map this machine
 has, which the menus show by its own name and picture even when its name
 holds an Xbox level's (port/linux/game/custom_edition_maps.c), or NONE */
-short ui_widget_port_forge_level(short level_index);
-
 static short custom_edition_map_display_index(
 	char const *map_name)
 {

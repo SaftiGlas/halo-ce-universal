@@ -909,6 +909,7 @@ static long adjust_score_for_ranking(
 	long score,
 	long player_index);
 
+/* port: the Forge game type (game_engine_playlist.h) */
 struct game_variant *build_game_variant_forge(
 	struct game_variant *variant);
 
@@ -7100,8 +7101,8 @@ struct game_variant *game_engine_get_variant_by_name(
 
 /* port: the Forge game type, slayer with no score to reach, no respawn
 wait, no suicide penalty and every vehicle, and the Forge flag that turns
-the dev tools on (port/linux/game/forge.c). It is the last of the default game variants
-(saved games/playlist_profile.c). */
+the dev tools on (port/linux/game/forge.c). It is the last of the default
+game variants (saved games/playlist_profile.c). */
 struct game_variant *build_game_variant_forge(
 	struct game_variant *variant)
 {
@@ -7122,6 +7123,7 @@ struct game_variant *build_game_variant_forge(
 	return variant;
 }
 
+/* port: TRUE while the game being played is of the Forge game type */
 boolean game_engine_variant_is_forge(
 	void)
 {

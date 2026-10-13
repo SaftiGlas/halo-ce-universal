@@ -3583,7 +3583,6 @@ static boolean main_loop_iteration(
 				{
 					debug_keys_update();
 					cheats_update();
-					/* dev tools, in games of the Forge game type (port/linux/game/forge.c) */
 					forge_update();
 					player_control_update((real)main_globals.halt_time_scale*main_globals.seconds_elapsed);
 

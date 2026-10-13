@@ -87,7 +87,9 @@ struct halo_mod
 	writes the mod's part, lines of text (halo_layout_printf, no line
 	breaks); layout_clear puts the mod's part back to how the map has it;
 	layout_load gets the lines of the mod's part one by one, after a
-	layout_clear. All three may be NULL, and run only in local games. */
+	layout_clear. All three may be NULL. The lines are a file's or, on a
+	system link client, the host's: layout_load checks what it takes from
+	them. */
 	void (*layout_save)(struct halo_layout_writer *writer);
 	void (*layout_clear)(void);
 	void (*layout_load)(char const *line);

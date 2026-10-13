@@ -6,7 +6,7 @@
                                                     from the map DONOR into MAP
 
 This does not change any file. It is for working out what bringing tags from
-one map into another (mods/FORGE_PLAN.md, "Cross-map tags") takes.
+one map into another (port/linux/game/tag_import.c) takes.
 
 A cache file is (source/cache/cache_files.c): a 0x800 byte header
 (tag_data_offset, tag_data_size at 0x10, 0x14), then the tag data, which the

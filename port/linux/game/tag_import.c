@@ -2,31 +2,41 @@
 TAG_IMPORT.C
 
 Brings tags from another map's cache file into the map that is loading
-(game.import and game.import_into in config.toml; the mod launcher's
-"import" in mods/mods.json sets them; see mods/FORGE_PLAN.md, "Cross-map
-tags and AI"). It does what the game does not: the game has one cache file
-at a time, and tag_load() refuses.
+(game.import and game.import_into in config.toml; the mod launcher's import
+list sets them). It does what the game does not: the game has one cache
+file at a time, and tag_load() refuses.
 
 The donor map's tag data is read (the DVD's maps are the 0x800 byte header
 and one zlib stream, which is inflated in memory), and the tags asked for
 and every tag they refer to are found by their tag references. What the map
 already has, by group and name, is used as it is; the rest is added:
 
-- the donor's whole tag data is copied into contiguous ("physical") memory,
-  where Direct3D finds vertex and index data, and every pointer in the added
-  tags moves by how far the copy is from where the donor's data was
-  (pointers are the words that fall in the donor's address range: verified
-  on rocks, where every one lands in the tag's own data, the names, the
-  buffer tables or the index data; raw vertex data, which could hold such
-  words, is never scanned)
-- each reference in an added tag gets the index the tag has in this map
-- the donor's vertex and index buffer tables are relocated and registered
-  as the game does its own (tags_header_register_vertex_and_index_buffers)
-- bitmaps: pixels are read from the cache file by offset; the pixels of an
-  added bitmap are copied to a store, and cache_file_read reads offsets from
-  HALO_IMPORT_PIXEL_BASE on out of it (halo_tag_import_read)
-- the map's tag instance table is replaced by a longer one with the added
-  tags at its end, so the tag iterator, tag_get and the forge menu see them
+	the donor's whole tag data is copied into contiguous ("physical")
+	        memory, where Direct3D finds vertex and index data, and every
+	        pointer in the added tags moves by how far the copy is from
+	        where the donor's data was (pointers are the words that fall in
+	        the donor's address range: verified on rocks, where every one
+	        lands in the tag's own data, the names, the buffer tables or
+	        the index data; raw vertex data, which could hold such words,
+	        is never scanned)
+	each reference in an added tag gets the index the tag has in this map
+	the donor's vertex and index buffer tables are relocated and registered
+	        as the game does its own
+	        (tags_header_register_vertex_and_index_buffers)
+	bitmaps: pixels are read from the cache file by offset; the pixels of
+	        an added bitmap are copied to a store, and cache_file_read
+	        reads offsets from HALO_IMPORT_PIXEL_BASE on out of it
+	        (halo_tag_import_read)
+	the map's tag instance table is replaced by a longer one with the added
+	        tags at its end, so the tag iterator, tag_get and the forge
+	        menu see them
+
+A donor is a file like any map, and is not trusted: its sizes, counts and
+the addresses the import follows are checked against its tag data, and a
+donor that fails is left out. The tags it adds are not seen by the tag
+validator (port/linux/game/tag_validate.c), which has checked the map's own
+before they come: name as donors only maps that are trusted as the game's
+own are.
 
 Called from scenario_tags_load and scenario_tags_unload (cache/cache_files.c)
 and cache_file_read (cache/cache_files_windows.c). Local games only in
@@ -44,8 +54,8 @@ practice: the tags exist on this machine alone.
 #include <stdlib.h>
 #include <string.h>
 
-/* the game's debugging allocator (cseries.h) refuses free(NULL) and knows only
-its own blocks; this file's memory is the C library's */
+/* the game's debugging allocator (cseries.h) refuses free(NULL) and knows
+only its own blocks; this file's memory is the C library's */
 #undef malloc
 #undef free
 #undef realloc
@@ -67,7 +77,19 @@ enum
 	IMPORT_NAME_SIZE = 256,
 	/* the first tag index's salt: index i is (0xE174 + i) << 16 | i */
 	IMPORT_FIRST_SALT = 0xE174,
-	IMPORT_INFLATE_CHUNK = 0x100000
+	/* (a tag's place in the table is a short, the low word of its index) */
+	IMPORT_MAXIMUM_TAGS = 0x7FFF,
+	IMPORT_INFLATE_CHUNK = 0x100000,
+	/* the most a donor's file may say it holds, and the most the store of
+	the added bitmaps' pixels and sounds' samples grows to */
+	IMPORT_MAXIMUM_FILE_SIZE = 0x20000000,
+	IMPORT_MAXIMUM_STORE_SIZE = 0x20000000,
+	/* the sizes of what the import follows in a tag: a vertex or index
+	buffer's entry, an animation, a sound's pitch range and permutation */
+	IMPORT_BUFFER_ENTRY_SIZE = 12,
+	IMPORT_ANIMATION_SIZE = 180,
+	IMPORT_PITCH_RANGE_SIZE = 72,
+	IMPORT_PERMUTATION_SIZE = 124
 };
 
 /* Forge's monitor, of The Maw (port/linux/game/forge_monitor.c) */
@@ -140,7 +162,8 @@ struct import_bitmap_data
 	void *base_address;
 };
 
-/* a stretch of a tag's data (donor addresses) that is raw data, not to be scanned */
+/* a stretch of a tag's data (donor addresses) that is raw data, not to be
+scanned */
 struct import_range
 {
 	unsigned long start;
@@ -161,7 +184,8 @@ struct import_donor
 	struct import_tag_header *tag_header;
 	struct import_instance *instances;
 	long tag_count;
-	/* per tag: the end of its data, and its index in the map (NONE: not in the closure) */
+	/* per tag: the end of its data (0: it has none in the tag data), and
+	its index in the map (NONE: not in the closure) */
 	unsigned long *extent_end;
 	long *map_index;
 };
@@ -214,7 +238,10 @@ static short import_parse_requests(
 			entry[length] = 0;
 			first = strchr(entry, ':');
 			second = first ? strchr(first + 1, ':') : NULL;
-			if (first && second && second - first == 5 && second[1] && first - entry < (long)sizeof(requests[0].donor))
+			if (first && second && second - first == 5 && second[1] && first != entry &&
+				first - entry < (long)sizeof(requests[0].donor) &&
+				/* (a map's name, not a path to a file elsewhere) */
+				strcspn(entry, "/\\.") >= (size_t)(first - entry))
 			{
 				*first = 0;
 				*second = 0;
@@ -256,17 +283,21 @@ static boolean import_map_listed(
 	return FALSE;
 }
 
-/* reads size bytes of the donor's file at offset (after the header for a compressed map) */
+/* reads size bytes of the donor's file at offset (after the header for a
+compressed map); FALSE when the file does not hold them */
 static boolean import_donor_read(
 	struct import_donor *donor,
 	long offset,
 	long size,
 	void *buffer)
 {
+	if (offset < IMPORT_HEADER_SIZE || size < 0 || offset > donor->header.file_length ||
+		size > donor->header.file_length - offset)
+	{
+		return FALSE;
+	}
 	if (donor->inflated)
 	{
-		if (offset < IMPORT_HEADER_SIZE || (unsigned long)(offset - IMPORT_HEADER_SIZE) + size > (unsigned long)donor->header.file_length - IMPORT_HEADER_SIZE)
-			return FALSE;
 		memcpy(buffer, donor->inflated + (offset - IMPORT_HEADER_SIZE), size);
 		return TRUE;
 	}
@@ -274,7 +305,8 @@ static boolean import_donor_read(
 	return fseek(donor->file, offset, SEEK_SET) == 0 && fread(buffer, 1, size, donor->file) == (size_t)size;
 }
 
-/* opens the donor map; when it is the DVD's compressed file, inflates the rest of it into memory */
+/* opens the donor map; when it is the DVD's compressed file, inflates the
+rest of it into memory */
 static boolean import_donor_open(
 	struct import_donor *donor,
 	char const *map_name)
@@ -292,6 +324,11 @@ static boolean import_donor_open(
 	}
 	if (fread(&donor->header, 1, sizeof(donor->header), donor->file) != sizeof(donor->header) ||
 		donor->header.signature != 0x68656164 || donor->header.version != 5 ||
+		/* (what the header says it holds, which the reads are checked by) */
+		donor->header.file_length < IMPORT_HEADER_SIZE || donor->header.file_length > IMPORT_MAXIMUM_FILE_SIZE ||
+		donor->header.tag_data_offset < IMPORT_HEADER_SIZE || donor->header.tag_data_size < IMPORT_TAG_HEADER_SIZE ||
+		donor->header.tag_data_offset > donor->header.file_length ||
+		donor->header.tag_data_size > donor->header.file_length - donor->header.tag_data_offset ||
 		fseek(donor->file, 0, SEEK_END) != 0)
 	{
 		platform_log("import: %s is not a cache file", path);
@@ -314,7 +351,12 @@ static boolean import_donor_open(
 			return FALSE;
 		}
 		memset(&stream, 0, sizeof(stream));
-		inflateInit(&stream);
+		if (inflateInit(&stream) != Z_OK)
+		{
+			platform_log("import: cannot inflate %s", path);
+			free(input);
+			return FALSE;
+		}
 		stream.next_out = donor->inflated;
 		stream.avail_out = total;
 		fseek(donor->file, IMPORT_HEADER_SIZE, SEEK_SET);
@@ -332,7 +374,8 @@ static boolean import_donor_open(
 		free(input);
 		if (stream.avail_out != 0)
 		{
-			platform_log("import: %s did not inflate (%d, %lu of %lu bytes)", path, status, total - stream.avail_out, total);
+			platform_log("import: %s did not inflate (%d, %lu of %lu bytes)", path, status,
+				total - stream.avail_out, total);
 			return FALSE;
 		}
 	}
@@ -352,6 +395,30 @@ static void import_donor_close(
 	return;
 }
 
+/* whether count elements of element_size bytes at the address (the donor's)
+are all in its tag data */
+static boolean import_donor_holds(
+	struct import_donor const *donor,
+	unsigned long address,
+	long count,
+	unsigned long element_size)
+{
+	return count >= 0 && address >= donor->base && address <= donor->base + donor->blob_size &&
+		(unsigned long)count <= (donor->base + donor->blob_size - address) / element_size;
+}
+
+/* the same of an address the import has moved already */
+static boolean import_blob_holds(
+	struct import_donor const *donor,
+	void const *address,
+	long count,
+	unsigned long element_size)
+{
+	return import_donor_holds(donor, (unsigned long)address - (unsigned long)donor->delta, count, element_size);
+}
+
+/* a name of the donor's (the tag data is followed by zeros, so it ends), or
+"" for an address that is not in its tag data */
 static char const *import_donor_string(
 	struct import_donor const *donor,
 	char const *address)
@@ -363,7 +430,8 @@ static char const *import_donor_string(
 		: "";
 }
 
-/* the donor tag a reference at these four words names, or NONE. Words before relocation. */
+/* the donor tag a reference at these four words names, or NONE. Words
+before relocation. */
 static long import_reference_target(
 	struct import_donor const *donor,
 	unsigned long const *words)
@@ -382,7 +450,8 @@ static long import_reference_target(
 		import_donor_string(donor, donor->instances[index].name)) ? index : NONE;
 }
 
-/* the extent of each tag's data: up to the next tag's (the last, to the end of the tag data) */
+/* the extent of each tag's data: up to the next tag's (the last, to the
+end of the tag data) */
 static boolean import_donor_extents(
 	struct import_donor *donor)
 {
@@ -478,28 +547,33 @@ static void import_mark_closure(
 	return;
 }
 
-/* an animation graph's raw data: the frame info, default data and frame data of each
-animation (block at 116; 180 bytes each, their three tag_datas at 72, 140 and 160,
-models/model_animation_definitions.h). Packed rotations and translations in them can
-look like pointers, so the pointer scan leaves them alone; ranges are in the donor's
-addresses. How many ranges. */
+/* an animation graph's raw data: the frame info, default data and frame
+data of each animation (block at 116; 180 bytes each, their three tag_datas
+at 72, 140 and 160, models/model_animation_definitions.h). Packed rotations
+and translations in them can look like pointers, so the pointer scan leaves
+them alone; ranges are in the donor's addresses. How many ranges. */
 static long import_animation_ranges(
 	struct import_donor const *donor,
 	unsigned long address,
+	unsigned long end,
 	struct import_range *ranges,
 	long maximum)
 {
 	static short const data_offsets[3] = { 72, 140, 160 };
 	unsigned long const *block = (unsigned long const *)(donor->blob + (address - donor->base) + 116);
-	long count = (long)block[0];
+	long count;
 	long index;
 	long result = 0;
 
-	if (count <= 0 || block[1] < donor->base || block[1] >= donor->base + donor->blob_size)
+	if (end - address < 116 + 12)
+		return 0;
+	count = (long)block[0];
+	if (count <= 0 || !import_donor_holds(donor, block[1], count, IMPORT_ANIMATION_SIZE))
 		return 0;
 	for (index = 0; index < count && result + 3 <= maximum; index++)
 	{
-		unsigned long const *element = (unsigned long const *)(donor->blob + (block[1] - donor->base) + index * 180);
+		unsigned long const *element = (unsigned long const *)(donor->blob + (block[1] - donor->base) +
+			index * IMPORT_ANIMATION_SIZE);
 		short which;
 
 		for (which = 0; which < 3; which++)
@@ -507,7 +581,7 @@ static long import_animation_ranges(
 			unsigned long size = element[data_offsets[which] / 4];
 			unsigned long data = element[data_offsets[which] / 4 + 3];
 
-			if (size && data >= donor->base && data + size <= donor->base + donor->blob_size)
+			if (size && import_donor_holds(donor, data, (long)size, 1))
 			{
 				ranges[result].start = data;
 				ranges[result].end = data + size;
@@ -519,16 +593,23 @@ static long import_animation_ranges(
 	return result;
 }
 
-/* copies size bytes of the donor's file at offset into the store (padded to a sector,
-as cache_file_read reads them); the offset cache_file_read reads them at, or NONE */
+/* copies size bytes of the donor's file at offset into the store (padded to
+a sector, as cache_file_read reads them); the offset cache_file_read reads
+them at, or NONE */
 static long import_store_add(
 	struct import_donor *donor,
 	long file_offset,
 	long size)
 {
-	long padded = (size + IMPORT_SECTOR_SIZE - 1) & ~(IMPORT_SECTOR_SIZE - 1);
+	long padded;
 	long result;
 
+	if (size < 0 || size > IMPORT_MAXIMUM_STORE_SIZE - IMPORT_SECTOR_SIZE - tag_import_globals.pixel_size)
+	{
+		platform_log("import: no room in the store for %ld bytes of the donor", size);
+		return NONE;
+	}
+	padded = (size + IMPORT_SECTOR_SIZE - 1) & ~(IMPORT_SECTOR_SIZE - 1);
 	if (tag_import_globals.pixel_size + padded > tag_import_globals.pixel_capacity)
 	{
 		long capacity = MAX(tag_import_globals.pixel_capacity * 2, tag_import_globals.pixel_size + padded + 0x100000);
@@ -551,19 +632,26 @@ static long import_store_add(
 	return result;
 }
 
-/* the pixels of an added bitmap tag (its data already moved) go to the store;
-its bitmaps read them from there */
+/* the pixels of an added bitmap tag (its data already moved, size bytes of
+it) go to the store; its bitmaps read them from there */
 static void import_bitmap_group(
 	struct import_donor *donor,
 	byte *group,
+	unsigned long size,
 	long new_tag_index)
 {
 	/* a bitmap group's bitmaps block is at 96 (bitmaps/bitmap_group.h) */
 	unsigned long const *block = (unsigned long const *)(group + 96);
-	long count = (long)block[0];
-	struct import_bitmap_data *bitmaps = (struct import_bitmap_data *)block[1];
+	long count;
+	struct import_bitmap_data *bitmaps;
 	long index;
 
+	if (size < 96 + 12)
+		return;
+	count = (long)block[0];
+	bitmaps = (struct import_bitmap_data *)block[1];
+	if (!import_blob_holds(donor, bitmaps, count, sizeof(struct import_bitmap_data)))
+		return;
 	for (index = 0; index < count; index++)
 	{
 		struct import_bitmap_data *bitmap = &bitmaps[index];
@@ -577,30 +665,40 @@ static void import_bitmap_group(
 	return;
 }
 
-/* the samples of an added sound tag (its data already moved) go to the store, and the
-sound cache reads them from there. A sound is pitch ranges (block at 152; 72 bytes each,
-their permutations block at 60), each permutation (124 bytes) has a tag_data of samples
-at 64 (size, pad, file offset at 72) and the sound cache's fields at 44 (block index),
-48 (address), 52 (the sound's tag index) and 60 (the same, sound/sound_definitions.h,
-cache/xbox_sound_cache.c) */
+/* the samples of an added sound tag (its data already moved, size bytes of
+it) go to the store, and the sound cache reads them from there. A sound is
+pitch ranges (block at 152; 72 bytes each, their permutations block at 60),
+each permutation (124 bytes) has a tag_data of samples at 64 (size, pad,
+file offset at 72) and the sound cache's fields at 44 (block index), 48
+(address), 52 (the sound's tag index) and 60 (the same,
+sound/sound_definitions.h, cache/xbox_sound_cache.c) */
 static void import_sound(
 	struct import_donor *donor,
 	byte *sound,
+	unsigned long size,
 	long new_tag_index)
 {
 	unsigned long const *ranges = (unsigned long const *)(sound + 152);
-	long range_count = (long)ranges[0];
+	long range_count;
 	long range_index;
 
+	if (size < 152 + 12)
+		return;
+	range_count = (long)ranges[0];
+	if (!import_blob_holds(donor, (void const *)ranges[1], range_count, IMPORT_PITCH_RANGE_SIZE))
+		return;
 	for (range_index = 0; range_index < range_count; range_index++)
 	{
-		unsigned long const *permutations = (unsigned long const *)((byte *)ranges[1] + range_index * 72 + 60);
+		unsigned long const *permutations = (unsigned long const *)((byte *)ranges[1] +
+			range_index * IMPORT_PITCH_RANGE_SIZE + 60);
 		long permutation_count = (long)permutations[0];
 		long permutation_index;
 
+		if (!import_blob_holds(donor, (void const *)permutations[1], permutation_count, IMPORT_PERMUTATION_SIZE))
+			continue;
 		for (permutation_index = 0; permutation_index < permutation_count; permutation_index++)
 		{
-			long *permutation = (long *)((byte *)permutations[1] + permutation_index * 124);
+			long *permutation = (long *)((byte *)permutations[1] + permutation_index * IMPORT_PERMUTATION_SIZE);
 			long offset = import_store_add(donor, permutation[18], permutation[16]);
 
 			if (offset != NONE)
@@ -638,9 +736,10 @@ static void import_from_donor(
 		return;
 	}
 
-	/* the donor's tag data, copied where Direct3D can reach it */
+	/* the donor's tag data, copied where Direct3D can reach it, and zeros
+	after it (a name at its end ends there) */
 	donor.blob_size = (unsigned long)donor.header.tag_data_size;
-	donor.blob = (byte *)XPhysicalAlloc(donor.blob_size, (unsigned long)-1, 0, PAGE_READWRITE);
+	donor.blob = (byte *)XPhysicalAlloc(donor.blob_size + sizeof(long), (unsigned long)-1, 0, PAGE_READWRITE);
 	if (!donor.blob || tag_import_globals.blob_count >= IMPORT_MAXIMUM_DONORS ||
 		!import_donor_read(&donor, donor.header.tag_data_offset, donor.header.tag_data_size, donor.blob))
 	{
@@ -650,18 +749,32 @@ static void import_from_donor(
 		import_donor_close(&donor);
 		return;
 	}
+	memset(donor.blob + donor.blob_size, 0, sizeof(long));
 	tag_import_globals.blobs[tag_import_globals.blob_count++] = donor.blob;
 	donor.tag_header = (struct import_tag_header *)donor.blob;
-	if (donor.tag_header->signature != 0x74616773)
-	{
-		platform_log("import: %s has no tag header", donor_name);
-		import_donor_close(&donor);
-		return;
-	}
 	donor.base = (unsigned long)donor.tag_header->tag_instances - IMPORT_TAG_HEADER_SIZE;
 	donor.delta = (long)((unsigned long)donor.blob - donor.base);
 	donor.tag_count = donor.tag_header->tag_count;
-	donor.instances = (struct import_instance *)(donor.blob + ((unsigned long)donor.tag_header->tag_instances - donor.base));
+	/* (the tag data where the donor has it must be addresses; the instances
+	follow the header, and the buffer tables are in it) */
+	if (donor.tag_header->signature != 0x74616773 ||
+		(unsigned long)donor.tag_header->tag_instances < IMPORT_TAG_HEADER_SIZE ||
+		donor.base + donor.blob_size < donor.base ||
+		donor.tag_count <= 0 || donor.tag_count > IMPORT_MAXIMUM_TAGS ||
+		!import_donor_holds(&donor, (unsigned long)donor.tag_header->tag_instances, donor.tag_count,
+			sizeof(struct import_instance)) ||
+		(donor.tag_header->vertex_buffer_count != 0 &&
+			!import_donor_holds(&donor, (unsigned long)donor.tag_header->vertex_buffers,
+				donor.tag_header->vertex_buffer_count, IMPORT_BUFFER_ENTRY_SIZE)) ||
+		(donor.tag_header->index_buffer_count != 0 &&
+			!import_donor_holds(&donor, (unsigned long)donor.tag_header->index_buffers,
+				donor.tag_header->index_buffer_count, IMPORT_BUFFER_ENTRY_SIZE)))
+	{
+		platform_log("import: %s has no tag header the import can read", donor_name);
+		import_donor_close(&donor);
+		return;
+	}
+	donor.instances = (struct import_instance *)(donor.blob + IMPORT_TAG_HEADER_SIZE);
 	mark = (byte *)calloc(donor.tag_count, 1);
 	if (!mark || !import_donor_extents(&donor))
 	{
@@ -690,6 +803,19 @@ static void import_from_donor(
 			import_mark_closure(&donor, found, mark);
 	}
 
+	/* (a tag to add whose data is not in the tag data: the donor is not one
+	the import can take from) */
+	for (index = 0; index < donor.tag_count; index++)
+	{
+		if (mark[index] && !donor.extent_end[index])
+		{
+			platform_log("import: %s has tags outside its tag data, nothing is taken from it", donor_name);
+			free(mark);
+			import_donor_close(&donor);
+			return;
+		}
+	}
+
 	/* which the map has already (by group and name), and which are new */
 	for (index = 0; index < donor.tag_count; index++)
 	{
@@ -708,6 +834,13 @@ static void import_from_donor(
 		}
 		if (donor.map_index[index] == NONE)
 			donor.map_index[index] = map_count + added++;
+	}
+	if (map_count + added > IMPORT_MAXIMUM_TAGS)
+	{
+		platform_log("import: the map has no room for %ld tags of %s", added, donor_name);
+		free(mark);
+		import_donor_close(&donor);
+		return;
 	}
 
 	/* a longer instance table, the added tags at its end */
@@ -736,7 +869,10 @@ static void import_from_donor(
 		instance = &table[new_index];
 		*instance = donor.instances[index];
 		instance->tag_index = import_salted_index(new_index);
-		instance->name = (char *)((unsigned long)donor.instances[index].name + donor.delta);
+		/* (a name that is not in the tag data: none) */
+		instance->name = import_donor_holds(&donor, (unsigned long)donor.instances[index].name, 1, 1)
+			? (char *)((unsigned long)donor.instances[index].name + donor.delta)
+			: "";
 		address = (unsigned long)donor.instances[index].base_address;
 		instance->base_address = (void *)(address + donor.delta);
 
@@ -744,7 +880,7 @@ static void import_from_donor(
 		end = donor.extent_end[index];
 		words = (unsigned long *)(donor.blob + (address - donor.base));
 		if (instance->group_tag == 'antr')
-			range_count = import_animation_ranges(&donor, address, ranges, IMPORT_MAXIMUM_RANGES);
+			range_count = import_animation_ranges(&donor, address, end, ranges, IMPORT_MAXIMUM_RANGES);
 		for (offset = 0; offset + 4 <= end - address; offset += 4)
 		{
 			unsigned long *word = &words[offset / 4];
@@ -777,24 +913,29 @@ static void import_from_donor(
 				*word += donor.delta;
 		}
 		if (instance->group_tag == 'bitm')
-			import_bitmap_group(&donor, (byte *)words, instance->tag_index);
+			import_bitmap_group(&donor, (byte *)words, end - address, instance->tag_index);
 		else if (instance->group_tag == 'snd!')
-			import_sound(&donor, (byte *)words, instance->tag_index);
+			import_sound(&donor, (byte *)words, end - address, instance->tag_index);
 	}
 
-	/* the donor's vertex and index buffers, relocated and registered as the game does its own */
+	/* the donor's vertex and index buffers, relocated and registered as the
+	game does its own (one whose data is not in the tag data is left) */
 	{
 		unsigned long *vertex_buffers = (unsigned long *)((unsigned long)donor.tag_header->vertex_buffers + donor.delta);
 		unsigned long *index_buffers = (unsigned long *)((unsigned long)donor.tag_header->index_buffers + donor.delta);
 
 		for (index = 0; index < donor.tag_header->vertex_buffer_count; index++)
 		{
+			if (!import_donor_holds(&donor, vertex_buffers[index * 3 + 1], 1, 1))
+				continue;
 			vertex_buffers[index * 3 + 1] += donor.delta;
 			vertex_buffers[index * 3] = D3DCOMMON_TYPE_VERTEXBUFFER | 1;
 			IDirect3DVertexBuffer8_Register((D3DVertexBuffer *)&vertex_buffers[index * 3], NULL);
 		}
 		for (index = 0; index < donor.tag_header->index_buffer_count; index++)
 		{
+			if (!import_donor_holds(&donor, index_buffers[index * 3 + 1], 1, 1))
+				continue;
 			index_buffers[index * 3 + 1] += donor.delta;
 			index_buffers[index * 3] = D3DCOMMON_TYPE_INDEXBUFFER | 1;
 		}
@@ -892,7 +1033,8 @@ void halo_tag_import_release(
 	return;
 }
 
-/* cache_file_read for an offset of an added bitmap's pixels: TRUE when it was read */
+/* cache_file_read for an offset of an added bitmap's pixels: TRUE when it
+was read */
 boolean halo_tag_import_read(
 	long offset,
 	long size,

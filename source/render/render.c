@@ -432,7 +432,7 @@ static void render_window(
 	bink_playback_render();
 	render_camera_debug_frustum(&render.camera, &render.frustum);
 	render_debug();
-	/* source mods' world drawing (port/linux/game/mods.c) */
+	/* port: source mods' world drawing (port/linux/game/mods.c) */
 	halo_mods_render_world();
 	editor_render();
 	rasterizer_debug_draw();

@@ -564,11 +564,16 @@ static void playlist_profile_create_default_profiles_on_disk(
 			wchar_t *display_name;
 			boolean file_written = FALSE;
 
+			/* port: the Forge game type, after the Xbox's defaults */
 			if (profile_index == FORGE_PLAYLIST_PROFILE_INDEX)
+			{
 				variant = *build_game_variant_forge(&temporary);
+			}
 			else
-			variant = *playlist_profile_default_data.default_variant_building_functions[
-				profile_index](&temporary);
+			{
+				variant = *playlist_profile_default_data.default_variant_building_functions[
+					profile_index](&temporary);
+			}
 
 			_snprintf(path, MAXIMUM_FILENAME_LENGTH, "z:\\saved\\playlists\\default_playlist\\%02d", profile_index);
 			path[MAXIMUM_FILENAME_LENGTH] = 0;

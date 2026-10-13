@@ -3030,7 +3030,7 @@ static void port_multiplayer_levels_build(
 	return;
 }
 
-/* the Forge map a level of the multiplayer level list is, or NONE
+/* port: the Forge map a level of the multiplayer level list is, or NONE
 (ui_widget_game_data_input_functions.c) */
 short ui_widget_port_forge_level(
 	short level_index)
@@ -3076,7 +3076,7 @@ static boolean multiplayer_level_list_initialize(
 		if (widget->data3C.selected_index == level_count)
 			widget->data3C.selected_index = 0;
 	}
-	/* the Forge map played last, if it is still there */
+	/* port: the Forge map played last, if it is still there */
 	if (forge_custom_map_selected() != NONE)
 		widget->data3C.selected_index = (short)(port_forge_first_level + forge_custom_map_selected());
 	return TRUE;
@@ -5779,7 +5779,7 @@ static boolean multiplayer_level_select(
 		return FALSE;
 	}
 	map_name = ((char **)level_list->generated_list)[level_list->data3C.selected_index];
-	/* a Forge map is its base map played with its layout */
+	/* port: a Forge map is its base map played with its layout */
 	forge_custom_map_select(ui_widget_port_forge_level(level_list->data3C.selected_index));
 	file = fopen("d:\\map_automation.txt", "r");
 	if (file)
@@ -6073,7 +6073,7 @@ boolean ui_widget_port_multiplayer_map_choose(
 	return TRUE;
 }
 
-/* the multiplayer map (of ui_widget_port_multiplayer_maps) a Forge map
+/* port: the multiplayer map (of ui_widget_port_multiplayer_maps) a Forge map
 (port/linux/game/forge_layout.c) is a layout of, or NONE */
 short ui_widget_port_forge_map_level(
 	short custom_index)

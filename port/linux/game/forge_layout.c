@@ -115,8 +115,12 @@ how far one must be moved (or turned) to be saved as moved */
 /* how near the place a client names an object that the host has no index
 for (scenery, devices) must be */
 #define FORGE_LAYOUT_EDIT_DISTANCE 0.5f
-/* how far from the origin a client may ask for an object (world units) */
+/* how far from the origin a client may ask for an object, and a layout's
+line may put one (world units) */
 #define FORGE_LAYOUT_WORLD_BOUND 32768.0f
+/* the scales a layout's line may give an object (the tools' own are within) */
+#define FORGE_LAYOUT_MINIMUM_SCALE 0.01f
+#define FORGE_LAYOUT_MAXIMUM_SCALE 100.0f
 
 enum
 {
@@ -252,6 +256,9 @@ static char const *const forge_layout_multiplayer_maps[FORGE_LAYOUT_MULTIPLAYER_
 
 /* ---------- private code */
 
+/* cache_files.c's */
+boolean tag_index_is_group(long tag_index, long group_tag);
+
 /* a machine whose game state is the game's: a local game, or the host of a
 system link game (network_distributed.c, whose clients copy its objects) */
 static boolean forge_layout_authoritative(
@@ -293,6 +300,30 @@ static void forge_layout_slot_path(
 	return;
 }
 
+/* a name or a description, typed or read from a file, without what a line
+of the file and the menus' strings cannot hold */
+static void forge_layout_clean_text(
+	char const *text,
+	char *result,
+	unsigned long size)
+{
+	unsigned long length = 0;
+
+	while (*text == ' ')
+		text++;
+	for (; *text && length < size - 1; text++)
+	{
+		/* (a percent sign would be taken for a format by the menus) */
+		if (*text >= ' ' && *text < 127 && *text != '%')
+			result[length++] = *text;
+	}
+	while (length > 0 && result[length - 1] == ' ')
+		length--;
+	result[length] = 0;
+
+	return;
+}
+
 /* a layout file's name ("Layout N" when it has none), its description ("":
 none) and whether it is in the map list; FALSE when there is no layout
 there */
@@ -329,6 +360,11 @@ static boolean forge_layout_read_header(
 	name[name_size - 1] = 0;
 	description[description_size - 1] = 0;
 	fclose(file);
+	/* (a file may hold anything: only what could have been typed is kept) */
+	forge_layout_clean_text(name, name, name_size);
+	forge_layout_clean_text(description, description, description_size);
+	if (!name[0])
+		_snprintf(name, name_size, "Layout %d", slot);
 
 	return TRUE;
 }
@@ -889,11 +925,32 @@ static long forge_layout_line_tag(
 	return definition_index;
 }
 
+/* the tag of a line as an object the tools keep, or NONE: a line may name
+any tag of the map, and a client's lines are the host's */
+static long forge_layout_line_object(
+	char const *group,
+	char const *name,
+	boolean for_client)
+{
+	long definition_index;
+
+	if (strlen(group) != 4 || !name[0] || (definition_index = forge_layout_line_tag(group, name)) == NONE)
+		return NONE;
+	if (!tag_index_is_group(definition_index, OBJECT_DEFINITION_TAG) ||
+		!TEST_FLAG(FORGE_LAYOUT_OBJECT_MASK, object_definition_get(definition_index)->object.type) ||
+		(for_client && forge_layout_host_brings(definition_index)))
+	{
+		return NONE;
+	}
+
+	return definition_index;
+}
+
 static void forge_layout_load_forge_line(
 	char const *line,
 	boolean for_client)
 {
-	char group[5];
+	char group[5] = { 0 };
 	float values[13];
 	int name_offset = 0;
 	long definition_index;
@@ -907,14 +964,21 @@ static void forge_layout_load_forge_line(
 		real_vector3d up;
 		long object_index;
 
-		if ((definition_index = forge_layout_line_tag(group, line + name_offset)) == NONE ||
-			(for_client && forge_layout_host_brings(definition_index)))
-		{
+		if ((definition_index = forge_layout_line_object(group, line + name_offset, for_client)) == NONE)
 			return;
-		}
 		set_real_point3d(&position, values[0], values[1], values[2]);
 		set_real_vector3d(&forward, values[3], values[4], values[5]);
 		set_real_vector3d(&up, values[6], values[7], values[8]);
+		/* (what cannot be, from a file or the host: not made) */
+		if (!distributed_point_valid(&position, FORGE_LAYOUT_WORLD_BOUND) ||
+			!distributed_axes_make_valid(&forward, &up) ||
+			forge_layout_globals.spawned_count >= FORGE_LAYOUT_MAXIMUM_SPAWNED)
+		{
+			return;
+		}
+		/* (a scale that is none, or out of bounds: the tag's own) */
+		if (!(values[9] >= FORGE_LAYOUT_MINIMUM_SCALE && values[9] <= FORGE_LAYOUT_MAXIMUM_SCALE))
+			values[9] = 0.f;
 		object_index = forge_layout_new_object(definition_index, &position, &forward, &up, values[9]);
 		if (object_index != NONE)
 			forge_layout_note_spawned(object_index);
@@ -930,15 +994,18 @@ static void forge_layout_load_forge_line(
 		real_vector3d forward;
 		real_vector3d up;
 
-		if ((definition_index = forge_layout_line_tag(group, line + name_offset)) == NONE ||
-			(for_client && forge_layout_host_brings(definition_index)))
-		{
+		if ((definition_index = forge_layout_line_object(group, line + name_offset, for_client)) == NONE)
 			return;
-		}
 		set_real_point3d(&original, values[0], values[1], values[2]);
 		set_real_point3d(&position, values[3], values[4], values[5]);
 		set_real_vector3d(&forward, values[6], values[7], values[8]);
 		set_real_vector3d(&up, values[9], values[10], values[11]);
+		if (!distributed_point_valid(&original, FORGE_LAYOUT_WORLD_BOUND) ||
+			!distributed_point_valid(&position, FORGE_LAYOUT_WORLD_BOUND) ||
+			!distributed_axes_make_valid(&forward, &up))
+		{
+			return;
+		}
 		entry = forge_layout_find_map_object(definition_index, &original);
 		if (entry && object_try_and_get(entry->object_index))
 		{
@@ -952,12 +1019,11 @@ static void forge_layout_load_forge_line(
 		struct forge_layout_map_object *entry;
 		real_point3d original;
 
-		if ((definition_index = forge_layout_line_tag(group, line + name_offset)) == NONE ||
-			(for_client && forge_layout_host_brings(definition_index)))
-		{
+		if ((definition_index = forge_layout_line_object(group, line + name_offset, for_client)) == NONE)
 			return;
-		}
 		set_real_point3d(&original, values[0], values[1], values[2]);
+		if (!distributed_point_valid(&original, FORGE_LAYOUT_WORLD_BOUND))
+			return;
 		entry = forge_layout_find_map_object(definition_index, &original);
 		if (entry && object_try_and_get(entry->object_index))
 		{
@@ -1135,29 +1201,6 @@ static boolean forge_layout_set_listed(
 }
 
 /* ---------- typing a name or a description (the Map tab) */
-
-/* what was typed, without what a line of the file cannot hold */
-static void forge_layout_clean_text(
-	char const *text,
-	char *result,
-	unsigned long size)
-{
-	unsigned long length = 0;
-
-	while (*text == ' ')
-		text++;
-	for (; *text && length < size - 1; text++)
-	{
-		/* (a percent sign would be taken for a format by the menus) */
-		if (*text >= ' ' && *text < 127 && *text != '%')
-			result[length++] = *text;
-	}
-	while (length > 0 && result[length - 1] == ' ')
-		length--;
-	result[length] = 0;
-
-	return;
-}
 
 static void forge_layout_name_typed(
 	char const *text)
@@ -1893,9 +1936,6 @@ struct forge_layout_edit_message
 	real_vector3d up;
 };
 
-/* cache_files.c's */
-boolean tag_index_is_group(long tag_index, long group_tag);
-
 int forge_layout_loading_for_client(
 	void)
 {
@@ -2171,11 +2211,31 @@ void forge_layout_handle_message(
 	return;
 }
 
+void forge_map_folder_name(
+	char const *scenario_name,
+	char *name,
+	unsigned long size)
+{
+	char const *separator = strrchr(scenario_name, '\\');
+	unsigned long index;
+
+	_snprintf(name, size, "%s", separator ? separator + 1 : scenario_name);
+	name[size - 1] = 0;
+	/* (a map's file names its scenario as it likes: nothing that would
+	make the folder another one) */
+	for (index = 0; name[index]; index++)
+	{
+		if ((unsigned char)name[index] < ' ' || strchr("/\\:", name[index]) || (index == 0 && name[index] == '.'))
+			name[index] = '_';
+	}
+
+	return;
+}
+
 void forge_layout_new_map(
 	void)
 {
 	char const *scenario_name = global_scenario_index != NONE ? tag_get_name(global_scenario_index) : NULL;
-	char const *separator = scenario_name ? strrchr(scenario_name, '\\') : NULL;
 
 	forge_layout_globals.spawned_count = 0;
 	forge_layout_globals.current_slot = 0;
@@ -2191,11 +2251,7 @@ void forge_layout_new_map(
 	forge_layout_globals.slot_names[0][0] = 0;
 	forge_layout_globals.slot_descriptions[0][0] = 0;
 	if (scenario_name)
-	{
-		_snprintf(forge_layout_globals.map_name, sizeof(forge_layout_globals.map_name), "%s",
-			separator ? separator + 1 : scenario_name);
-		forge_layout_globals.map_name[sizeof(forge_layout_globals.map_name) - 1] = 0;
-	}
+		forge_map_folder_name(scenario_name, forge_layout_globals.map_name, sizeof(forge_layout_globals.map_name));
 	forge_layout_note_map_objects();
 
 	/* a system link client gets the host's layout when it has loaded

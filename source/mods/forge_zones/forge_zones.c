@@ -114,6 +114,8 @@ enum forge_zone_direction
 #define FORGE_ZONES_DEFAULT_HEIGHT 2.f
 #define FORGE_ZONES_MINIMUM_SIZE 0.25f
 #define FORGE_ZONES_MAXIMUM_SIZE 400.f
+/* how far from the origin a layout's line may put a zone (world units) */
+#define FORGE_ZONES_WORLD_BOUND 32768.f
 /* how far below the aimed surface a zone's floor goes, so that what
 stands there is in it */
 #define FORGE_ZONES_FLOOR_DEPTH 0.1f
@@ -1704,6 +1706,7 @@ static void forge_zones_layout_load(
 	int direction;
 	/* (a layout saved before zones could tilt has no pitch and roll) */
 	float values[9] = { 0 };
+	short index;
 
 	if (forge_zones_globals.zone_count < FORGE_ZONES_MAXIMUM_ZONES &&
 		sscanf(line, "zone %d %d %f %f %f %f %f %f %f %d %d %f %f", &kind, &setting_index,
@@ -1711,6 +1714,14 @@ static void forge_zones_layout_load(
 			&channel, &direction, &values[7], &values[8]) >= 11 &&
 		kind >= 0 && kind < NUMBER_OF_FORGE_ZONE_KINDS)
 	{
+		/* (a number that is none fails every comparison) */
+		for (index = 0; index < NUMBEROF(values); index++)
+		{
+			if (!(values[index] > -FORGE_ZONES_WORLD_BOUND && values[index] < FORGE_ZONES_WORLD_BOUND))
+				return;
+		}
+		for (index = 4; index <= 6; index++)
+			values[index] = PIN(values[index], FORGE_ZONES_MINIMUM_SIZE / 2.f, FORGE_ZONES_MAXIMUM_SIZE / 2.f);
 		memset(&zone, 0, sizeof(zone));
 		zone.kind = (short)kind;
 		zone.setting_index = (short)setting_index;

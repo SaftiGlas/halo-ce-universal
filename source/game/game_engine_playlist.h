@@ -69,6 +69,7 @@ struct game_variant *build_game_variant_team_king(
 	struct game_variant *variant);
 struct game_variant *build_game_variant_team_slayer(
 	struct game_variant *variant);
+/* port: the Forge game type (game_engine.c) */
 struct game_variant *build_game_variant_forge(
 	struct game_variant *variant);
 

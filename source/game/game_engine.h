@@ -549,7 +549,7 @@ keep it. Bit 0 is the system default bit, the high byte the default's
 index. */
 #define GAME_VARIANT_FORGE_FLAG 0x0002
 
-/* TRUE while the game being played is of the Forge game type */
+/* port: TRUE while the game being played is of the Forge game type */
 boolean game_engine_variant_is_forge(
 	void);
 

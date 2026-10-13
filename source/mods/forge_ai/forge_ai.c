@@ -90,6 +90,9 @@ enum
 /* a waypoint is aimed at within this far of the middle of its marker */
 #define FORGE_AI_WAYPOINT_PICK_RADIUS 0.7f
 #define FORGE_AI_WAYPOINT_PICK_HEIGHT 0.6f
+/* how far from the origin a layout's line may put a waypoint or a
+character (world units) */
+#define FORGE_AI_WORLD_BOUND 32768.f
 
 #define FORGE_AI_WAYPOINT_COLOR_R 1.f
 #define FORGE_AI_WAYPOINT_COLOR_G 0.75f
@@ -948,6 +951,23 @@ static void forge_ai_layout_clear(
 	return;
 }
 
+/* whether the numbers of a layout's line can be a place (a number that is
+none fails every comparison) */
+static boolean forge_ai_layout_numbers_valid(
+	float const *numbers,
+	short count)
+{
+	short index;
+
+	for (index = 0; index < count; index++)
+	{
+		if (!(numbers[index] > -FORGE_AI_WORLD_BOUND && numbers[index] < FORGE_AI_WORLD_BOUND))
+			return FALSE;
+	}
+
+	return TRUE;
+}
+
 static void forge_ai_layout_load(
 	char const *line)
 {
@@ -964,6 +984,7 @@ static void forge_ai_layout_load(
 		forge_ai_update_command_list();
 	}
 	else if (sscanf(line, "waypoint %f %f %f", &numbers[0], &numbers[1], &numbers[2]) == 3 &&
+		forge_ai_layout_numbers_valid(numbers, 3) &&
 		forge_ai_globals.waypoint_count < FORGE_AI_MAXIMUM_WAYPOINTS)
 	{
 		real_point3d point;
@@ -980,6 +1001,7 @@ static void forge_ai_layout_load(
 	}
 	else if (sscanf(line, "character %d %f %f %f %f %f %n", &values[0], &numbers[0], &numbers[1], &numbers[2],
 		&numbers[3], &numbers[4], &name_offset) >= 6 && name_offset > 0 &&
+		forge_ai_layout_numbers_valid(numbers, 5) &&
 		/* a system link client has the host's characters */
 		!forge_layout_loading_for_client())
 	{
