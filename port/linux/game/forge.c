@@ -42,6 +42,8 @@ mouse button or B close the menu. After the object categories come the
 pages that source mods add (halo_mod.h, struct halo_mod_menu): rows with a
 value that left and right change and that enter or A act on. T and V, or LB
 and RB, go to the previous and next tab on every page; X closes the menu too.
+The mouse's wheel chooses as up and down do, and with the left button held
+on a mod's row changes its value as left and right do.
 
 The menu (with the forge_ui mod, mods/forge_ui) is drawn after the forge
 menu of Halo: Reach: a dark panel with the categories down its left side
@@ -143,6 +145,14 @@ enum
 	between hints, and the fade in and highlight glide speeds (per second) */
 	FORGE_MENU_PADDING = 5,
 	FORGE_MENU_MAX_WIDTH = 400,
+	/* a popup: how wide, and how far right of the crosshair */
+	FORGE_POPUP_WIDTH = 250,
+	FORGE_POPUP_OFFSET = 30,
+	/* (its rows are few: all of them are shown) */
+	FORGE_POPUP_VISIBLE_ENTRIES = 12,
+	/* debug.forge_menu_tab: an object's popup rather than a tab */
+	FORGE_DEBUG_POPUP_TAB = 100,
+	FORGE_DEBUG_HELD_POPUP_TAB = 101,
 	/* the menu's font fits this many lines on the screen: smaller than the
 	mods' large font, so the menu leaves most of the view free */
 	FORGE_MENU_FONT_LINES = 26,
@@ -272,11 +282,16 @@ struct forge_globals
 	has turned to, before the snap's steps */
 	boolean held_mouse_turning;
 	real held_mouse_angles[NUMBER_OF_FORGE_AXES];
+	/* the right button closed the menu: it turns nothing until it is let go */
+	boolean held_mouse_blocked;
 	/* a mod's objects go with it (forge_hold_object), or NULL */
 	struct halo_forge_object_hold const *held_group;
 
 	boolean active;
 	boolean menu_open;
+	/* while the menu is open: a mod's popup is shown in its place
+	(forge_popup_open), or NULL */
+	struct halo_mod_menu const *popup;
 	boolean keys_captured;
 	short category_index;
 	short entry_count;
@@ -762,13 +777,24 @@ static int forge_compare_entries(
 	return _stricmp(tag_get_name(*(long const *)a), tag_get_name(*(long const *)b));
 }
 
-/* the mod page of the menu's current tab, or NULL on an object category */
+/* the mod page of the menu's current tab, or NULL on an object category;
+a popup is the page while it is shown */
 static struct halo_mod_menu const *forge_menu_page(
 	void)
 {
 	short page_index = (short)(forge_globals.category_index - NUMBEROF(forge_categories));
 
+	if (forge_globals.popup)
+		return forge_globals.popup;
+
 	return page_index >= 0 ? halo_mods_menu_page(page_index) : NULL;
+}
+
+/* how many rows the menu shows at once */
+static short forge_menu_visible_entries(
+	void)
+{
+	return forge_globals.popup ? FORGE_POPUP_VISIBLE_ENTRIES : FORGE_MENU_VISIBLE_ENTRIES;
 }
 
 /* the keys on a mod's page: choose a row, change its value, act on it */
@@ -806,12 +832,13 @@ static void forge_menu_page_keys(
 static void forge_menu_scroll_to_selection(
 	void)
 {
-	short last_first_entry_index = (short)MAX(forge_globals.entry_count - FORGE_MENU_VISIBLE_ENTRIES, 0);
+	short visible_entries = forge_menu_visible_entries();
+	short last_first_entry_index = (short)MAX(forge_globals.entry_count - visible_entries, 0);
 
 	if (forge_globals.selected_entry_index < forge_globals.first_entry_index)
 		forge_globals.first_entry_index = forge_globals.selected_entry_index;
-	if (forge_globals.selected_entry_index >= forge_globals.first_entry_index + FORGE_MENU_VISIBLE_ENTRIES)
-		forge_globals.first_entry_index = (short)(forge_globals.selected_entry_index - FORGE_MENU_VISIBLE_ENTRIES + 1);
+	if (forge_globals.selected_entry_index >= forge_globals.first_entry_index + visible_entries)
+		forge_globals.first_entry_index = (short)(forge_globals.selected_entry_index - visible_entries + 1);
 	forge_globals.first_entry_index = PIN(forge_globals.first_entry_index, 0, last_first_entry_index);
 
 	return;
@@ -906,8 +933,21 @@ static void forge_menu_open(
 	void)
 {
 	forge_globals.menu_open = TRUE;
+	forge_globals.popup = NULL;
 	forge_menu_fonts_choose();
 	forge_menu_count_categories();
+	forge_menu_build();
+
+	return;
+}
+
+/* shows a mod's popup in the menu's place (the menu's tab stays as it is) */
+static void forge_menu_open_popup(
+	struct halo_mod_menu const *popup)
+{
+	forge_globals.menu_open = TRUE;
+	forge_globals.popup = popup;
+	forge_menu_fonts_choose();
 	forge_menu_build();
 
 	return;
@@ -1130,6 +1170,21 @@ static void forge_grab(
 	return;
 }
 
+int forge_pick_up(
+	long object_index)
+{
+	boolean picked_up = FALSE;
+
+	if (forge_globals.active && (forge_authoritative() || forge_client()) && !forge_globals.mod_hold &&
+		forge_globals.held_object_index == NONE && object_try_and_get(object_index))
+	{
+		forge_hold_begin(object_index, FALSE);
+		picked_up = TRUE;
+	}
+
+	return picked_up;
+}
+
 /* removes the object under the crosshair, or lets a mod do it (forge_edit,
 which can bring it back) */
 static void forge_remove_at_crosshair(
@@ -1259,6 +1314,7 @@ static void forge_hold(
 {
 	struct object_datum *object = object_get(forge_globals.held_object_index);
 	boolean flying = forge_flying(FORGE_LOCAL_PLAYER_INDEX);
+	boolean mouse_turn = keys->mouse_right && !forge_globals.held_mouse_blocked;
 	real_point3d point;
 	real_vector3d normal;
 
@@ -1272,13 +1328,13 @@ static void forge_hold(
 	/* the controller's right stick: with the right trigger it turns the
 	object, else (camera/director.c) it orbits the camera around it, which
 	from then on holds the object in front of it */
-	forge_globals.held_turning = flying && (keys->pad_turn || keys->mouse_right);
-	if (flying && keys->mouse_right && !forge_globals.held_mouse_turning)
+	forge_globals.held_turning = flying && (keys->pad_turn || mouse_turn);
+	if (flying && mouse_turn && !forge_globals.held_mouse_turning)
 	{
 		forge_globals.held_mouse_angles[_forge_axis_yaw] = forge_globals.held_angles[_forge_axis_yaw];
 		forge_globals.held_mouse_angles[_forge_axis_pitch] = forge_globals.held_angles[_forge_axis_pitch];
 	}
-	forge_globals.held_mouse_turning = flying && keys->mouse_right;
+	forge_globals.held_mouse_turning = flying && mouse_turn;
 	if (flying && keys->pad_turn)
 	{
 		forge_globals.held_angles[_forge_axis_yaw] -= keys->pad_look_x * FORGE_TURN_SPEED * seconds;
@@ -1561,10 +1617,30 @@ static void forge_update_keys(
 	boolean tab_next = forge_key_pressed(&forge_globals.tab_next_key, keys->tab_next, FALSE, milliseconds);
 	boolean pad_menu = forge_key_pressed(&forge_globals.pad_menu_key, keys->pad_menu, FALSE, milliseconds);
 	boolean pad_remove = forge_key_pressed(&forge_globals.pad_remove_key, keys->pad_remove, FALSE, milliseconds);
+	int wheel = halo_linux_forge_read_wheel();
 	boolean flying = forge_globals.active && forge_flying(FORGE_LOCAL_PLAYER_INDEX);
 	/* as the monitor (forge_monitor.c), whose view is the flying camera */
 	boolean monitor = forge_globals.active &&
 		forge_player_is_monitor(local_player_get_player_index(FORGE_LOCAL_PLAYER_INDEX));
+
+	/* in the menu the mouse's wheel chooses a row, as up and down do; with
+	the left button held on a mod's row it changes the row's value, as left
+	and right do (up is more) */
+	if (forge_globals.menu_open && wheel != 0)
+	{
+		if (keys->mouse_left && forge_menu_page())
+		{
+			left = left || wheel < 0;
+			right = right || wheel > 0;
+		}
+		else
+		{
+			up = up || wheel > 0;
+			down = down || wheel < 0;
+		}
+	}
+	if (!keys->mouse_right)
+		forge_globals.held_mouse_blocked = FALSE;
 
 	/* a held object that is gone (a new map, a revert, a deletion) is let go */
 	if (forge_globals.held_object_index != NONE &&
@@ -1614,6 +1690,31 @@ static void forge_update_keys(
 				forge_globals.category_index = (short)debug_tab;
 				forge_menu_open();
 			}
+			else if (debug_tab == FORGE_DEBUG_POPUP_TAB || debug_tab == FORGE_DEBUG_HELD_POPUP_TAB)
+			{
+				/* the first mod's popup, which chooses an object itself:
+				the one the tools hold, here the map's first vehicle */
+				short mod_index;
+
+				director_forge_set_flying(FORGE_LOCAL_PLAYER_INDEX, TRUE);
+				flying = TRUE;
+				if (debug_tab == FORGE_DEBUG_HELD_POPUP_TAB && forge_globals.held_object_index == NONE)
+				{
+					struct object_iterator iterator;
+
+					object_iterator_new(&iterator, _object_mask_vehicle, 0);
+					if (object_iterator_next(&iterator))
+						forge_hold_begin(iterator.index, FALSE);
+				}
+				for (mod_index = 0; mod_index < halo_mods_count(); mod_index++)
+				{
+					if (halo_mods_get(mod_index)->popup)
+					{
+						forge_menu_open_popup(halo_mods_get(mod_index)->popup);
+						break;
+					}
+				}
+			}
 		}
 
 		if (forge_globals.mod_hold)
@@ -1638,11 +1739,22 @@ static void forge_update_keys(
 			if (forge_globals.mod_hold->update(&input))
 				forge_globals.mod_hold = NULL;
 		}
-		else if (forge_globals.held_object_index != NONE)
+		else if (forge_globals.held_object_index != NONE && !(forge_globals.menu_open && forge_globals.popup))
 		{
+			/* X, flying: the held object's popup, when a mod has one for it
+			(the keys are then the popup's, and the object stays where it
+			is until it closes); else the step, as V */
+			struct halo_mod_menu const *popup = NULL;
+
+			if (pad_menu && flying)
+				halo_mods_properties_page(&popup);
 			if (select || close || remove_object || pad_remove)
 			{
 				forge_hold_end(close, remove_object || pad_remove);
+			}
+			else if (popup)
+			{
+				forge_menu_open_popup(popup);
 			}
 			else
 			{
@@ -1658,13 +1770,16 @@ static void forge_update_keys(
 			if (menu || close || mouse_right || pad_menu)
 			{
 				forge_globals.menu_open = FALSE;
+				forge_globals.held_mouse_blocked = mouse_right;
 			}
 			else
 			{
 				short category_count = (short)(NUMBEROF(forge_categories) + halo_mods_menu_page_count());
 				struct halo_mod_menu const *page = forge_menu_page();
 
-				if (rotation_axis || rotation_snap || tab_previous || tab_next || (!page && (left || right)))
+				/* (a popup has no tabs) */
+				if (!forge_globals.popup &&
+					(rotation_axis || rotation_snap || tab_previous || tab_next || (!page && (left || right))))
 				{
 					boolean next = rotation_snap || tab_next || (!rotation_axis && !tab_previous && right);
 
@@ -1714,13 +1829,18 @@ static void forge_update_keys(
 		{
 			/* X on something a mod's page is about (a spawn, a zone, an
 			object) opens the menu on that page, which chooses it */
-			short page_index = pad_menu ? halo_mods_properties_page() : NONE;
+			struct halo_mod_menu const *popup = NULL;
+			short page_index = pad_menu ? halo_mods_properties_page(&popup) : NONE;
 
 			if (!forge_globals.menu_state_loaded)
 				forge_menu_state_load();
 			if (page_index != NONE)
 				forge_globals.category_index = (short)(NUMBEROF(forge_categories) + page_index);
-			forge_menu_open();
+			/* (or the thing's popup, when its mod has one) */
+			if (popup)
+				forge_menu_open_popup(popup);
+			else
+				forge_menu_open();
 		}
 		else if (grab || (select && flying))
 		{
@@ -1756,8 +1876,10 @@ static void forge_update_keys(
 		forge_flying_camera_moved(&camera->position.x, &camera->forward.i);
 	}
 	if (forge_globals.held_object_index == NONE)
-	{
 		forge_globals.held_anchored = FALSE;
+	/* (nor while a popup is shown about it: the look is then the camera's) */
+	if (forge_globals.held_object_index == NONE || (forge_globals.menu_open && forge_globals.popup))
+	{
 		forge_globals.held_turning = FALSE;
 		forge_globals.held_mouse_turning = FALSE;
 	}
@@ -2406,6 +2528,115 @@ static void forge_render_menu(
 	return;
 }
 
+/* a mod's popup (forge_popup_open): a small panel beside the crosshair, in
+the menu's look, with the popup's title, its rows and the keys */
+static void forge_render_popup(
+	rectangle2d const *window)
+{
+	static struct forge_menu_hint const hints[] =
+	{
+		{ "Up/Down", "Choose" }, { "Left/Right", "Change" }, { "Enter/A", "Do" }, { "Esc/B/X", "Close" },
+		{ "Wheel", "Choose" }, { "Click+Wheel", "Change" }, { "Click", "Do" }, { "Right click", "Close" },
+	};
+	struct halo_mod_menu const *page = forge_globals.popup;
+	unsigned long milliseconds = system_milliseconds();
+	real seconds = MIN((real)(milliseconds - forge_menu_look.milliseconds) / MILLISECONDS_PER_SECOND, 0.1f);
+	boolean fresh = milliseconds - forge_menu_look.milliseconds > FORGE_MENU_FRESH_MILLISECONDS;
+	long font = _forge_menu_font_large;
+	long small_font = _forge_menu_font_small;
+	short line_height = forge_menu_line_height(font);
+	short small_height = forge_menu_line_height(small_font);
+	short row_height = (short)(line_height + 3);
+	short title_height = (short)(line_height + 10);
+	short row_count = (short)MIN(forge_globals.entry_count, FORGE_POPUP_VISIBLE_ENTRIES);
+	short window_width = (short)(window->x1 - window->x0);
+	short width = (short)MIN(window_width - 2 * FORGE_MENU_MARGIN, FORGE_POPUP_WIDTH);
+	short hint_rows = forge_menu_hints(small_font, FORGE_MENU_PADDING, (short)(width - FORGE_MENU_PADDING), 0, hints,
+		NUMBEROF(hints), FALSE);
+	short hint_height = (short)(hint_rows * (small_height + 7) + 6);
+	short height = (short)(title_height + FORGE_MENU_PADDING + MAX(row_count, 1) * row_height + FORGE_MENU_PADDING +
+		hint_height);
+	/* at the right of the crosshair, which stays in sight, and in the window */
+	short x0 = (short)PIN((window->x0 + window->x1) / 2 + FORGE_POPUP_OFFSET, window->x0 + FORGE_MENU_MARGIN,
+		MAX(window->x1 - FORGE_MENU_MARGIN - width, window->x0 + FORGE_MENU_MARGIN));
+	short y0 = (short)PIN((window->y0 + window->y1 - height) / 2, window->y0 + FORGE_MENU_MARGIN,
+		MAX(window->y1 - FORGE_MENU_MARGIN - height, window->y0 + FORGE_MENU_MARGIN));
+	short x1 = (short)(x0 + width);
+	short y1 = (short)(y0 + height);
+	short rows_y = (short)(y0 + title_height + FORGE_MENU_PADDING);
+	short text_x0 = (short)(x0 + FORGE_MENU_PADDING + 6);
+	short text_x1 = (short)(x1 - FORGE_MENU_PADDING);
+	char fitted[192];
+	short entry_index;
+	short bar_y;
+
+	forge_menu_look.milliseconds = milliseconds;
+	forge_menu_look.fade = fresh ? 0.f : MIN(forge_menu_look.fade + seconds * FORGE_MENU_FADE_SPEED, 1.f);
+	forge_menu_fade = forge_menu_look.fade;
+
+	forge_menu_box(x0, y0, x1, y1, FORGE_MENU_PANEL_COLOR);
+	forge_menu_box(x0, y0, x1, (short)(y0 + title_height), FORGE_MENU_TITLE_BAR_COLOR);
+	forge_menu_box(x0, y0, x1, (short)(y0 + 2), FORGE_MENU_ACCENT_COLOR);
+	forge_menu_box(x0, (short)(y1 - hint_height), x1, y1, FORGE_MENU_HINT_BAR_COLOR);
+	forge_menu_fit(font, (short)(width - 2 * FORGE_MENU_PADDING), page->title, fitted, sizeof(fitted));
+	forge_menu_text(font, (short)(x0 + FORGE_MENU_PADDING), (short)(y0 + 6), text_x1, HALO_MOD_TEXT_LEFT,
+		FORGE_MENU_ACCENT_COLOR, fitted);
+
+	/* the rows: the highlight under the chosen one, then every row */
+	forge_menu_look.entry_bar_y = forge_menu_glide(
+		fresh ? (real)rows_y : forge_menu_look.entry_bar_y,
+		(real)(rows_y + (forge_globals.selected_entry_index - forge_globals.first_entry_index) * row_height),
+		seconds, fresh);
+	bar_y = (short)PIN((short)forge_menu_look.entry_bar_y, rows_y, rows_y + (MAX(row_count, 1) - 1) * row_height);
+	if (forge_globals.entry_count > 0)
+	{
+		forge_menu_box((short)(x0 + 2), bar_y, (short)(x1 - 2), (short)(bar_y + row_height), FORGE_MENU_BAR_COLOR);
+		forge_menu_box((short)(x0 + 2), bar_y, (short)(x0 + 5), (short)(bar_y + row_height), FORGE_MENU_BAR_EDGE_COLOR);
+	}
+	for (entry_index = forge_globals.first_entry_index;
+		entry_index < forge_globals.entry_count &&
+			entry_index < forge_globals.first_entry_index + FORGE_POPUP_VISIBLE_ENTRIES;
+		entry_index++)
+	{
+		boolean selected = entry_index == forge_globals.selected_entry_index;
+		short text_y = (short)(rows_y + (entry_index - forge_globals.first_entry_index) * row_height +
+			(row_height - line_height) / 2);
+		short label_width = (short)(text_x1 - text_x0);
+		long row_font = font;
+		char label[128];
+		char value[128];
+		char value_text[136];
+
+		label[0] = value[0] = 0;
+		page->row_text(entry_index, label, sizeof(label), value, sizeof(value));
+		/* a value at the right, in brackets on the chosen row: left and right change it */
+		_snprintf(value_text, sizeof(value_text), value[0] ? (selected ? "< %s >" : "%s") : "", value);
+		if (forge_menu_text_width(font, label) + forge_menu_text_width(font, value_text) + 24 > label_width)
+		{
+			/* not both in the large font: both in the small */
+			row_font = small_font;
+			text_y = (short)(text_y + (line_height - small_height) / 2);
+		}
+		if (value_text[0])
+		{
+			forge_menu_fit(row_font, (short)(label_width * 60 / 100), value_text, value, sizeof(value));
+			forge_menu_text(row_font, text_x0, text_y, text_x1, HALO_MOD_TEXT_RIGHT,
+				selected ? FORGE_MENU_TITLE_TEXT_COLOR : FORGE_MENU_TEXT_COLOR, value);
+			label_width -= (short)(forge_menu_text_width(row_font, value) + 12);
+		}
+		forge_menu_fit(row_font, label_width, label, fitted, sizeof(fitted));
+		forge_menu_text(row_font, text_x0, text_y, text_x1, HALO_MOD_TEXT_LEFT,
+			selected ? FORGE_MENU_SELECTED_TEXT_COLOR : FORGE_MENU_TEXT_COLOR, fitted);
+	}
+
+	forge_menu_hints(small_font, (short)(x0 + FORGE_MENU_PADDING), text_x1, (short)(y1 - hint_height + 5), hints,
+		NUMBEROF(hints), TRUE);
+
+	forge_menu_fade = 1.f;
+
+	return;
+}
+
 /* the line being typed, low in the window, over the menu */
 static void forge_render_text_entry(
 	long font_tag_index,
@@ -2481,6 +2712,11 @@ void forge_render(
 		if (forge_globals.mod_hold)
 		{
 			forge_render_held_name(&window, forge_globals.mod_hold->name);
+		}
+		else if (forge_globals.menu_open && forge_globals.popup)
+		{
+			/* (about what is held, too) */
+			forge_render_popup(&window);
 		}
 		else if (forge_globals.held_object_index != NONE &&
 			object_try_and_get(forge_globals.held_object_index))
@@ -2669,7 +2905,9 @@ void forge_flying_camera_moved(
 	forge_globals.camera_valid = TRUE;
 	set_real_point3d(&forge_globals.camera_position, position[0], position[1], position[2]);
 	set_real_vector3d(&forge_globals.camera_forward, forward[0], forward[1], forward[2]);
+	/* (a popup's object stays where it is while the popup is shown) */
 	if (forge_globals.held_object_index != NONE && forge_globals.held_anchored &&
+		!(forge_globals.menu_open && forge_globals.popup) &&
 		object_try_and_get(forge_globals.held_object_index))
 	{
 		forge_hold_place_anchored();
@@ -2700,6 +2938,116 @@ int forge_mod_hold_begin(
 	}
 
 	return begun;
+}
+
+int forge_popup_open(
+	struct halo_mod_menu const *popup)
+{
+	boolean opened = FALSE;
+
+	/* (over a held object too: the popup is then about it) */
+	if (forge_globals.active && popup && !forge_globals.menu_open && !forge_globals.mod_hold &&
+		!forge_text_entry_globals.active && forge_flying(FORGE_LOCAL_PLAYER_INDEX))
+	{
+		forge_menu_open_popup(popup);
+		opened = TRUE;
+	}
+
+	return opened;
+}
+
+long forge_held_object(
+	void)
+{
+	return forge_globals.held_object_index != NONE && object_try_and_get(forge_globals.held_object_index)
+		? forge_globals.held_object_index
+		: NONE;
+}
+
+void forge_angles_of_orientation(
+	float const forward[3],
+	float const up[3],
+	float angles[3])
+{
+	forge_angles_from_orientation((real_vector3d const *)forward, (real_vector3d const *)up, angles);
+
+	return;
+}
+
+void forge_orientation_of_angles(
+	float const angles[3],
+	float forward[3],
+	float up[3])
+{
+	forge_orientation_from_angles(angles, (real_vector3d *)forward, (real_vector3d *)up);
+
+	return;
+}
+
+void forge_held_angles(
+	float angles[3])
+{
+	short axis;
+
+	for (axis = 0; axis < NUMBER_OF_FORGE_AXES; axis++)
+		angles[axis] = forge_globals.held_angles[axis];
+
+	return;
+}
+
+void forge_held_adjust(
+	int axis,
+	float angle,
+	float height)
+{
+	if (forge_held_object() != NONE && axis >= 0 && axis < NUMBER_OF_FORGE_AXES)
+	{
+		real_point3d position = object_get(forge_globals.held_object_index)->object.position;
+
+		forge_globals.held_angles[axis] += angle;
+		forge_globals.held_height += height;
+		/* seen at once: a popup's object stays where it is while it is shown */
+		position.z += height;
+		forge_hold_place(&position);
+	}
+
+	return;
+}
+
+char const *forge_held_step(
+	int direction)
+{
+	if (direction != 0)
+	{
+		forge_globals.held_snap_index = (short)((forge_globals.held_snap_index +
+			(direction > 0 ? 1 : NUMBEROF(forge_snaps) - 1)) % NUMBEROF(forge_snaps));
+	}
+
+	return forge_snaps[forge_globals.held_snap_index].name;
+}
+
+void forge_held_put_down(
+	void)
+{
+	if (forge_held_object() != NONE)
+		forge_hold_end(FALSE, FALSE);
+
+	return;
+}
+
+int forge_popup_is_open(
+	struct halo_mod_menu const *popup)
+{
+	return forge_globals.menu_open && popup && forge_globals.popup == popup;
+}
+
+void forge_popup_close(
+	struct halo_mod_menu const *popup)
+{
+	if (forge_popup_is_open(popup))
+		forge_globals.menu_open = FALSE;
+
+	return;
 }
 
 int forge_hold_object(

@@ -93,6 +93,8 @@ static pthread_mutex_t mouse_lock = PTHREAD_MUTEX_INITIALIZER;
 static float mouse_pending_x, mouse_pending_y;
 static unsigned long mouse_polls_unconsumed = 0;
 static float mouse_wheel_accumulated = 0.0f;
+/* the wheel's turns the dev tools have not read yet (halo_linux_forge_read_wheel) */
+static float forge_wheel_accumulated = 0.0f;
 /* the wheel's switch (wheel_update): when the wheel last moved, until when
 Y is held, and whether a scroll is under way */
 static Uint64 wheel_moved_ms = 0;
@@ -282,6 +284,7 @@ static void mouse_poll(const struct platform_input_state *input)
 		if (input->mouse_dx != 0.0f || input->mouse_dy != 0.0f)
 			mouse_aimed_ms = SDL_GetTicks();
 		mouse_wheel_accumulated += input->mouse_wheel;
+		forge_wheel_accumulated += input->mouse_wheel;
 		if (input->mouse_wheel != 0.0f)
 			wheel_moved_ms = SDL_GetTicks();
 	}
@@ -1039,6 +1042,7 @@ int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
 		(mouse && m[SDL_BUTTON_LEFT]) || PAD_BUTTON(SDL_GAMEPAD_BUTTON_SOUTH);
 	keys->menu_close = k[SDL_SCANCODE_ESCAPE] || k[SDL_SCANCODE_BACKSPACE] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_EAST);
 	keys->mouse_right = mouse && m[SDL_BUTTON_RIGHT];
+	keys->mouse_left = mouse && m[SDL_BUTTON_LEFT];
 	keys->grab = k[SDL_SCANCODE_F4] != 0;
 	keys->rotation_axis = k[SDL_SCANCODE_T] != 0;
 	keys->rotation_snap = k[SDL_SCANCODE_V] != 0;
@@ -1060,6 +1064,19 @@ int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
 #undef PAD_BUTTON
 #undef PAD_TRIGGER
 	return TRUE;
+}
+
+/* the wheel for the dev tools' menu: the whole notches turned since the
+last call, up positive (what is left of a notch is kept for the next) */
+int halo_linux_forge_read_wheel(void)
+{
+	int notches;
+
+	pthread_mutex_lock(&mouse_lock);
+	notches = (int)forge_wheel_accumulated;
+	forge_wheel_accumulated -= (float)notches;
+	pthread_mutex_unlock(&mouse_lock);
+	return notches;
 }
 
 /* ---------- XAPI */

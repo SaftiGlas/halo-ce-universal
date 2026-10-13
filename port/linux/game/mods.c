@@ -171,27 +171,30 @@ short halo_mods_menu_page_count(
 }
 
 short halo_mods_properties_page(
-	void)
+	struct halo_mod_menu const **popup)
 {
 	short mod_index;
 	short page_index = 0;
 	short nearest_page_index = NONE;
 	float nearest_distance = 0.f;
+	boolean found = FALSE;
 
+	*popup = NULL;
 	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
 	{
 		struct halo_mod const *mod = halo_mod_globals.mods[mod_index];
 		float distance = 0.f;
 
-		if (!mod->menu)
-			continue;
-		if (mod->properties && mod->properties(&distance) &&
-			(nearest_page_index == NONE || distance < nearest_distance))
+		if ((mod->menu || mod->popup) && mod->properties && mod->properties(&distance) &&
+			(!found || distance < nearest_distance))
 		{
-			nearest_page_index = page_index;
+			found = TRUE;
+			nearest_page_index = mod->menu ? page_index : NONE;
 			nearest_distance = distance;
+			*popup = mod->popup;
 		}
-		page_index++;
+		if (mod->menu)
+			page_index++;
 	}
 
 	return nearest_page_index;

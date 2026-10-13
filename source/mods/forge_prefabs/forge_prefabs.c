@@ -10,9 +10,9 @@ flying, X; LB / RB, Page Up / Page Down, or T / V change tab). The rows:
 
 	At the crosshair  the object the dev tools would pick up, or nothing
 	Select            select it, or leave it out again (B on a keyboard
-	                  while the camera flies, with the menu closed; with
-	                  objects selected, X on a controller on an object
-	                  opens the menu on this tab)
+	                  while the camera flies, with the menu closed; an
+	                  object's popup, X on it, has a row for it too:
+	                  mods/forge_edit)
 	Clear             select nothing
 	Save              the selection as a new prefab; its name is typed on
 	                  the keyboard
@@ -1321,23 +1321,30 @@ static struct halo_mod_menu const forge_prefabs_menu =
 	forge_prefabs_menu_opened
 };
 
-/* ---------- the mod */
+/* ---------- for an object's popup (mods/forge_edit) */
 
-/* X on an object while objects are selected: the tools' menu opens on the
-tab, to select that one too (nearer than forge_edit's, whose tab it opens on
-otherwise) */
-static int forge_prefabs_properties(
-	float *distance)
+int forge_prefabs_object_selected(
+	long object_index)
 {
-	long object_index = forge_prefabs_globals.selected_count > 0 ? forge_prefabs_marked_object() : NONE;
-
-	if (object_index == NONE)
-		return FALSE;
-	*distance = 0.5f * distance3d(&observer_get_camera(FORGE_PREFABS_LOCAL_PLAYER_INDEX)->position,
-		&object_get(object_index)->object.bounding_sphere_center);
-
-	return TRUE;
+	return forge_prefabs_selection_find(object_index) != NONE;
 }
+
+void forge_prefabs_object_toggle(
+	long object_index)
+{
+	struct object_datum *object = object_index != NONE ? object_try_and_get(object_index) : NULL;
+
+	if (!object || !TEST_FLAG(FORGE_PREFABS_OBJECT_MASK, object->object.type) ||
+		object->object.parent_object_index != NONE || forge_prefabs_holds_player(object_index))
+	{
+		object_index = NONE;
+	}
+	forge_prefabs_selection_toggle(object_index);
+
+	return;
+}
+
+/* ---------- the mod */
 
 static struct halo_mod const forge_prefabs_mod =
 {
@@ -1353,7 +1360,7 @@ static struct halo_mod const forge_prefabs_mod =
 	NULL,
 	NULL,
 	NULL,
-	forge_prefabs_properties
+	NULL
 };
 
 HALO_MOD_REGISTER(forge_prefabs_mod)

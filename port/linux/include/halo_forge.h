@@ -37,13 +37,16 @@ struct halo_linux_forge_keys
 	/* the right mouse button: closes the menu, and held while flying the
 	mouse turns what is held */
 	int mouse_right;
+	/* the left mouse button (menu_select too): held in the menu, the wheel
+	changes a row's value */
+	int mouse_left;
 	int grab; /* F4 */
 	int rotation_axis; /* T */
 	int rotation_snap; /* V */
 	int remove_object; /* delete / back */
 	int tab_previous; /* page up / left shoulder (LB) */
 	int tab_next; /* page down / right shoulder (RB) */
-	int pad_menu; /* X: the menu while flying, the step while holding */
+	int pad_menu; /* X: the menu while flying; holding, the object's popup, else the step */
 	int pad_remove; /* Y: remove the object under the crosshair or held */
 	int pad_turn; /* right trigger (RT) held: the right stick turns what is held */
 	float pad_look_x; /* the right stick, -1 to 1, right and up positive */
@@ -56,6 +59,9 @@ int forge_mode_on(void);
 /* the keys as held now; FALSE, with nothing held, unless the tools are on
 and the console is closed */
 int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys);
+/* the notches the mouse's wheel has turned since this was last asked (up
+positive); 0 while the mouse is released */
+int halo_linux_forge_read_wheel(void);
 /* while TRUE (the menu is open, or an object is being placed), the menu's
 keys and buttons stop driving controller 1 */
 void halo_linux_forge_capture_menu_keys(int capture);
@@ -278,5 +284,42 @@ struct halo_forge_object_hold
 or this machine's game is not the game's (a system link client). hold may
 be NULL: the object alone. */
 int forge_hold_object(long object_index, struct halo_forge_object_hold const *hold);
+/* picks up an object of the map as the tools' pick up key does: put down
+where it is let go, or put back when that is cancelled (a system link
+client asks the host to move it); FALSE when the tools hold something
+already */
+int forge_pick_up(long object_index);
+
+/* shows a page as a popup beside the crosshair, in the menu's place and
+with its keys, but for the tabs: rows of a label and a value about one
+thing (an object's properties). The same as a mod's popup (halo_mod.h)
+opens for X on its thing. FALSE when the tools are busy (their menu is
+open, something is held or typed) or the camera does not fly. */
+struct halo_mod_menu;
+int forge_popup_open(struct halo_mod_menu const *popup);
+/* TRUE while that popup is shown */
+int forge_popup_is_open(struct halo_mod_menu const *popup);
+/* closes that popup, as escape or B do */
+void forge_popup_close(struct halo_mod_menu const *popup);
+
+/* the angles the tools turn an object by, of its forward and up and back
+again (radians): its yaw (about the upright, left positive), then its pitch
+(the nose up), then its roll (about its length, to the right positive) */
+void forge_angles_of_orientation(float const forward[3], float const up[3], float angles[3]);
+void forge_orientation_of_angles(float const angles[3], float forward[3], float up[3]);
+
+/* the object the tools hold, or -1 (NONE). A popup may be shown while one
+is held (forge_popup_open, or X on a controller when a mod's properties
+hook takes it): the object then stays where it is until the popup closes,
+and these change how it is held: its angles (as forge_angles_of_orientation
+has them), one of them (axis 0 the yaw, 1 the pitch, 2 the roll) turned
+(radians) and the object raised (world units); the step it turns in while
+held, after going to the next (direction 1) or the last (-1), as its name
+("free", "15 degrees"); and put down where it is, as enter or A do. */
+long forge_held_object(void);
+void forge_held_angles(float angles[3]);
+void forge_held_adjust(int axis, float angle, float height);
+char const *forge_held_step(int direction);
+void forge_held_put_down(void);
 
 #endif

@@ -99,6 +99,11 @@ struct halo_mod
 	is nearest, and the page's opened hook chooses it; with none, the menu
 	opens where it was. May be NULL */
 	int (*properties)(float *distance);
+	/* a page shown alone, as a popup beside the crosshair, in place of the
+	menu when the properties hook's thing is the nearest: the thing's own
+	rows (an object's size and turn), without the tabs; its opened hook
+	chooses the thing. May be NULL: the menu then opens on the mod's page */
+	struct halo_mod_menu const *popup;
 };
 
 /* writes one line of a mod's part of a layout (layout_save) */
@@ -125,8 +130,9 @@ short halo_mods_count(void);
 struct halo_mod const *halo_mods_get(short index);
 short halo_mods_menu_page_count(void);
 /* the menu page (as halo_mods_menu_page counts them) of the mod whose thing
-under the crosshair is nearest (the properties hook), or -1 (NONE) */
-short halo_mods_properties_page(void);
+under the crosshair is nearest (the properties hook), or -1 (NONE); when
+that mod has a popup, the popup, and -1 unless it has a page too */
+short halo_mods_properties_page(struct halo_mod_menu const **popup);
 struct halo_mod_menu const *halo_mods_menu_page(short index);
 
 /* registers a struct halo_mod of the unit before the game starts */

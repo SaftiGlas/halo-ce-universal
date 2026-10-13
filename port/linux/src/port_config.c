@@ -574,7 +574,9 @@ static const struct config_setting config_settings[] =
 		"\"no\" or \"never\" (do not ask again, confirmed); empty asks." },
 	{ "debug.forge_menu_tab", _config_integer, "-1", "HALO_FORGE_MENU_TAB", _environment_value, _platform_desktop,
 		"With the dev tools on (a Forge game), a few seconds into a game, open their\n"
-		"menu on this tab (0 is the first), for screenshots of it; -1 never." },
+		"menu on this tab (0 is the first), for screenshots of it; 100 opens an\n"
+		"object's popup instead, on the first object of the map, and 101 the popup\n"
+		"of a held object; -1 never." },
 	{ "debug.forge_layout_save", _config_integer, "0", "HALO_FORGE_LAYOUT_SAVE", _environment_value, _platform_desktop,
 		"For automated tests: in a local game, save the Forge layout to this slot (1\n"
 		"to 16) a few seconds in, once, and log where the player is; 0 never." },
