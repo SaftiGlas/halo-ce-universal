@@ -103,9 +103,6 @@ enum
 	PLAYLIST_PROFILE_OPTIONS_VERSION = 1,
 	MAXIMUM_GAME_VARIANT_NAME_LENGTH = 12,
 	NUMBER_OF_DEFAULT_PLAYLIST_PROFILES = 26,
-	/* port: the Forge game type follows the Xbox's defaults */
-	FORGE_PLAYLIST_PROFILE_INDEX = NUMBER_OF_DEFAULT_PLAYLIST_PROFILES,
-	NUMBER_OF_PORT_DEFAULT_PLAYLIST_PROFILES = NUMBER_OF_DEFAULT_PLAYLIST_PROFILES + 1,
 };
 
 enum
@@ -558,22 +555,14 @@ static void playlist_profile_create_default_profiles_on_disk(
 		long profile_index;
 
 		for (profile_index = 0;
-			profile_index < NUMBER_OF_PORT_DEFAULT_PLAYLIST_PROFILES;
+			profile_index < NUMBER_OF_DEFAULT_PLAYLIST_PROFILES;
 			profile_index++)
 		{
 			wchar_t *display_name;
 			boolean file_written = FALSE;
 
-			/* port: the Forge game type, after the Xbox's defaults */
-			if (profile_index == FORGE_PLAYLIST_PROFILE_INDEX)
-			{
-				variant = *build_game_variant_forge(&temporary);
-			}
-			else
-			{
-				variant = *playlist_profile_default_data.default_variant_building_functions[
-					profile_index](&temporary);
-			}
+			variant = *playlist_profile_default_data.default_variant_building_functions[
+				profile_index](&temporary);
 
 			_snprintf(path, MAXIMUM_FILENAME_LENGTH, "z:\\saved\\playlists\\default_playlist\\%02d", profile_index);
 			path[MAXIMUM_FILENAME_LENGTH] = 0;

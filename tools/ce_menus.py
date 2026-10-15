@@ -69,11 +69,14 @@ LEFT_OUT = {
     "ui\\shell\\main_menu\\multiplayer_type_select\\checking_updates_screen_create",
     "ui\\shell\\main_menu\\multiplayer_type_select\\checking_updates_screen_join",
 }
-# children moved: (parent, child) to (x, y); the main menu's Quit up into
-# Credits' place; Multiplayer's Edit Gametypes and its line down a row, for
-# Co-op (port_settings.WIDGET_PATCHES)
+# children moved: (parent, child) to (x, y); the main menu's Profiles,
+# Settings and Quit a row down, for Forge in Profiles' place (Quit in
+# Credits' place first); Multiplayer's Edit Gametypes and its line down a row, for Co-op
+# (port_settings.WIDGET_PATCHES)
 CHILD_OFFSETS = {
-    ("ui\\shell\\main_menu\\main_menu_select_list", "ui\\shell\\main_menu\\main_menu_item_quit_game"): (192, 391),
+    ("ui\\shell\\main_menu\\main_menu_select_list", "ui\\shell\\main_menu\\main_menu_item_profile"): (192, 355),
+    ("ui\\shell\\main_menu\\main_menu_select_list", "ui\\shell\\main_menu\\main_menu_item_settings"): (192, 391),
+    ("ui\\shell\\main_menu\\main_menu_select_list", "ui\\shell\\main_menu\\main_menu_item_quit_game"): (192, 427),
     ("ui\\shell\\main_menu\\multiplayer_type_select\\multiplayer_type_select_list",
      "ui\\shell\\main_menu\\multiplayer_type_select\\multiplayer_type_gametypes_item"): (0, 375),
     ("ui\\shell\\main_menu\\multiplayer_type_select\\multiplayer_type_select_screen",
@@ -333,6 +336,25 @@ class Art:
             png = f"ce/port/{name}__{index}.png"
             (MENUS / png).parent.mkdir(parents=True, exist_ok=True)
             Image.fromarray(render_svg(svg, SCALE), "RGBA").save(MENUS / png, optimize=True)
+            self.pngs.append(png)
+            lines.append(f"\t\t<frame{attributes([('png', png), ('width', width), ('height', height)])}/>")
+        lines.append("\t</bitmap>")
+        return "\n".join(lines)
+
+    def shell_picture(self, name: str, frames: list) -> str:
+        """a <bitmap> of a picture this port adds beside the PC version's own
+        (its name below ui\\shell): each frame an SVG (text, width, height)
+        written and drawn as a redraw is, to svg/shell/ and ce/shell/"""
+        lines = [f"\t<bitmap{attributes([('name', name)])}>"]
+        for index, (text, width, height) in enumerate(frames):
+            svg = SVG_COPIES / "shell" / f"{name}__{index}.svg"
+            svg.parent.mkdir(parents=True, exist_ok=True)
+            svg.write_text(text)
+            self.svgs.append(svg)
+            png = f"ce/shell/{name}__{index}.png"
+            (MENUS / png).parent.mkdir(parents=True, exist_ok=True)
+            scale = max(1, min(SCALE, MAXIMUM_SIZE // max(width, height)))
+            Image.fromarray(bleed(render_svg(svg, scale)), "RGBA").save(MENUS / png, optimize=True)
             self.pngs.append(png)
             lines.append(f"\t\t<frame{attributes([('png', png), ('width', width), ('height', height)])}/>")
         lines.append("\t</bitmap>")
@@ -619,7 +641,13 @@ def main() -> None:
     lines = ['<?xml version="1.0" encoding="UTF-8"?>',
              "<!-- The PC version's menus' bitmaps, drawn from the redraws, else the PC version's own pictures"
              " (NON_HANDDRAWN.md; tools/ce_menus.py) -->", "<menus>"]
-    lines += [art.bitmap(tag) for tag in sorted(bitmaps)]
+    pictures = {tag: art.bitmap(tag) for tag in bitmaps}
+    # (the main menu's FORGE, in the redraws' letters, beside the main menu's
+    # other items: port_settings._forge)
+    pictures["ui\\shell\\" + port_settings.FORGE_ITEM_BITMAP.replace("/", "\\")] = art.shell_picture(
+        port_settings.FORGE_ITEM_BITMAP,
+        [(port_settings.forge_item_svg(frame, SVG_COPIES / "shell/main_menu"), 256, 64) for frame in (0, 1)])
+    lines += [pictures[tag] for tag in sorted(pictures)]
     lines += [art.title(name, text) for name, text in sorted(port_settings.TITLES.items())]
     # (the in-game pause menu's taller box: menu_tags.c's pause_patch)
     for piece in ("left", "center", "right"):

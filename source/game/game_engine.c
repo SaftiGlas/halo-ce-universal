@@ -7101,8 +7101,9 @@ struct game_variant *game_engine_get_variant_by_name(
 
 /* port: the Forge game type, slayer with no score to reach, no respawn
 wait, no suicide penalty and every vehicle, and the Forge flag that turns
-the dev tools on (port/linux/game/forge.c). It is the last of the default
-game variants (saved games/playlist_profile.c). */
+the dev tools on (port/linux/game/forge.c). The main menu's FORGE plays it
+(port/linux/game/menu_functions.c's forge_begin); it is not one of the
+gametypes to choose. */
 struct game_variant *build_game_variant_forge(
 	struct game_variant *variant)
 {

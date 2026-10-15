@@ -13,6 +13,7 @@ settings defaults" shows the defaults. Controls Setup binds the keyboard and
 mouse's controls, by the functions the PC version names for it.
 """
 
+from pathlib import Path
 from xml.sax.saxutils import quoteattr
 
 PE = "main_menu/settings_select/player_setup/player_profile_edit"
@@ -615,6 +616,10 @@ STRING_OVERRIDES.update({
 # CUSTOM MULTIPLAYER maps (_map_kind)
 MAP_KIND_CHOOSER = "main_menu/new_select/list_item_0_map_kind"
 
+# the main menu's FORGE item (_forge), and its picture (forge_item_svg)
+FORGE_ITEM = "main_menu/main_menu_item_forge"
+FORGE_ITEM_BITMAP = "main_menu/menu_forge"
+
 # changes to the PC version's widgets (by our names): attributes set, all
 # their handlers replaced, children added, game data inputs added
 WIDGET_PATCHES = {
@@ -639,6 +644,11 @@ WIDGET_PATCHES = {
         f'<on event="start" run="mp type set mode" open="{MT}/join_game/join_game_screen"/>',
         '<on event="left_mouse" run="mouse emit accept event"/>',
     ]},
+    # (the main menu's FORGE, above PROFILES: _forge; ce_menus.py's
+    # CHILD_OFFSETS move PROFILES, SETTINGS and QUIT a row down)
+    "main_menu/main_menu_select_list": {"insert_before": {
+        "main_menu/main_menu_item_profile": [f'<child widget="{FORGE_ITEM}" x="192" y="319"/>'],
+    }},
     # (Co-op, after Create Game's: _coop)
     f"{MT}/multiplayer_type_select_list": {"insert_before": {
         f"{MT}/multiplayer_type_gametypes_item": [f'<child widget="{MT}/multiplayer_type_coop_item" y="309"/>'],
@@ -1357,6 +1367,56 @@ def _coop() -> list:
     return lines
 
 
+def _forge() -> list:
+    """the main menu's FORGE: a game made, as Create Game makes one (internet
+    with internet play on, else LAN: menu_functions.c's forge_begin), then the Map screen, whose map goes
+    straight to Server Setup with the Forge game type (map_list_choose)"""
+    open_map = f"{MT}/connected/connected_map_select_wrapper"
+    return _widget(FORGE_ITEM, [("type", "text"), ("width", 256), ("height", 33), ("bitmap", FORGE_ITEM_BITMAP)],
+                   [f'<on event="a" run="port forge begin" open="{open_map}"/>',
+                    f'<on event="start" run="port forge begin" open="{open_map}"/>',
+                    '<on event="left_mouse" run="mouse emit accept event"/>'])
+
+
+# FORGE's picture is set as the main menu's other items' redraws are
+# (svg/shell/main_menu/menu_*), in their own letters: F, O and R from
+# PROFILES', G and E from SETTINGS'; each letter's redraw and the space
+# before it, as those redraws space their letters
+FORGE_LETTERS = [("F", "menu_profile", 0.0), ("O", "menu_profile", 2.0), ("R", "menu_profile", 2.9),
+                 ("G", "menu_settings", 1.8), ("E", "menu_settings", 1.6)]
+# (the redraws' letters' scale, top, and middle of the item)
+REDRAW_LETTER_SCALE, REDRAW_LETTER_TOP, REDRAW_ITEM_MIDDLE = 0.9037, 6.57, 130.2
+
+
+def forge_item_svg(frame: int, redraws: Path) -> str:
+    """FORGE's picture, frame 0 (dim blue) or 1 (focused: white with a blue
+    glow), from the main menu's redraws in the folder given"""
+    import re
+    paths, uses, width = {}, [], 0.0
+    for letter, redraw, space in FORGE_LETTERS:
+        text = (redraws / f"{redraw}__{frame}.svg").read_text()
+        paths[letter] = re.search(rf'<path id="g{letter}" d="([^"]+)"/>', text).group(1)
+        letter_width = max(float(x) for x, _ in re.findall(r"(-?[\d.]+),(-?[\d.]+)", paths[letter]))
+        uses.append((letter, width + space))
+        width += space + letter_width * REDRAW_LETTER_SCALE
+    left = REDRAW_ITEM_MIDDLE - width / 2
+    use_lines = [f'    <use href="#g{letter}" transform="translate({left + x:.2f},{REDRAW_LETTER_TOP}) '
+                 f'scale({REDRAW_LETTER_SCALE})"/>' for letter, x in uses]
+    lines = ['<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="256" '
+             'height="64" viewBox="0 0 256 64">', "  <defs>"]
+    lines += [f'    <path id="g{letter}" d="{paths[letter]}"/>' for letter in sorted(paths)]
+    if frame:
+        lines += ['    <filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="256" height="64">',
+                  '      <feGaussianBlur stdDeviation="2.19"/>', "    </filter>", "  </defs>",
+                  '  <!-- "FORGE" (highlighted: white with blue glow) -->',
+                  '  <g fill="#2895ff" stroke="#2895ff" stroke-width="6.3" stroke-linejoin="round" opacity="0.650" '
+                  'filter="url(#glow)">', *use_lines, "  </g>", '  <g id="text" fill="#fff">', *use_lines, "  </g>"]
+    else:
+        lines += ["  </defs>", '  <!-- "FORGE" (normal state: dim blue) -->',
+                  '  <g id="text" fill="#2895ff" fill-opacity="0.467">', *use_lines, "  </g>"]
+    return "\n".join(lines + ["</svg>", ""])
+
+
 def _item_options_extras() -> list:
     """Item Options' rows of the port's: the map's weapons (YES or NO), and
     the loadout, CATEGORY (the weapon set) or CUSTOM (each player's primary
@@ -1445,7 +1505,7 @@ def _map_kind() -> list:
 
 def multiplayer_files() -> dict:
     """the port's multiplayer widgets: the browser's additions, the server
-    settings, the lobby"""
+    settings, the lobby, co-op, the main menu's FORGE"""
     head = ['<?xml version="1.0" encoding="UTF-8"?>',
             "<!-- The port's multiplayer screens, in the PC version's style (tools/port_settings.py) -->", "<menus>"]
     return {
@@ -1453,6 +1513,7 @@ def multiplayer_files() -> dict:
         f"{MT}/server_settings".replace("/", ".") + ".xml": head + _server_settings() + ["</menus>", ""],
         f"{MT}/lobby".replace("/", ".") + ".xml": head + _lobby() + ["</menus>", ""],
         f"{MT}/coop".replace("/", ".") + ".xml": head + _coop() + ["</menus>", ""],
+        "main_menu.port.xml": head + _forge() + ["</menus>", ""],
         "main_menu/new_select".replace("/", ".") + ".port.xml": head + _map_kind() + ["</menus>", ""],
         "main_menu/settings_select/multiplayer_setup/item_options_edit".replace("/", ".") + ".port.xml": head + _item_options_extras() + ["</menus>", ""],
         TEAMPLAY_EDIT.replace("/", ".") + ".port.xml": head + _teamplay_options_extras() + ["</menus>", ""],

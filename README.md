@@ -113,8 +113,8 @@ To run it:
 4. In the root folder of the repository, enter
    `python -m tools.mod_launcher run`. The launcher builds the game with the
    Forge mods, then starts it. The first build takes some minutes.
-5. In the game, select Multiplayer, make a game, and select the game type
-   **Forge**. It is the last of the default game types.
+5. In the game, select **Forge** in the main menu (above Profiles), select
+   a map, then Start Game in Server Setup.
 
 In a Forge game:
 
@@ -126,8 +126,9 @@ In a Forge game:
 | Enter, Escape, Delete | A, B, Y | Put down, cancel or remove the object that you hold. |
 | Page Up, Page Down | LB, RB | The previous and the next tab of the menu. |
 
-To play with other players, the host makes a system link game of the Forge
-game type and sends the invite link to them. All the machines must have a
+To play with other players, the host selects Forge in the main menu and
+sends the invite link from Server Setup to them (with internet play off, the
+game is a LAN game, which the others join from Multiplayer's LAN list). All the machines must have a
 build of the same commit with the same mods.
 
 - To test Forge with other players, refer to

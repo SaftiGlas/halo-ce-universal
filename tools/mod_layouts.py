@@ -4,8 +4,7 @@ The game saves a layout of a map (port/linux/game/forge_layout.c) to
 u/forge/<map>/layout_NN.txt in the save root (NN 01 to 16), with its name
 on the first line ("name Layout 3" when first saved) and, when it has one,
 a "description" line in its header (what the multiplayer map list says
-about it); u/forge/<map>/play.txt holds the number of the layout that plays
-in every game on the map. The game's own Map tab changes both too.
+about it). The game's own Map tab changes both too.
 
     python -m tools.mod_launcher layouts [MAP]                   list them
     python -m tools.mod_launcher layouts rename MAP N NAME...    rename layout N
@@ -49,18 +48,8 @@ def layout_path(save_root: Path, map_name: str, slot: int) -> Path:
     return forge_dir(save_root) / map_name / f"layout_{slot:02d}.txt"
 
 
-def play_slot(save_root: Path, map_name: str) -> Optional[int]:
-    path = forge_dir(save_root) / map_name / "play.txt"
-    try:
-        slot = int(path.read_text().split()[0])
-    except (OSError, ValueError, IndexError):
-        return None
-    return slot if 1 <= slot <= SLOT_COUNT else None
-
-
 def layouts(save_root: Path, map_name: str) -> List[Dict[str, object]]:
-    """the saved layouts of the map: slot, name, and whether it plays"""
-    playing = play_slot(save_root, map_name)
+    """the saved layouts of the map: slot, name, description, and whether the map list shows it"""
     found = []
     for slot in range(1, SLOT_COUNT + 1):
         path = layout_path(save_root, map_name, slot)
@@ -70,7 +59,7 @@ def layouts(save_root: Path, map_name: str) -> List[Dict[str, object]]:
         name = header[0][5:] if header and header[0].startswith("name ") and header[0][5:] else f"Layout {slot}"
         description = next((line[len(DESCRIPTION_PREFIX):] for line in header if line.startswith(DESCRIPTION_PREFIX)),
                            "")
-        found.append({"slot": slot, "name": name, "description": description, "plays": slot == playing,
+        found.append({"slot": slot, "name": name, "description": description,
                       "listed": "listed 1" in header})
     return found
 
@@ -146,8 +135,7 @@ def show(save_root: Path, map_name: Optional[str] = None) -> None:
         if not found:
             print("  (none)")
         for layout in found:
-            notes = [text for text, on in (("in the map list", layout["listed"]), ("plays on this map", layout["plays"]))
-                     if on]
+            notes = ["in the map list"] if layout["listed"] else []
             print(f"  {layout['slot']:2d}. {layout['name']}" + (f"  ({', '.join(notes)})" if notes else ""))
             if layout["description"]:
                 print(f"      {layout['description']}")

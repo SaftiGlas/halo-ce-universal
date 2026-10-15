@@ -12,9 +12,10 @@ first SDL gamepad when one is present. Further SDL gamepads take ports 1-3.
 
 In a local game of the Forge game type, the dev tools read their own keys and buttons
 (halo_linux_forge_read_keys); while the camera flies (forge mode) they take
-the D-pad's up and right, the shoulder buttons and the left trigger from
-controller 1, and while their menu is open or they hold an object also the
-D-pad, A, B, X, Y, start, back and the triggers (forge_filter_gamepad).
+the D-pad, the shoulder buttons and the left trigger from controller 1, and
+while their menu is open or they hold an object also A, B, X, Y, start, back
+and the triggers (forge_filter_gamepad). The keyboard's keys that move the
+player stay the game's all the while: they fly the monitor.
 
 In the game the keyboard and mouse are a control scheme of their own
 (port/linux/include/halo_keyboard.h): config.toml's [controls] bind each of
@@ -325,10 +326,10 @@ static int forge_typing(void)
 	return forge_text_captured && forge_enabled();
 }
 
-/* while the camera flies, the D-pad's up (which lands it) and right (the
-menu), the shoulder buttons (which rise and sink) and the left trigger
-(faster) belong to the dev tools: the game would otherwise also switch
-cameras on the held right shoulder (black) */
+/* while the camera flies, the D-pad (up lands it, right opens the menu, and
+the game would walk the monitor with the rest), the shoulder buttons (which
+rise and sink) and the left trigger (faster) belong to the dev tools: the
+game would otherwise also switch cameras on the held right shoulder (black) */
 static volatile int forge_flying_keys = FALSE;
 
 void halo_linux_forge_set_flying(int flying)
@@ -336,22 +337,23 @@ void halo_linux_forge_set_flying(int flying)
 	forge_flying_keys = flying;
 }
 
-/* while the camera flies, the D-pad's up and right, the shoulder buttons
-and the left trigger belong to the dev tools; while they are captured, the
-D-pad, A, B, X, Y, start, back and the triggers too */
-static void forge_filter_gamepad(XINPUT_GAMEPAD *pad)
+/* while the camera flies, the D-pad, the shoulder buttons and the left
+trigger belong to the dev tools; while they are captured, A, B, X, Y,
+start, back and the triggers too. A menu of the game's (the pause menu)
+keeps the D-pad that moves about it. */
+static void forge_filter_gamepad(XINPUT_GAMEPAD *pad, BOOL menus)
 {
-	if (forge_flying_keys || forge_menu_keys_captured)
+	if ((forge_flying_keys && !menus) || forge_menu_keys_captured)
 	{
-		pad->wButtons &= ~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_RIGHT);
+		pad->wButtons &= ~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_DOWN |
+			XINPUT_GAMEPAD_DPAD_LEFT | XINPUT_GAMEPAD_DPAD_RIGHT);
 		pad->bAnalogButtons[XINPUT_GAMEPAD_LEFT_TRIGGER] = 0;
 		pad->bAnalogButtons[XINPUT_GAMEPAD_WHITE] = 0;
 		pad->bAnalogButtons[XINPUT_GAMEPAD_BLACK] = 0;
 	}
 	if (forge_menu_keys_captured)
 	{
-		pad->wButtons &= ~(XINPUT_GAMEPAD_DPAD_UP | XINPUT_GAMEPAD_DPAD_DOWN |
-			XINPUT_GAMEPAD_START | XINPUT_GAMEPAD_BACK);
+		pad->wButtons &= ~(XINPUT_GAMEPAD_START | XINPUT_GAMEPAD_BACK);
 		pad->bAnalogButtons[XINPUT_GAMEPAD_A] = 0;
 		pad->bAnalogButtons[XINPUT_GAMEPAD_B] = 0;
 		pad->bAnalogButtons[XINPUT_GAMEPAD_X] = 0;
@@ -1206,10 +1208,15 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 			sdl_gamepad_state(gamepads[0], &state->Gamepad);
 		if (forge_enabled())
 		{
-			forge_filter_gamepad(&state->Gamepad);
-			/* the keyboard's actions do not go through the controller */
+			forge_filter_gamepad(&state->Gamepad, input.menus);
+			/* the keyboard's actions do not go through the controller: all
+			but those that move the player, which fly the monitor while it
+			holds an object as before */
 			if (forge_menu_keys_captured)
-				keyboard_actions_held = 0;
+			{
+				keyboard_actions_held &= (1UL << HALO_KEYBOARD_MOVE_FORWARD) | (1UL << HALO_KEYBOARD_MOVE_BACKWARD) |
+					(1UL << HALO_KEYBOARD_STRAFE_LEFT) | (1UL << HALO_KEYBOARD_STRAFE_RIGHT);
+			}
 		}
 		test_input_gamepad(&state->Gamepad);
 		touch_input_gamepad(&state->Gamepad);

@@ -3,8 +3,9 @@ FORGE.C
 
 In-game dev tools for the native ports (port/linux, port/windows,
 port/android): on in local and system link games of the Forge game type,
-the last of the default game types (a slayer variant with GAME_VARIANT_FORGE_FLAG,
-game/game_engine.c), or in every game with HALO_FORGE=all (see
+which the main menu's FORGE plays (a slayer variant with GAME_VARIANT_FORGE_FLAG,
+game/game_engine.c; it is not one of the gametypes to choose), or in every
+game with HALO_FORGE=all (see
 port/linux/README.md, "Dev tools"). The byte-matching build never compiles
 this file.
 
@@ -2529,15 +2530,11 @@ static void forge_render_menu(
 }
 
 /* a mod's popup (forge_popup_open): a small panel beside the crosshair, in
-the menu's look, with the popup's title, its rows and the keys */
+the menu's look, with the popup's title and its rows (the keys are the
+menu's, and are not listed again) */
 static void forge_render_popup(
 	rectangle2d const *window)
 {
-	static struct forge_menu_hint const hints[] =
-	{
-		{ "Up/Down", "Choose" }, { "Left/Right", "Change" }, { "Enter/A", "Do" }, { "Esc/B/X", "Close" },
-		{ "Wheel", "Choose" }, { "Click+Wheel", "Change" }, { "Click", "Do" }, { "Right click", "Close" },
-	};
 	struct halo_mod_menu const *page = forge_globals.popup;
 	unsigned long milliseconds = system_milliseconds();
 	real seconds = MIN((real)(milliseconds - forge_menu_look.milliseconds) / MILLISECONDS_PER_SECOND, 0.1f);
@@ -2551,11 +2548,7 @@ static void forge_render_popup(
 	short row_count = (short)MIN(forge_globals.entry_count, FORGE_POPUP_VISIBLE_ENTRIES);
 	short window_width = (short)(window->x1 - window->x0);
 	short width = (short)MIN(window_width - 2 * FORGE_MENU_MARGIN, FORGE_POPUP_WIDTH);
-	short hint_rows = forge_menu_hints(small_font, FORGE_MENU_PADDING, (short)(width - FORGE_MENU_PADDING), 0, hints,
-		NUMBEROF(hints), FALSE);
-	short hint_height = (short)(hint_rows * (small_height + 7) + 6);
-	short height = (short)(title_height + FORGE_MENU_PADDING + MAX(row_count, 1) * row_height + FORGE_MENU_PADDING +
-		hint_height);
+	short height = (short)(title_height + FORGE_MENU_PADDING + MAX(row_count, 1) * row_height + FORGE_MENU_PADDING);
 	/* at the right of the crosshair, which stays in sight, and in the window */
 	short x0 = (short)PIN((window->x0 + window->x1) / 2 + FORGE_POPUP_OFFSET, window->x0 + FORGE_MENU_MARGIN,
 		MAX(window->x1 - FORGE_MENU_MARGIN - width, window->x0 + FORGE_MENU_MARGIN));
@@ -2577,7 +2570,6 @@ static void forge_render_popup(
 	forge_menu_box(x0, y0, x1, y1, FORGE_MENU_PANEL_COLOR);
 	forge_menu_box(x0, y0, x1, (short)(y0 + title_height), FORGE_MENU_TITLE_BAR_COLOR);
 	forge_menu_box(x0, y0, x1, (short)(y0 + 2), FORGE_MENU_ACCENT_COLOR);
-	forge_menu_box(x0, (short)(y1 - hint_height), x1, y1, FORGE_MENU_HINT_BAR_COLOR);
 	forge_menu_fit(font, (short)(width - 2 * FORGE_MENU_PADDING), page->title, fitted, sizeof(fitted));
 	forge_menu_text(font, (short)(x0 + FORGE_MENU_PADDING), (short)(y0 + 6), text_x1, HALO_MOD_TEXT_LEFT,
 		FORGE_MENU_ACCENT_COLOR, fitted);
@@ -2628,9 +2620,6 @@ static void forge_render_popup(
 		forge_menu_text(row_font, text_x0, text_y, text_x1, HALO_MOD_TEXT_LEFT,
 			selected ? FORGE_MENU_SELECTED_TEXT_COLOR : FORGE_MENU_TEXT_COLOR, fitted);
 	}
-
-	forge_menu_hints(small_font, (short)(x0 + FORGE_MENU_PADDING), text_x1, (short)(y1 - hint_height + 5), hints,
-		NUMBEROF(hints), TRUE);
 
 	forge_menu_fade = 1.f;
 

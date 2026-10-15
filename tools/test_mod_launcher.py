@@ -247,23 +247,22 @@ def test_the_fzf_rows_of_a_donors_tags_are_marked(mods, tmp_path):
     assert launcher.saved_imports(mods) == [ROCK]
 
 
-def test_layouts_are_listed_with_the_one_that_plays(tmp_path, mods, capsys):
+def test_layouts_are_listed_with_those_in_the_map_list(tmp_path, mods, capsys):
     from tools import mod_layouts
 
     forge = tmp_path / "saves" / "u" / "forge" / "bloodgulch"
     write(forge / "layout_01.txt", "name Layout 1\n[forge]\n")
     write(forge / "layout_03.txt", "name Big base\ndescription Two forts and a bridge\nlisted 1\n[forge]\n")
     write(forge / "layout_02.txt", "[forge]\ndescription not the header's\n")
-    write(forge / "play.txt", "3\n")
     found = mod_layouts.layouts(tmp_path / "saves", "bloodgulch")
     assert found == [
-        {"slot": 1, "name": "Layout 1", "description": "", "plays": False, "listed": False},
-        {"slot": 2, "name": "Layout 2", "description": "", "plays": False, "listed": False},
-        {"slot": 3, "name": "Big base", "description": "Two forts and a bridge", "plays": True, "listed": True},
+        {"slot": 1, "name": "Layout 1", "description": "", "listed": False},
+        {"slot": 2, "name": "Layout 2", "description": "", "listed": False},
+        {"slot": 3, "name": "Big base", "description": "Two forts and a bridge", "listed": True},
     ]
     assert launcher.main(["--mods-dir", str(mods), "layouts", "--saves", str(tmp_path / "saves")]) == 0
     output = capsys.readouterr().out
-    assert "3. Big base  (in the map list, plays on this map)" in output
+    assert "3. Big base  (in the map list)" in output
     assert "      Two forts and a bridge" in output
 
 

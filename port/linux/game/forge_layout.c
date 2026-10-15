@@ -2,8 +2,9 @@
 FORGE_LAYOUT.C
 
 Layouts of the dev tools (port/linux/game/forge.c): what Forge changed in a
-map, saved to a file and loaded again, in Forge games and, when chosen to
-play on the map, in every local game on it.
+map, saved to a file and loaded again. A layout loads only when it is asked
+for: by the Map tab's "Load it", or by choosing it as a map in the map list.
+The map chosen by its own name is the map as the game has it.
 
 A layout holds:
 	the objects the tools or mods made (spawned, pasted, brought back):
@@ -24,11 +25,9 @@ one thing a line. The first line is the layout's name, "Layout NN" when it
 is saved first, and a "description" line holds what the map list says about
 it; the Map tab's Name and Description rows change them (typed on the
 keyboard), and so does the launcher (python -m tools.mod_launcher layouts).
-u:\forge\<map>\play.txt holds the number of the layout that plays on the
-map in every local game, if any.
 
 The "Map" tab of the tools' menu: choose a layout (left, right), name and
-describe it, save it, load it, play it in every game on the map, show it in
+describe it, save it, load it, show it in
 the map list, reset the map to its own look, remove every object of the
 map (asked twice: the map's own come back with the reset, the tools' do
 not), delete it. In a system link game the tab is the host's.
@@ -47,8 +46,7 @@ the 13 maps of the game, with its base map's picture and the layout's name
 (interface/ui_widget_event_handler_functions.c and
 ui_widget_game_data_input_functions.c ask forge_custom_map_*; its name
 comes through text/text_group.c's fallback strings). Choosing it plays the
-base map with that layout loaded (forge_custom_map_select), in place of the
-one that plays on the map.
+base map with that layout loaded (forge_custom_map_select).
 */
 
 #include "cseries.h"
@@ -129,7 +127,6 @@ enum
 	_forge_layout_row_description,
 	_forge_layout_row_save,
 	_forge_layout_row_load,
-	_forge_layout_row_play,
 	_forge_layout_row_listed,
 	_forge_layout_row_reset,
 	_forge_layout_row_remove_all,
@@ -187,12 +184,11 @@ static struct
 	long spawned[FORGE_LAYOUT_MAXIMUM_SPAWNED];
 
 	/* the Map tab: the chosen slot (0 a new layout), the one loaded or
-	saved last, the one that plays on the map, and the slots' names ("" no
+	saved last, and the slots' names ("" no
 	layout there) and descriptions; slot 0's are those typed for a layout
 	not saved yet */
 	short chosen_slot;
 	short current_slot;
-	short play_slot;
 	char slot_names[FORGE_LAYOUT_SLOT_COUNT + 1][FORGE_LAYOUT_NAME_SIZE];
 	char slot_descriptions[FORGE_LAYOUT_SLOT_COUNT + 1][FORGE_LAYOUT_DESCRIPTION_SIZE];
 	boolean slot_listed[FORGE_LAYOUT_SLOT_COUNT + 1];
@@ -369,16 +365,6 @@ static boolean forge_layout_read_header(
 	return TRUE;
 }
 
-static void forge_layout_play_path(
-	char *path,
-	unsigned long size)
-{
-	_snprintf(path, size, "u:\\forge\\%s\\play.txt", forge_layout_globals.map_name);
-	path[size - 1] = 0;
-
-	return;
-}
-
 /* the line without its line break */
 static void forge_layout_chomp(
 	char *line)
@@ -388,14 +374,12 @@ static void forge_layout_chomp(
 	return;
 }
 
-/* the names of the saved layouts, and the one that plays */
+/* the names of the saved layouts */
 static void forge_layout_read_slots(
 	void)
 {
 	char path[FORGE_LAYOUT_PATH_SIZE];
-	char line[FORGE_LAYOUT_LINE_SIZE];
 	short slot;
-	FILE *file;
 
 	for (slot = 1; slot <= FORGE_LAYOUT_SLOT_COUNT; slot++)
 	{
@@ -409,42 +393,6 @@ static void forge_layout_read_slots(
 			forge_layout_globals.slot_listed[slot] = FALSE;
 		}
 	}
-
-	forge_layout_globals.play_slot = 0;
-	forge_layout_play_path(path, sizeof(path));
-	if ((file = fopen(path, "r")) != NULL)
-	{
-		int play_slot;
-
-		if (fgets(line, sizeof(line), file) && sscanf(line, "%d", &play_slot) == 1 &&
-			play_slot >= 1 && play_slot <= FORGE_LAYOUT_SLOT_COUNT &&
-			forge_layout_globals.slot_names[play_slot][0])
-		{
-			forge_layout_globals.play_slot = (short)play_slot;
-		}
-		fclose(file);
-	}
-
-	return;
-}
-
-static void forge_layout_write_play_slot(
-	short slot)
-{
-	char path[FORGE_LAYOUT_PATH_SIZE];
-	FILE *file;
-
-	forge_layout_play_path(path, sizeof(path));
-	if (slot == 0)
-	{
-		remove(path);
-	}
-	else if ((file = fopen(path, "w")) != NULL)
-	{
-		fprintf(file, "%d\n", slot);
-		fclose(file);
-	}
-	forge_layout_globals.play_slot = slot;
 
 	return;
 }
@@ -1319,10 +1267,6 @@ static void forge_layout_menu_row_text(
 		_snprintf(label, label_size, "Load it");
 		_snprintf(value, value_size, "%s", chosen && chosen == forge_layout_globals.current_slot ? "loaded" : "");
 		break;
-	case _forge_layout_row_play:
-		_snprintf(label, label_size, "Play on this map");
-		_snprintf(value, value_size, "%s", chosen && chosen == forge_layout_globals.play_slot ? "on" : "off");
-		break;
 	case _forge_layout_row_listed:
 		_snprintf(label, label_size, "Show in the map list");
 		_snprintf(value, value_size, "%s", chosen && forge_layout_globals.slot_listed[chosen] ? "on" : "off");
@@ -1433,19 +1377,6 @@ static int forge_layout_menu_row_change(
 				forge_layout_load(chosen);
 		}
 		break;
-	case _forge_layout_row_play:
-		if (chosen == 0)
-		{
-			terminal_printf(global_real_argb_orange, "forge: save the layout first");
-		}
-		else
-		{
-			forge_layout_write_play_slot(chosen == forge_layout_globals.play_slot ? 0 : chosen);
-			terminal_printf(global_real_argb_green, forge_layout_globals.play_slot
-				? "forge: %s now plays in every game on this map"
-				: "forge: %s no longer plays on this map", forge_layout_globals.slot_names[chosen]);
-		}
-		break;
 	case _forge_layout_row_listed:
 		if (chosen == 0)
 		{
@@ -1493,8 +1424,6 @@ static int forge_layout_menu_row_change(
 			forge_layout_slot_path(chosen, path, sizeof(path));
 			remove(path);
 			terminal_printf(global_real_argb_green, "forge: deleted %s", forge_layout_globals.slot_names[chosen]);
-			if (forge_layout_globals.play_slot == chosen)
-				forge_layout_write_play_slot(0);
 			if (forge_layout_globals.current_slot == chosen)
 				forge_layout_globals.current_slot = 0;
 			forge_layout_globals.chosen_slot = 0;
@@ -2256,16 +2185,14 @@ void forge_layout_new_map(
 	(forge_layout_handle_message) */
 	if (forge_layout_authoritative())
 	{
-		/* the layout chosen as a map in the map list, else the one that
-		plays on the map */
+		/* the layout chosen as a map in the map list, if one was: the map
+		chosen by its own name is the game's, whatever was saved on it */
 		short slot;
 
 		forge_layout_read_slots();
 		slot = forge_layout_selected_slot();
 		if (slot && !forge_layout_globals.slot_names[slot][0])
 			slot = 0;
-		if (!slot)
-			slot = forge_layout_globals.play_slot;
 		if (slot)
 			forge_layout_load(slot);
 		/* a system link host: the layout as the clients that join get it */

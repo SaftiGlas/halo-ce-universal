@@ -397,10 +397,16 @@ you push it again.
 ## Dev tools
 
 The in-game dev tools (`game/forge.c`), a first step towards modding, are
-on in local and system link games of the **Forge** game type: the last of the default game
-types in the game setup (a slayer variant with no score to reach, marked
-with `GAME_VARIANT_FORGE_FLAG`; copies of it that you save stay Forge), or
-`game.start_variant = "forge"` / `--variant forge`. In every other game the
+on in local and system link games of the **Forge** game type (a slayer
+variant with no score to reach, marked with `GAME_VARIANT_FORGE_FLAG`), or
+`game.start_variant = "forge"` / `--variant forge`. **Forge** in the main
+menu, above Profiles, plays it: it makes a game as Multiplayer's Create
+Game does (an internet game, with its invite, when internet play is on,
+else a LAN game), then the map list has the multiplayer
+maps, the Custom Edition multiplayer maps and the Forge maps (layouts), and
+the map chosen goes straight to Server Setup, whose GAME TYPE stays Forge
+(its options' rows still change it). Forge is not one of the gametypes in
+Multiplayer's game setup; gametypes saved from it before stay Forge. In every other game the
 game plays as usual. `HALO_FORGE=all` turns the tools on in every game, for
 development.
 
@@ -465,18 +471,19 @@ placed:
 | escape, backspace | B | cancel: a spawned object goes, a picked up one returns to its place |
 | delete | back, Y | remove it from the map |
 
-With the tools on, while the camera flies the D-pad's up and right, the
-shoulder buttons and the left trigger belong to them; and while the menu is open or an object is held, the arrows
-(D-pad), enter and A, escape and start, backspace and B, X, Y, back and
-the mouse's buttons (triggers) work only the tools. In the menu X closes
+With the tools on, while the camera flies the D-pad, the
+shoulder buttons and the left trigger belong to them (the D-pad does not
+move the monitor); and while the menu is open or an object is held, the arrows,
+enter and A, escape and start, backspace and B, X, Y, back and
+the mouse's buttons (triggers) work only the tools. The keys that move the
+player (W, A, S, D) keep moving it all the while. In the menu X closes
 it too, and LB and RB change tab.
 
 **Layouts** (`game/forge_layout.c`): the **Map** tab of the menu saves
 what Forge changed in the map (the objects spawned, the map's own objects
 moved or removed, the spawns, zones, AI characters and waypoints, gravity, the sky) as
 a layout: choose one with left and right (or a new one), Save, Load it,
-Play on this map (it then loads in every local game on the map, whatever
-the game type), Reset the map, Remove all objects (choose it twice: every
+Reset the map, Remove all objects (choose it twice: every
 vehicle, weapon, piece of equipment, scenery and device goes, the players
 stay; Reset the map brings back the map's own, not what Forge placed; items
 still return at their spawns until those are removed on the Spawns tab),
@@ -488,7 +495,9 @@ keyboard (letters, digits, spaces and the usual marks; backspace deletes,
 enter takes the line, escape leaves it as it was). For a new layout they
 are kept until it is saved. Without a keyboard, `python -m
 tools.mod_launcher layouts rename MAP N NAME` and `layouts describe MAP N
-TEXT` do the same (`layouts` lists them).
+TEXT` do the same (`layouts` lists them). A saved layout loads only when
+it is asked for (Load it, or chosen in the map list, below): the map chosen
+by its own name is the map as the game has it.
 
 A layout with **Show in the map list** on is a map of its own: the
 multiplayer map list of local (splitscreen) games shows it after the 13

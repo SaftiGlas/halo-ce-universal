@@ -60,12 +60,19 @@ begin" makes two players, player 1 on its profile; "port coop player 2"
 gives player 2 the profile chosen and the controller that chose it; then the
 campaign's New Game and difficulty start the game for both.
 
+Forge (the main menu's FORGE): "port forge begin" makes a game as Create
+Game does (internet with internet play on, else LAN), then the Map screen lists the multiplayer kinds of maps
+only, and the map chosen goes straight to Server Setup with the Forge game
+type (game_engine.c's build_game_variant_forge), which Server Setup's GAME
+TYPE row does not change.
+
 The rest are the PC version's, which its menus (port/assets/menus/ce)
 name and the Xbox's has not: they do nothing yet, and succeed, so that what
 their handlers open opens.
 */
 
 #include "cseries.h"
+#include "game/game_engine_playlist.h"
 #include "input/input.h"
 #include "interface/event_manager.h"
 #include "interface/player_ui.h"
@@ -2281,6 +2288,7 @@ boolean ui_widget_port_multiplayer_map_choose(short level_index);
 boolean ui_widget_port_cooperative_level_choose(char const *map_name, short difficulty);
 short ui_widget_port_gametypes(long *indices, short maximum, short *last_used);
 boolean ui_widget_port_gametype_choose(long profile_index);
+boolean ui_widget_port_game_variant_set(struct game_variant *variant, struct game_variant_options const *options);
 boolean ui_widget_port_host(struct widget_instance *widget, struct event_record *event, boolean *widget_deleted);
 boolean ui_widget_port_browse(struct widget_instance *widget, struct event_record *event, boolean *widget_deleted);
 boolean ui_widget_port_open(struct widget_instance *widget, char const *name, boolean *widget_deleted);
@@ -2359,6 +2367,9 @@ static struct
 	/* Server Setup's PASSWORD (a public internet game's; empty: none), kept
 	while the game runs, never written down */
 	char game_password[PASSWORD_LENGTH + 1];
+	/* the game made by the main menu's FORGE (forge_begin), until Create
+	Game makes another */
+	boolean forge;
 } multiplayer = { .maximum_players_index = NUMBEROF(maximum_players) - 1 };
 
 /* ---- a text field (Direct Link's link, the game's name): the keyboard
@@ -2511,12 +2522,13 @@ static boolean multiplayer_player(short controller)
 	return ui_widget_port_multiplayer_player(controller, player_ui_get_active_player_profile_index(0));
 }
 
-/* Create Game's ("join controller to mp game", first): player 1 in, and
-the server made: an internet one (an invite, Discord) or a LAN one */
-static boolean multiplayer_host(struct widget_instance *widget, struct event_record *event, short controller,
-	boolean *widget_deleted)
+/* player 1 in, and the server made for the mode: an internet one (an
+invite, Discord) or a LAN one */
+static boolean multiplayer_host_mode(struct widget_instance *widget, struct event_record *event, short controller,
+	short mode, boolean *widget_deleted)
 {
-	multiplayer_mode_set(widget);
+	multiplayer.mode = mode;
+	multiplayer.forge = FALSE;
 	if (!multiplayer_player(controller))
 		return FALSE;
 	p2p_set_hosting_allowed(multiplayer.mode == _multiplayer_mode_host_internet);
@@ -2527,6 +2539,38 @@ static boolean multiplayer_host(struct widget_instance *widget, struct event_rec
 	multiplayer.cooperative_maximum_players_set = FALSE;
 	return ui_widget_port_host(widget, event, widget_deleted);
 }
+
+/* Create Game's ("join controller to mp game", first): the item's mode */
+static boolean multiplayer_host(struct widget_instance *widget, struct event_record *event, short controller,
+	boolean *widget_deleted)
+{
+	multiplayer_mode_set(widget);
+	return multiplayer_host_mode(widget, event, controller, multiplayer.mode, widget_deleted);
+}
+
+/* "port forge begin" (the main menu's FORGE): a game made, as Create Game
+makes one, whose map the Map screen chooses (map_list_choose): an internet
+one (its invite in Server Setup) with internet play on, else a LAN one */
+static boolean forge_begin(struct widget_instance *widget, struct event_record *event, short controller,
+	boolean *widget_deleted)
+{
+	short mode = config_boolean("network.online") ? _multiplayer_mode_host_internet : _multiplayer_mode_host_lan;
+
+	if (!multiplayer_host_mode(widget, event, controller, mode, widget_deleted) ||
+		!global_network_game_server_get())
+	{
+		platform_log("menus: the Forge game could not be made (is its port in use?)");
+		return campaign_fail();
+	}
+	multiplayer.forge = TRUE;
+	return TRUE;
+}
+
+/* (the gametype editor's: Server Setup's copy of the game's gametype) */
+static void gametype_setup_begin(void);
+static void gametype_setup_end(void);
+static boolean gametype_setup_apply(void);
+static void gametype_setup_type(wchar_t *text);
 
 /* ---- the map list (the Map screen's): its chooser's SINGLEPLAYER levels,
 MULTIPLAYER maps, CUSTOM SINGLEPLAYER or CUSTOM MULTIPLAYER maps (the map
@@ -2593,7 +2637,9 @@ static boolean map_list_initialize(struct widget_instance *list)
 	char const *const *names;
 	short last_used = 0;
 
-	map_list.hosting = global_network_game_server_get() != NULL && !network_game_is_splitscreen_local();
+	/* (Forge's lists the multiplayer kinds only) */
+	map_list.hosting = global_network_game_server_get() != NULL && !network_game_is_splitscreen_local() &&
+		!multiplayer.forge;
 	/* (the maps folders looked for again as the list opens) */
 	custom_edition_maps_look_again();
 	map_list.map_count = ui_widget_port_multiplayer_maps(&names, &last_used);
@@ -2656,9 +2702,27 @@ static void map_list_update(struct widget_instance *list)
 	profile_name_show(description);
 }
 
+/* the Forge game type for Forge's game (forge_begin), its options the
+defaults, then Server Setup in the gametypes' place */
+static boolean map_list_forge(struct widget_instance *list, boolean *widget_deleted)
+{
+	struct game_variant variant;
+	struct game_variant_options options;
+
+	build_game_variant_forge(&variant);
+	ustrncpy(variant.human_readable_game_description, L"Forge",
+		NUMBEROF(variant.human_readable_game_description) - 1);
+	game_variant_options_default(&variant, &options);
+	gametype_setup_end();
+	if (!ui_widget_port_game_variant_set(&variant, &options))
+		return campaign_fail();
+	return ui_widget_port_open(list, SERVER_SETUP_NAME, widget_deleted);
+}
+
 /* "mp level select" (the list's OK): the map chosen, or a level's
 difficulties, or the level at the difficulty chosen. FALSE stays on the Map
-screen (the gametypes open on TRUE). */
+screen (the gametypes open on TRUE; Forge's game opens Server Setup
+itself). */
 static boolean map_list_choose(struct widget_instance *list, boolean *widget_deleted)
 {
 	short chosen = map_list.chosen;
@@ -2677,17 +2741,30 @@ static boolean map_list_choose(struct widget_instance *list, boolean *widget_del
 	}
 	/* (a multiplayer map: the Xbox's, then the Custom Edition ones, in the
 	multiplayer maps) */
-	if (map_list.kind == MAP_KIND_MULTIPLAYER)
-		return ui_widget_port_multiplayer_map_choose(chosen);
-	if (map_list.kind == MAP_KIND_CUSTOM_MULTIPLAYER)
-		return ui_widget_port_multiplayer_map_choose((short)(xbox_multiplayer_map_count(map_list.map_count) + chosen));
-	/* (a Forge map: its base map, played with its layout) */
-	if (map_list.kind == MAP_KIND_FORGE)
+	if (map_list.kind == MAP_KIND_MULTIPLAYER || map_list.kind == MAP_KIND_CUSTOM_MULTIPLAYER ||
+		map_list.kind == MAP_KIND_FORGE)
 	{
-		if (!ui_widget_port_multiplayer_map_choose(ui_widget_port_forge_map_level(chosen)))
-			return FALSE;
-		forge_custom_map_select(chosen);
-		return TRUE;
+		if (map_list.kind == MAP_KIND_MULTIPLAYER)
+		{
+			if (!ui_widget_port_multiplayer_map_choose(chosen))
+				return FALSE;
+		}
+		else if (map_list.kind == MAP_KIND_CUSTOM_MULTIPLAYER)
+		{
+			if (!ui_widget_port_multiplayer_map_choose((short)(xbox_multiplayer_map_count(map_list.map_count) +
+				chosen)))
+			{
+				return FALSE;
+			}
+		}
+		/* (a Forge map: its base map, played with its layout) */
+		else
+		{
+			if (!ui_widget_port_multiplayer_map_choose(ui_widget_port_forge_map_level(chosen)))
+				return FALSE;
+			forge_custom_map_select(chosen);
+		}
+		return multiplayer.forge ? map_list_forge(list, widget_deleted) : TRUE;
 	}
 	ui_play_audio_feedback_sound(SOUND_FORWARD);
 	map_list.level = chosen;
@@ -2709,12 +2786,6 @@ static boolean map_list_back(struct widget_instance *list, boolean *widget_delet
 	*widget_deleted = TRUE;
 	return TRUE;
 }
-
-/* (the gametype editor's: Server Setup's copy of the game's gametype) */
-static void gametype_setup_begin(void);
-static void gametype_setup_end(void);
-static boolean gametype_setup_apply(void);
-static void gametype_setup_type(wchar_t *text);
 
 /* ---- the gametype list: its spinner's bank (STANDARD: the built-in ones,
 CUSTOM: those saved) in its first row, then the bank's gametypes */
@@ -4654,7 +4725,6 @@ place) */
 
 boolean ui_widget_port_gametype_edit_begin(long profile_index);
 boolean ui_widget_port_gametype_save(struct widget_instance *widget, boolean *widget_deleted);
-boolean ui_widget_port_game_variant_set(struct game_variant *variant, struct game_variant_options const *options);
 boolean ui_widget_port_gametype_delete(long profile_index);
 
 #define GAMETYPE_EDIT_ROWS 11
@@ -5206,9 +5276,13 @@ static void gametype_setup_type(wchar_t *text)
 	text[ROW_TEXT_LENGTH - 1] = 0;
 }
 
-/* "port setup edit" (a Server Setup option's row): its screen edits the copy */
-static boolean gametype_setup_edit(void)
+/* "port setup edit" (a Server Setup option's row): its screen edits the
+copy. Forge's game (forge_begin) keeps its game type: its GAME TYPE row
+opens nothing, its options' rows do. */
+static boolean gametype_setup_edit(struct widget_instance *row)
 {
+	if (multiplayer.forge && !strcmp(row->name, "op_game_type"))
+		return campaign_fail();
 	gametype_setup_begin();
 	return gametype_edit.setup || campaign_fail();
 }
@@ -5528,7 +5602,7 @@ boolean pc_menu_event_function_invoke(
 		}
 		else if (!strcmp(name, "port setup edit"))
 		{
-			return gametype_setup_edit();
+			return gametype_setup_edit(widget);
 		}
 		/* (co-op's options' screens: their settings shown, and OK's) */
 		else if (!strcmp(name, "port setup options init"))
@@ -5730,6 +5804,10 @@ boolean pc_menu_event_function_invoke(
 		else if (!strcmp(name, "port coop begin"))
 		{
 			return coop_begin(controller);
+		}
+		else if (!strcmp(name, "port forge begin"))
+		{
+			return forge_begin(widget, event, controller, widget_deleted);
 		}
 		else if (!strcmp(name, "port coop player 2 list initialize"))
 		{
