@@ -228,7 +228,8 @@ its layouts, then placed again as often as wanted: its objects are made and
 held together at the crosshair, turned, raised and orbited by the camera as
 one held object is, until they are put down),
 `gravity` (the map's gravity, with the tick and new map hooks),
-`forge_zones` (kill, gravity and teleport zones placed at the crosshair) and
+`forge_zones` (kill, gravity and teleport zones, square or round, placed at the crosshair; a
+teleport zone's arrow is the way what comes out of it faces) and
 `forge_spawns` (the map's player spawns and item spawns: shown as posts,
 moved, removed, added and given a team, game types, an item collection and
 a respawn time; a changed kind replaces the map's own list, and "Restore

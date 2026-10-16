@@ -19,6 +19,8 @@ keyboard, and needs no other key. The rows:
 	                shown, aiming at one with the menu closed chooses it,
 	                and X on a controller opens the menu here on it)
 	Kind            kill, gravity or teleport
+	Shape           a square (a box) or a circle (a cylinder, its width
+	                and length the ellipse's)
 	Setting         a kill zone's delay, a gravity zone's gravity (below zero
 	                it lifts), a teleport zone's channel (a number)
 	Direction       (teleport) two-way, entrance only, or exit only
@@ -37,8 +39,8 @@ keyboard, and needs no other key. The rows:
 	Move here       to the crosshair, turned the way the camera looks
 	Remove
 
-A zone is a box standing on the surface it was placed on, turned as an
-object is (yaw, pitch and roll). It works whether it is shown or not:
+A zone is a box, or a cylinder, standing on the surface it was placed on,
+turned as an object is (yaw, pitch and roll). It works whether it is shown or not:
 - a kill zone kills every living biped (players and AI, also in a vehicle)
   whose middle is in it, at once or after its delay; while local player 0
   counts down, the screen says so
@@ -54,7 +56,9 @@ object is (yaw, pitch and roll). It works whether it is shown or not:
   speed too, and the player's view), and cannot go back through the zone
   it arrived in before leaving it. An entrance only zone never receives, an
   exit only zone never sends. Shown, paired teleports have the same colour
-  and a line between them.
+  and a line between them, and an arrow on the floor of each says which
+  way is its forward: what walks into one along its arrow comes out of
+  the other along that one's arrow (so a player looks that way).
 
 The zones change the game only in the tick hook (halo_mod.h), so only in
 local games and at the game's own rate. They are forgotten when the map
@@ -107,6 +111,16 @@ enum forge_zone_direction
 	_forge_zone_exit_only,
 	NUMBER_OF_FORGE_ZONE_DIRECTIONS
 };
+
+enum forge_zone_shape
+{
+	_forge_zone_square = 0,
+	_forge_zone_circle,
+	NUMBER_OF_FORGE_ZONE_SHAPES
+};
+
+/* the sides a circle zone is drawn with */
+#define FORGE_ZONES_CIRCLE_SEGMENTS 24
 
 /* world units (a world unit is about 3 metres) */
 #define FORGE_ZONES_DEFAULT_LENGTH 3.f
@@ -161,6 +175,9 @@ struct forge_zone
 	what it does with it (enum forge_zone_direction) */
 	short channel;
 	short direction;
+	/* enum forge_zone_shape: a box, or a cylinder whose ellipse is the box's
+	length and width */
+	short shape;
 };
 
 /* ---------- globals */
@@ -196,6 +213,12 @@ static char const *const forge_zones_direction_names[NUMBER_OF_FORGE_ZONE_DIRECT
 	"two-way",
 	"entrance only",
 	"exit only"
+};
+
+static char const *const forge_zones_shape_names[NUMBER_OF_FORGE_ZONE_SHAPES] =
+{
+	"square",
+	"circle"
 };
 
 /* how much a Width, Length or Height press changes a size */
@@ -365,12 +388,18 @@ static boolean forge_zones_tick_contains(
 {
 	struct forge_zone const *zone = &forge_zones_globals.zones[zone_index];
 	real_vector3d offset;
+	real along;
+	real across;
 
 	vector_from_points3d(&zone->center, point, &offset);
+	if ((real)fabs(dot_product3d(&offset, &forge_zones_tick_globals.up[zone_index])) > zone->half_size.k)
+		return FALSE;
+	along = dot_product3d(&offset, &forge_zones_tick_globals.forward[zone_index]) / zone->half_size.i;
+	across = dot_product3d(&offset, &forge_zones_tick_globals.left[zone_index]) / zone->half_size.j;
 
-	return (real)fabs(dot_product3d(&offset, &forge_zones_tick_globals.up[zone_index])) <= zone->half_size.k &&
-		(real)fabs(dot_product3d(&offset, &forge_zones_tick_globals.forward[zone_index])) <= zone->half_size.i &&
-		(real)fabs(dot_product3d(&offset, &forge_zones_tick_globals.left[zone_index])) <= zone->half_size.j;
+	return zone->shape == _forge_zone_circle
+		? along * along + across * across <= 1.f
+		: (real)fabs(along) <= 1.f && (real)fabs(across) <= 1.f;
 }
 
 static real forge_zones_setting(
@@ -432,6 +461,37 @@ static boolean forge_zones_ray_hits(
 			}
 			enter = MAX(enter, near_distance);
 			leave = MIN(leave, far_distance);
+			if (enter > leave)
+				return FALSE;
+		}
+	}
+	if (zone->shape == _forge_zone_circle)
+	{
+		/* and the cylinder in the box: in the ellipse's own units, a circle
+		of radius 1 */
+		real origin_along = start[0] / extent[0];
+		real origin_across = start[1] / extent[1];
+		real direction_along = local_direction[0] / extent[0];
+		real direction_across = local_direction[1] / extent[1];
+		real a = direction_along * direction_along + direction_across * direction_across;
+		real b = origin_along * direction_along + origin_across * direction_across;
+		real c = origin_along * origin_along + origin_across * origin_across - 1.f;
+
+		if (a < 1e-12f)
+		{
+			if (c > 0.f)
+				return FALSE;
+		}
+		else
+		{
+			real discriminant = b * b - a * c;
+			real root;
+
+			if (discriminant < 0.f)
+				return FALSE;
+			root = square_root(discriminant);
+			enter = MAX(enter, (-b - root) / a);
+			leave = MIN(leave, (-b + root) / a);
 			if (enter > leave)
 				return FALSE;
 		}
@@ -583,8 +643,8 @@ static void forge_zones_describe(
 			forge_zone_kinds[zone->kind].settings[zone->setting_index].name);
 		break;
 	}
-	_snprintf(text, size, "%s, %s, %.2f x %.2f x %.2f",
-		forge_zone_kinds[zone->kind].name, setting,
+	_snprintf(text, size, "%s %s, %s, %.2f x %.2f x %.2f",
+		forge_zones_shape_names[zone->shape], forge_zone_kinds[zone->kind].name, setting,
 		2.f * zone->half_size.i, 2.f * zone->half_size.j, 2.f * zone->half_size.k);
 
 	return;
@@ -742,16 +802,33 @@ static real_argb_color forge_zones_zone_color(
 	return color;
 }
 
-static void forge_zones_draw_zone(
+/* the zone's point at forward, left and up from its center */
+static void forge_zones_zone_point(
 	struct forge_zone const *zone,
-	boolean selected)
+	real_vector3d const *forward,
+	real_vector3d const *left,
+	real_vector3d const *up,
+	real along,
+	real across,
+	real above,
+	real_point3d *point)
 {
-	real_vector3d forward;
-	real_vector3d left;
-	real_vector3d up;
+	point->x = zone->center.x + forward->i * along + left->i * across + up->i * above;
+	point->y = zone->center.y + forward->j * along + left->j * across + up->j * above;
+	point->z = zone->center.z + forward->k * along + left->k * across + up->k * above;
+
+	return;
+}
+
+static void forge_zones_draw_box(
+	struct forge_zone const *zone,
+	real_vector3d const *forward,
+	real_vector3d const *left,
+	real_vector3d const *up,
+	real_argb_color const *edge_color,
+	real_argb_color const *face_color)
+{
 	real_point3d corners[8];
-	real_argb_color edge_color = forge_zones_zone_color(zone);
-	real_argb_color face_color = edge_color;
 	short corner_index;
 	short index;
 	/* the four corners of a face, in order, by corner number */
@@ -768,33 +845,126 @@ static void forge_zones_draw_zone(
 		{ 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 }
 	};
 
-	edge_color.alpha = selected ? 1.f : 0.6f;
-	face_color.alpha = selected ? 0.25f : 0.12f;
-
-	forge_zones_axes(zone, &forward, &left, &up);
 	/* corner bits: 1 forward, 2 left, 4 up */
 	for (corner_index = 0; corner_index < 8; corner_index++)
 	{
-		real along = (corner_index & 1) ? zone->half_size.i : -zone->half_size.i;
-		real across = (corner_index & 2) ? zone->half_size.j : -zone->half_size.j;
-		real above = (corner_index & 4) ? zone->half_size.k : -zone->half_size.k;
-
-		corners[corner_index].x = zone->center.x + forward.i * along + left.i * across + up.i * above;
-		corners[corner_index].y = zone->center.y + forward.j * along + left.j * across + up.j * above;
-		corners[corner_index].z = zone->center.z + forward.k * along + left.k * across + up.k * above;
+		forge_zones_zone_point(zone, forward, left, up,
+			(corner_index & 1) ? zone->half_size.i : -zone->half_size.i,
+			(corner_index & 2) ? zone->half_size.j : -zone->half_size.j,
+			(corner_index & 4) ? zone->half_size.k : -zone->half_size.k,
+			&corners[corner_index]);
 	}
 
 	for (index = 0; index < 6; index++)
 	{
 		rasterizer_debug_triangle(&corners[faces[index][0]], &corners[faces[index][1]],
-			&corners[faces[index][2]], &face_color);
+			&corners[faces[index][2]], face_color);
 		rasterizer_debug_triangle(&corners[faces[index][0]], &corners[faces[index][2]],
-			&corners[faces[index][3]], &face_color);
+			&corners[faces[index][3]], face_color);
 	}
 	for (index = 0; index < 12; index++)
+		rasterizer_debug_line_shaded(&corners[edges[index][0]], &corners[edges[index][1]], edge_color, edge_color);
+
+	return;
+}
+
+static void forge_zones_draw_cylinder(
+	struct forge_zone const *zone,
+	real_vector3d const *forward,
+	real_vector3d const *left,
+	real_vector3d const *up,
+	real_argb_color const *edge_color,
+	real_argb_color const *face_color)
+{
+	real_point3d bottom[FORGE_ZONES_CIRCLE_SEGMENTS];
+	real_point3d top[FORGE_ZONES_CIRCLE_SEGMENTS];
+	real_point3d bottom_center;
+	real_point3d top_center;
+	short index;
+
+	for (index = 0; index < FORGE_ZONES_CIRCLE_SEGMENTS; index++)
 	{
-		rasterizer_debug_line_shaded(&corners[edges[index][0]], &corners[edges[index][1]],
-			&edge_color, &edge_color);
+		real angle = 2.f * _pi * (real)index / FORGE_ZONES_CIRCLE_SEGMENTS;
+		real along = cosine(angle) * zone->half_size.i;
+		real across = sine(angle) * zone->half_size.j;
+
+		forge_zones_zone_point(zone, forward, left, up, along, across, -zone->half_size.k, &bottom[index]);
+		forge_zones_zone_point(zone, forward, left, up, along, across, zone->half_size.k, &top[index]);
+	}
+	forge_zones_zone_point(zone, forward, left, up, 0.f, 0.f, -zone->half_size.k, &bottom_center);
+	forge_zones_zone_point(zone, forward, left, up, 0.f, 0.f, zone->half_size.k, &top_center);
+
+	for (index = 0; index < FORGE_ZONES_CIRCLE_SEGMENTS; index++)
+	{
+		short next = (short)((index + 1) % FORGE_ZONES_CIRCLE_SEGMENTS);
+
+		rasterizer_debug_triangle(&bottom_center, &bottom[index], &bottom[next], face_color);
+		rasterizer_debug_triangle(&top_center, &top[index], &top[next], face_color);
+		rasterizer_debug_triangle(&bottom[index], &bottom[next], &top[next], face_color);
+		rasterizer_debug_triangle(&bottom[index], &top[next], &top[index], face_color);
+		rasterizer_debug_line_shaded(&bottom[index], &bottom[next], edge_color, edge_color);
+		rasterizer_debug_line_shaded(&top[index], &top[next], edge_color, edge_color);
+		/* (a few of the sides, not all: it would be a blur) */
+		if (index % (FORGE_ZONES_CIRCLE_SEGMENTS / 4) == 0)
+			rasterizer_debug_line_shaded(&bottom[index], &top[index], edge_color, edge_color);
+	}
+
+	return;
+}
+
+/* a teleport zone's forward: an arrow on its floor, from the middle to the
+front, with its head */
+static void forge_zones_draw_arrow(
+	struct forge_zone const *zone,
+	real_vector3d const *forward,
+	real_vector3d const *left,
+	real_vector3d const *up,
+	real_argb_color const *color)
+{
+	real above = -zone->half_size.k + FORGE_ZONES_FLOOR_DEPTH + 0.02f;
+	real length = zone->half_size.i * 0.9f;
+	real head = MIN(zone->half_size.i, zone->half_size.j) * 0.35f;
+	real_point3d tail;
+	real_point3d tip;
+	real_point3d head_left;
+	real_point3d head_right;
+
+	forge_zones_zone_point(zone, forward, left, up, -length * 0.5f, 0.f, above, &tail);
+	forge_zones_zone_point(zone, forward, left, up, length, 0.f, above, &tip);
+	forge_zones_zone_point(zone, forward, left, up, length - head, head, above, &head_left);
+	forge_zones_zone_point(zone, forward, left, up, length - head, -head, above, &head_right);
+	rasterizer_debug_line_shaded(&tail, &tip, color, color);
+	rasterizer_debug_line_shaded(&tip, &head_left, color, color);
+	rasterizer_debug_line_shaded(&tip, &head_right, color, color);
+	rasterizer_debug_triangle(&tip, &head_left, &head_right, color);
+
+	return;
+}
+
+static void forge_zones_draw_zone(
+	struct forge_zone const *zone,
+	boolean selected)
+{
+	real_vector3d forward;
+	real_vector3d left;
+	real_vector3d up;
+	real_argb_color edge_color = forge_zones_zone_color(zone);
+	real_argb_color face_color = edge_color;
+
+	edge_color.alpha = selected ? 1.f : 0.6f;
+	face_color.alpha = selected ? 0.25f : 0.12f;
+
+	forge_zones_axes(zone, &forward, &left, &up);
+	if (zone->shape == _forge_zone_circle)
+		forge_zones_draw_cylinder(zone, &forward, &left, &up, &edge_color, &face_color);
+	else
+		forge_zones_draw_box(zone, &forward, &left, &up, &edge_color, &face_color);
+	if (zone->kind == _forge_zone_teleport)
+	{
+		real_argb_color arrow_color = edge_color;
+
+		arrow_color.alpha = 1.f;
+		forge_zones_draw_arrow(zone, &forward, &left, &up, &arrow_color);
 	}
 
 	return;
@@ -1041,6 +1211,25 @@ static void forge_zones_teleport(
 	local.i = PIN(local.i / from->half_size.i, -1.f, 1.f) * MAX(to->half_size.i - FORGE_ZONES_TELEPORT_MARGIN, 0.f);
 	local.j = PIN(local.j / from->half_size.j, -1.f, 1.f) * MAX(to->half_size.j - FORGE_ZONES_TELEPORT_MARGIN, 0.f);
 	local.k = MAX(local.k + from->half_size.k, FORGE_ZONES_TELEPORT_MARGIN) - to->half_size.k;
+	if (to->shape == _forge_zone_circle)
+	{
+		/* (a corner of a square is outside a circle) */
+		real along = to->half_size.i > FORGE_ZONES_TELEPORT_MARGIN
+			? local.i / (to->half_size.i - FORGE_ZONES_TELEPORT_MARGIN)
+			: 0.f;
+		real across = to->half_size.j > FORGE_ZONES_TELEPORT_MARGIN
+			? local.j / (to->half_size.j - FORGE_ZONES_TELEPORT_MARGIN)
+			: 0.f;
+		real distance_squared = along * along + across * across;
+
+		if (distance_squared > 1.f)
+		{
+			real scale = reciprocal_square_root(distance_squared);
+
+			local.i *= scale;
+			local.j *= scale;
+		}
+	}
 	forge_zones_axes(to, &to_forward, &to_left, &to_up);
 	position.x = to->center.x + to_forward.i * local.i + to_left.i * local.j + to_up.i * local.k;
 	position.y = to->center.y + to_forward.j * local.i + to_left.j * local.j + to_up.j * local.k;
@@ -1379,6 +1568,7 @@ enum forge_zones_row
 	_forge_zones_row_new,
 	_forge_zones_row_zone,
 	_forge_zones_row_kind,
+	_forge_zones_row_shape,
 	_forge_zones_row_setting,
 	_forge_zones_row_extra,
 	_forge_zones_row_width,
@@ -1469,6 +1659,10 @@ static void forge_zones_menu_row_text(
 	case _forge_zones_row_kind:
 		_snprintf(label, label_size, "Kind");
 		_snprintf(value, value_size, "%s", forge_zone_kinds[zone->kind].name);
+		break;
+	case _forge_zones_row_shape:
+		_snprintf(label, label_size, "Shape");
+		_snprintf(value, value_size, "%s", forge_zones_shape_names[zone->shape]);
 		break;
 	case _forge_zones_row_setting:
 		switch (zone->kind)
@@ -1582,6 +1776,9 @@ static int forge_zones_menu_row_change(
 			forge_zones_forget_kill_timers();
 		}
 		break;
+	case _forge_zones_row_shape:
+		zone->shape = forge_zones_cycle(zone->shape, NUMBER_OF_FORGE_ZONE_SHAPES, direction);
+		break;
 	case _forge_zones_row_setting:
 		if (direction == 0)
 			break;
@@ -1679,10 +1876,10 @@ static void forge_zones_layout_save(
 	{
 		struct forge_zone const *zone = &forge_zones_globals.zones[index];
 
-		halo_layout_printf(writer, "zone %d %d %.4f %.4f %.4f %.5f %.4f %.4f %.4f %d %d %.5f %.5f",
+		halo_layout_printf(writer, "zone %d %d %.4f %.4f %.4f %.5f %.4f %.4f %.4f %d %d %.5f %.5f %d",
 			zone->kind, zone->setting_index, zone->center.x, zone->center.y, zone->center.z, zone->yaw,
 			zone->half_size.i, zone->half_size.j, zone->half_size.k, zone->channel, zone->direction,
-			zone->pitch, zone->roll);
+			zone->pitch, zone->roll, zone->shape);
 	}
 
 	return;
@@ -1704,14 +1901,16 @@ static void forge_zones_layout_load(
 	int setting_index;
 	int channel;
 	int direction;
+	/* (a layout saved before zones had shapes has none: square) */
+	int shape = _forge_zone_square;
 	/* (a layout saved before zones could tilt has no pitch and roll) */
 	float values[9] = { 0 };
 	short index;
 
 	if (forge_zones_globals.zone_count < FORGE_ZONES_MAXIMUM_ZONES &&
-		sscanf(line, "zone %d %d %f %f %f %f %f %f %f %d %d %f %f", &kind, &setting_index,
+		sscanf(line, "zone %d %d %f %f %f %f %f %f %f %d %d %f %f %d", &kind, &setting_index,
 			&values[0], &values[1], &values[2], &values[3], &values[4], &values[5], &values[6],
-			&channel, &direction, &values[7], &values[8]) >= 11 &&
+			&channel, &direction, &values[7], &values[8], &shape) >= 11 &&
 		kind >= 0 && kind < NUMBER_OF_FORGE_ZONE_KINDS)
 	{
 		/* (a number that is none fails every comparison) */
@@ -1736,6 +1935,7 @@ static void forge_zones_layout_load(
 		zone.half_size.k = values[6];
 		zone.channel = (short)PIN(channel, 1, FORGE_ZONES_MAXIMUM_CHANNEL);
 		zone.direction = (short)PIN(direction, 0, NUMBER_OF_FORGE_ZONE_DIRECTIONS - 1);
+		zone.shape = (short)PIN(shape, 0, NUMBER_OF_FORGE_ZONE_SHAPES - 1);
 		zone.setting_index = (short)PIN(setting_index, 0, MAX(forge_zone_kinds[kind].setting_count - 1, 0));
 		forge_zones_globals.zones[forge_zones_globals.zone_count++] = zone;
 	}
