@@ -119,8 +119,10 @@ enum forge_zone_shape
 	NUMBER_OF_FORGE_ZONE_SHAPES
 };
 
-/* the sides a circle zone is drawn with */
-#define FORGE_ZONES_CIRCLE_SEGMENTS 24
+/* the sides a circle zone is drawn with: the game draws a frame's debug
+geometry from 8,192 lines and triangles at most (rasterizer_debug.c), which
+the zones share with the spawns, the waypoints and the rest */
+#define FORGE_ZONES_CIRCLE_SEGMENTS 16
 
 /* world units (a world unit is about 3 metres) */
 #define FORGE_ZONES_DEFAULT_LENGTH 3.f
@@ -133,8 +135,14 @@ enum forge_zone_shape
 /* how far below the aimed surface a zone's floor goes, so that what
 stands there is in it */
 #define FORGE_ZONES_FLOOR_DEPTH 0.1f
-/* how far the crosshair selects zones */
+/* how far the crosshair selects zones, and how far from their edge they are
+drawn (the chosen one wherever it is) */
 #define FORGE_ZONES_SELECT_RANGE 200.f
+#define FORGE_ZONES_DRAW_RANGE 200.f
+/* how much of its colour an edge of a zone that is not the chosen one has:
+edges are drawn opaque, which the game draws together, all in one go, where
+it draws each see-through line by itself */
+#define FORGE_ZONES_DIM_EDGE 0.6f
 /* the upward speed, world units a tick, a lift gives a biped standing on
 the ground, to take it off */
 #define FORGE_ZONES_LIFT_TAKEOFF_SPEED 0.05f
@@ -874,7 +882,8 @@ static void forge_zones_draw_cylinder(
 	real_vector3d const *left,
 	real_vector3d const *up,
 	real_argb_color const *edge_color,
-	real_argb_color const *face_color)
+	real_argb_color const *face_color,
+	boolean fill_sides)
 {
 	real_point3d bottom[FORGE_ZONES_CIRCLE_SEGMENTS];
 	real_point3d top[FORGE_ZONES_CIRCLE_SEGMENTS];
@@ -900,8 +909,12 @@ static void forge_zones_draw_cylinder(
 
 		rasterizer_debug_triangle(&bottom_center, &bottom[index], &bottom[next], face_color);
 		rasterizer_debug_triangle(&top_center, &top[index], &top[next], face_color);
-		rasterizer_debug_triangle(&bottom[index], &bottom[next], &top[next], face_color);
-		rasterizer_debug_triangle(&bottom[index], &top[next], &top[index], face_color);
+		/* (the sides only of the chosen zone: each is drawn by itself) */
+		if (fill_sides)
+		{
+			rasterizer_debug_triangle(&bottom[index], &bottom[next], &top[next], face_color);
+			rasterizer_debug_triangle(&bottom[index], &top[next], &top[index], face_color);
+		}
 		rasterizer_debug_line_shaded(&bottom[index], &bottom[next], edge_color, edge_color);
 		rasterizer_debug_line_shaded(&top[index], &top[next], edge_color, edge_color);
 		/* (a few of the sides, not all: it would be a blur) */
@@ -951,12 +964,18 @@ static void forge_zones_draw_zone(
 	real_argb_color edge_color = forge_zones_zone_color(zone);
 	real_argb_color face_color = edge_color;
 
-	edge_color.alpha = selected ? 1.f : 0.6f;
+	edge_color.alpha = 1.f;
+	if (!selected)
+	{
+		edge_color.red *= FORGE_ZONES_DIM_EDGE;
+		edge_color.green *= FORGE_ZONES_DIM_EDGE;
+		edge_color.blue *= FORGE_ZONES_DIM_EDGE;
+	}
 	face_color.alpha = selected ? 0.25f : 0.12f;
 
 	forge_zones_axes(zone, &forward, &left, &up);
 	if (zone->shape == _forge_zone_circle)
-		forge_zones_draw_cylinder(zone, &forward, &left, &up, &edge_color, &face_color);
+		forge_zones_draw_cylinder(zone, &forward, &left, &up, &edge_color, &face_color, selected);
 	else
 		forge_zones_draw_box(zone, &forward, &left, &up, &edge_color, &face_color);
 	if (zone->kind == _forge_zone_teleport)
@@ -1010,16 +1029,22 @@ draws the queued debug geometry at the end of the view's window
 static void forge_zones_render_world(
 	void)
 {
+	struct observer_result const *camera;
 	short zone_index;
 
 	if (!forge_zones_visible() || game_connection() == _game_connection_film_playback)
 		return;
 
+	camera = observer_get_camera(FORGE_ZONES_LOCAL_PLAYER_INDEX);
 	for (zone_index = 0; zone_index < forge_zones_globals.zone_count; zone_index++)
 	{
 		struct forge_zone const *zone = &forge_zones_globals.zones[zone_index];
+		boolean selected = zone_index == forge_zones_globals.selected_zone_index;
+		real extent = MAX(MAX(zone->half_size.i, zone->half_size.j), zone->half_size.k);
 
-		forge_zones_draw_zone(zone, zone_index == forge_zones_globals.selected_zone_index);
+		if (!selected && distance3d(&camera->position, &zone->center) - extent > FORGE_ZONES_DRAW_RANGE)
+			continue;
+		forge_zones_draw_zone(zone, selected);
 		if (zone->kind == _forge_zone_teleport)
 		{
 			short destination_index = forge_zones_teleport_destination(zone_index);
@@ -1028,7 +1053,7 @@ static void forge_zones_render_world(
 			{
 				real_argb_color color = forge_zones_zone_color(zone);
 
-				color.alpha = 0.9f;
+				color.alpha = 1.f;
 				rasterizer_debug_line_shaded(&zone->center, &forge_zones_globals.zones[destination_index].center,
 					&color, &color);
 			}

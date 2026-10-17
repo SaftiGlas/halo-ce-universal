@@ -281,6 +281,8 @@ void halo_mods_new_map(
 {
 	short mod_index;
 
+	/* (Forge's monitor is found again in this map's tags, forge_monitor.c) */
+	forge_monitor_new_map();
 	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
 	{
 		if (halo_mod_globals.mods[mod_index]->new_map)
@@ -449,14 +451,12 @@ void halo_mod_draw_box(
 	return;
 }
 
-/* as draw_quad (cutscene/cinematics.c), with corners between the screen's
-units: the screen is drawn with several of the display's pixels to a unit, so
-thin shapes can be as sharp as the display */
-void halo_mod_draw_box_real(
-	float x0,
-	float y0,
-	float x1,
-	float y1,
+/* as draw_quad (cutscene/cinematics.c), a shape of four corners, clockwise,
+between the screen's units: the screen is drawn with several of the display's
+pixels to a unit, so thin shapes can be as sharp as the display */
+static void halo_mod_draw_corners(
+	float const x[4],
+	float const y[4],
 	unsigned long argb)
 {
 	struct game_globals *game_globals = scenario_get_game_globals();
@@ -469,9 +469,8 @@ void halo_mod_draw_box_real(
 
 	for (vertex_index = 0; vertex_index < NUMBEROF(vertices); vertex_index++)
 	{
-		/* clockwise from the top left */
-		vertices[vertex_index].position.x = vertex_index == 1 || vertex_index == 2 ? x1 : x0;
-		vertices[vertex_index].position.y = vertex_index >= 2 ? y1 : y0;
+		vertices[vertex_index].position.x = x[vertex_index];
+		vertices[vertex_index].position.y = y[vertex_index];
 		vertices[vertex_index].color = (pixel32)argb;
 		vertices[vertex_index].texture_coordinates.x = 0.f;
 		vertices[vertex_index].texture_coordinates.y = 0.f;
@@ -494,6 +493,56 @@ void halo_mod_draw_box_real(
 	rasterizer_globals.current_lock_operation = _rasterizer_lock_cinematics;
 	rasterizer_psuedo_dynamic_screen_quad_draw(&parameters, vertices);
 	rasterizer_globals.current_lock_operation = _rasterizer_lock_none;
+
+	return;
+}
+
+void halo_mod_draw_box_real(
+	float x0,
+	float y0,
+	float x1,
+	float y1,
+	unsigned long argb)
+{
+	float x[4];
+	float y[4];
+
+	/* clockwise from the top left */
+	x[0] = x0;
+	x[1] = x1;
+	x[2] = x1;
+	x[3] = x0;
+	y[0] = y0;
+	y[1] = y0;
+	y[2] = y1;
+	y[3] = y1;
+	halo_mod_draw_corners(x, y, argb);
+
+	return;
+}
+
+/* a quad whose last two corners are one */
+void halo_mod_draw_triangle_real(
+	float x0,
+	float y0,
+	float x1,
+	float y1,
+	float x2,
+	float y2,
+	unsigned long argb)
+{
+	float x[4];
+	float y[4];
+
+	x[0] = x0;
+	x[1] = x1;
+	x[2] = x2;
+	x[3] = x2;
+	y[0] = y0;
+	y[1] = y1;
+	y[2] = y2;
+	y[3] = y2;
+	halo_mod_draw_corners(x, y, argb);
 
 	return;
 }

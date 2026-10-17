@@ -141,8 +141,10 @@ static struct
 	boolean unit_friendly[FORGE_AI_MAXIMUM_UNITS];
 	short unit_count;
 
-	/* the scenario's command lists with ours at the end, made for this map */
+	/* the scenario's command lists with ours at the end, made for this map,
+	and the previous map's (freed when the next map's is made) */
 	struct ai_command_list_definition *command_lists;
+	struct ai_command_list_definition *previous_command_lists;
 	struct ai_command_definition commands[FORGE_AI_MAXIMUM_COMMANDS];
 	struct ai_command_point_definition points[FORGE_AI_MAXIMUM_WAYPOINTS];
 	short command_list_index;
@@ -264,7 +266,24 @@ a count and an address, so each map gets a copy of its list with one more at
 the end, ours, whose commands and points are arrays here that change when
 the waypoints do. */
 
-/* makes the command list of this map: its own plus ours */
+/* the command list array in use is no longer this map's: it is kept a map
+longer (a stale pointer to it could be in a command list still running for a
+moment), and the one before it is freed */
+static void forge_ai_retire_command_lists(
+	void)
+{
+	free(forge_ai_globals.previous_command_lists);
+	forge_ai_globals.previous_command_lists = forge_ai_globals.command_lists;
+	forge_ai_globals.command_lists = NULL;
+	forge_ai_globals.command_list_index = NONE;
+
+	return;
+}
+
+/* makes the command list of this map: its own plus ours. A map reset
+(main/main.c, main_reset_map_private) starts the map again without loading
+its tags, so its scenario has ours already: it is kept, not copied again with
+another of ours at the end. */
 static void forge_ai_install_command_list(
 	void)
 {
@@ -273,6 +292,14 @@ static void forge_ai_install_command_list(
 	struct ai_command_list_definition *lists;
 	struct ai_command_list_definition *list;
 
+	if (forge_ai_globals.command_lists && count > 0 &&
+		scenario->ai_command_lists.address == forge_ai_globals.command_lists)
+	{
+		forge_ai_globals.command_list_index = (short)(count - 1);
+		return;
+	}
+
+	forge_ai_retire_command_lists();
 	lists = (struct ai_command_list_definition *)calloc(count + 1, sizeof(struct ai_command_list_definition));
 	if (!lists)
 		return;
@@ -285,7 +312,6 @@ static void forge_ai_install_command_list(
 	list->commands.address = forge_ai_globals.commands;
 	list->points.address = forge_ai_globals.points;
 
-	free(forge_ai_globals.command_lists);
 	forge_ai_globals.command_lists = lists;
 	forge_ai_globals.command_list_index = (short)count;
 	scenario->ai_command_lists.count = count + 1;
@@ -1049,13 +1075,14 @@ static void forge_ai_new_map(
 	forge_ai_globals.waypoint_count = 0;
 	forge_ai_globals.unit_count = 0;
 	forge_ai_hold_globals.waypoint_index = NONE;
-	forge_ai_globals.command_lists = NULL;
-	forge_ai_globals.command_list_index = NONE;
 	forge_ai_find_characters();
-	if (halo_mods_authoritative())
+	if (!halo_mods_authoritative())
 	{
-		/* (the previous map's list array is not freed: its scenario is gone, and a stale
-		pointer to it could be in a command list still running for a moment) */
+		/* (a system link client's AI is the host's: no list of ours) */
+		forge_ai_retire_command_lists();
+	}
+	else
+	{
 		forge_ai_install_command_list();
 		forge_ai_update_command_list();
 	}
@@ -1074,7 +1101,9 @@ static void forge_ai_render_world(
 		game_connection() == _game_connection_film_playback)
 		return;
 
-	color.alpha = 0.9f;
+	/* (opaque: the game draws opaque debug lines together, and each
+	see-through one by itself) */
+	color.alpha = 1.f;
 	color.red = FORGE_AI_WAYPOINT_COLOR_R;
 	color.green = FORGE_AI_WAYPOINT_COLOR_G;
 	color.blue = FORGE_AI_WAYPOINT_COLOR_B;

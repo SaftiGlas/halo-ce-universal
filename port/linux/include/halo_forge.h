@@ -49,6 +49,12 @@ struct halo_linux_forge_keys
 	int pad_menu; /* X: the menu while flying; holding, the object's popup, else the step */
 	int pad_remove; /* Y: remove the object under the crosshair or held */
 	int pad_turn; /* right trigger (RT) held: the right stick turns what is held */
+	/* A, B and start of a gamepad or the touch controls alone (menu_select is
+	enter too, menu_close escape and backspace): while a line is typed, A
+	types the character grid's chosen key, B leaves the line and start takes it */
+	int pad_select;
+	int pad_cancel;
+	int pad_start;
 	float pad_look_x; /* the right stick, -1 to 1, right and up positive */
 	float pad_look_y;
 };
@@ -68,6 +74,12 @@ void halo_linux_forge_capture_menu_keys(int capture);
 /* while TRUE (the camera flies), the D-pad's up and the shoulder buttons
 stop driving controller 1 */
 void halo_linux_forge_set_flying(int flying);
+/* while TRUE (the free camera flies: not the monitor, whose look is the
+player's), the touch controls' swipe and gyroscope turn the camera, read with
+halo_linux_forge_touch_look (radians, as halo_linux_mouse_look's), and not
+the player */
+void halo_linux_forge_set_free_camera(int free_camera);
+int halo_linux_forge_touch_look(float *yaw, float *pitch);
 /* while TRUE (a name is being typed, forge_text_entry_begin), the keyboard
 drives neither controller 1 nor the mods' keys (halo_mod_key_down);
 halo_linux_forge_read_text_keys still reads it: whether each of the first
@@ -180,6 +192,8 @@ int forge_monitor_import_wanted(void);
 /* the monitor's biped in this map, or -1 (NONE): Forge then flies its
 camera free of the player (camera/director_forge.c) */
 long forge_monitor_definition(void);
+/* the monitor's biped is looked for again (game/mods.c, a new map) */
+void forge_monitor_new_map(void);
 int forge_unit_is_monitor(long unit_index);
 int forge_player_is_monitor(long player_index);
 /* the game's machine only: makes the player the monitor or gives them

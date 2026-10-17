@@ -197,7 +197,11 @@ a map it lacks, and the game's players reach each other to send it; version
 28 holds the players of a machine still downloading the map out of the game
 until it has the map, keeps a multiplayer map's first scripted BSP, leaves
 dynamic lights and the flashlight on past the Xbox game's player and vehicle
-limits, and readies a second weapon picked up while firing.
+limits, and readies a second weapon picked up while firing; version 29 sends
+a Forge game's layout to its clients and takes their Forge tools' edits for
+the host to make (`port/linux/game/forge_layout.c`); version 30 gives a Forge
+zone a shape, square or circle, in the layout, which gravity zones need on
+every machine.
 
 `port/linux/network_format.txt` records the wire format of the current
 version (`tools/network_format.py`): `test_linux_port.py` fails when the

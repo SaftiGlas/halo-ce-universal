@@ -347,6 +347,10 @@ static const struct config_setting config_settings[] =
 	{ "game.import_into", _config_string, "\"\"", "HALO_IMPORT_INTO", _environment_value, _platform_desktop,
 		"The maps game.import applies to, with commas between: \"bloodgulch,wizard\";\n"
 		"empty for every map but the menu's." },
+	{ "game.forge", _config_string, "\"forge\"", "HALO_FORGE", _environment_value, _platform_all,
+		"Where the dev tools (Forge) are on: \"forge\", in local and system link\n"
+		"games of the Forge game type; \"all\", in every game, for development.\n"
+		"Every machine of a system link game needs the same." },
 	{ "game.forge_monitor", _config_boolean, "true", "HALO_FORGE_MONITOR", _environment_value, _platform_all,
 		"In a Forge game, the builder flies as the monitor (343 Guilty Spark),\n"
 		"whose tags come from The Maw (c40.map) as the map loads; false, or\n"
@@ -575,8 +579,9 @@ static const struct config_setting config_settings[] =
 	{ "debug.forge_menu_tab", _config_integer, "-1", "HALO_FORGE_MENU_TAB", _environment_value, _platform_desktop,
 		"With the dev tools on (a Forge game), a few seconds into a game, open their\n"
 		"menu on this tab (0 is the first), for screenshots of it; 100 opens an\n"
-		"object's popup instead, on the first object of the map, and 101 the popup\n"
-		"of a held object; -1 never." },
+		"object's popup instead, on the first object of the map, 101 the popup\n"
+		"of a held object, and 102 a line being typed (its character grid); -1\n"
+		"never." },
 	{ "debug.forge_layout_save", _config_integer, "0", "HALO_FORGE_LAYOUT_SAVE", _environment_value, _platform_desktop,
 		"For automated tests: in a local game, save the Forge layout to this slot (1\n"
 		"to 16) a few seconds in, once, and log where the player is; 0 never." },

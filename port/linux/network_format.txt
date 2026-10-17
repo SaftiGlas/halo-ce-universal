@@ -1,4 +1,4 @@
-version 28
+version 30
 bound DISCORD_ID_SIZE 24
 bound DISCORD_NAME_SIZE 40
 bound DISTRIBUTED_INPUT_HISTORY 4
@@ -55,6 +55,8 @@ enum _distributed_message_coop_skip_vote 70
 enum _distributed_message_coop_sounds_retired 67
 enum _distributed_message_damage_animations 75
 enum _distributed_message_damage_events 10
+enum _distributed_message_forge_edit 97
+enum _distributed_message_forge_layout 96
 enum _distributed_message_game_state 7
 enum _distributed_message_hit_reports 11
 enum _distributed_message_inventories 4

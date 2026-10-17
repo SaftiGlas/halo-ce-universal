@@ -116,6 +116,10 @@ put one (world units) */
 #define FORGE_SPAWNS_DRAW_RANGE 120.f
 #define FORGE_SPAWNS_SELECT_RADIUS 0.3f
 #define FORGE_SPAWNS_WORLD_BOUND 32768.f
+/* the most a layout's line may give a spawn: its team's index (a game has
+16 teams at most), and how far round it faces (radians) */
+#define FORGE_SPAWNS_MAXIMUM_TEAM_INDEX 15
+#define FORGE_SPAWNS_FACING_BOUND 64.f
 /* world units a second a held spawn rises and sinks, and radians a second
 it turns: the tools' own speeds for an object (port/linux/game/forge.c) */
 #define FORGE_SPAWNS_HOLD_RAISE_SPEED 2.f
@@ -547,9 +551,17 @@ static void forge_spawns_draw(
 		color.green = team_index == _team_red ? 0.25f : team_index == _team_blue ? 0.5f : 1.f;
 		color.blue = team_index == _team_red ? 0.2f : 1.f;
 	}
-	color.alpha = selected ? 1.f : 0.6f;
 	wedge_color = color;
 	wedge_color.alpha = selected ? 0.5f : 0.25f;
+	/* (the lines opaque, dimmer when not chosen: the game draws opaque debug
+	lines together, and each see-through one by itself) */
+	color.alpha = 1.f;
+	if (!selected)
+	{
+		color.red *= 0.6f;
+		color.green *= 0.6f;
+		color.blue *= 0.6f;
+	}
 
 	vector3d_from_angle(&forward, *forge_spawns_facing(kind, index));
 	top.z += height;
@@ -1253,6 +1265,27 @@ static boolean forge_spawns_layout_position(
 	return TRUE;
 }
 
+/* a layout's game type as a spawn's: a game's own, one of the "every game"
+kinds, or none for anything else */
+static short forge_spawns_layout_game_type(
+	int game_type)
+{
+	return (game_type >= game_engine_none && game_type < number_of_game_engines) ||
+		(game_type >= FORGE_SPAWNS_GAME_TYPE_ALL && game_type <= FORGE_SPAWNS_GAME_TYPE_ALL_NORMAL)
+		? (short)game_type
+		: (short)game_engine_none;
+}
+
+/* a layout's facing: what is not a number, or turns too far round, faces
+along x */
+static real forge_spawns_layout_facing(
+	float facing)
+{
+	return facing > -FORGE_SPAWNS_FACING_BOUND && facing < FORGE_SPAWNS_FACING_BOUND ? facing : 0.f;
+}
+
+/* (a layout's line comes from a file or from the host of a system link
+game: what it names is checked as another machine's message is) */
 static void forge_spawns_layout_load(
 	char const *line)
 {
@@ -1279,12 +1312,12 @@ static void forge_spawns_layout_load(
 			struct player_starting_location *player = forge_spawns_player(index);
 
 			player->position = position;
-			player->facing = values[3];
-			player->team_index = (short)numbers[0];
-			player->game_types[0] = (short)numbers[1];
-			player->game_types[1] = (short)numbers[2];
-			player->game_types[2] = (short)numbers[3];
-			player->game_types[3] = (short)numbers[4];
+			player->facing = forge_spawns_layout_facing(values[3]);
+			player->team_index = (short)PIN(numbers[0], 0, FORGE_SPAWNS_MAXIMUM_TEAM_INDEX);
+			player->game_types[0] = forge_spawns_layout_game_type(numbers[1]);
+			player->game_types[1] = forge_spawns_layout_game_type(numbers[2]);
+			player->game_types[2] = forge_spawns_layout_game_type(numbers[3]);
+			player->game_types[3] = forge_spawns_layout_game_type(numbers[4]);
 		}
 	}
 	else if (sscanf(line, "item %f %f %f %f %d %d %ld %d %d %d %d %n", &values[0], &values[1], &values[2], &values[3],
@@ -1304,14 +1337,14 @@ static void forge_spawns_layout_load(
 			struct scenario_netgame_equipment *item = forge_spawns_item(index);
 
 			item->position = position;
-			item->facing = values[3];
-			item->team_index = (short)numbers[0];
-			item->spawn_time = (short)MAX(numbers[1], 0);
+			item->facing = forge_spawns_layout_facing(values[3]);
+			item->team_index = (short)PIN(numbers[0], 0, FORGE_SPAWNS_MAXIMUM_TEAM_INDEX);
+			item->spawn_time = (short)PIN(numbers[1], 0, SHORT_MAX);
 			item->flags = flags;
-			item->game_type[0] = (short)numbers[2];
-			item->game_type[1] = (short)numbers[3];
-			item->game_type[2] = (short)numbers[4];
-			item->game_type[3] = (short)numbers[5];
+			item->game_type[0] = forge_spawns_layout_game_type(numbers[2]);
+			item->game_type[1] = forge_spawns_layout_game_type(numbers[3]);
+			item->game_type[2] = forge_spawns_layout_game_type(numbers[4]);
+			item->game_type[3] = forge_spawns_layout_game_type(numbers[5]);
 			item->run_time_spawned_item_index = NONE;
 			item->item_collection.group_tag = ITEM_COLLECTION_DEFINITION_TAG;
 			item->item_collection.index = collection_index;

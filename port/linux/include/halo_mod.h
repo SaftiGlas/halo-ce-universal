@@ -277,5 +277,8 @@ void halo_mod_draw_box(short x0, short y0, short x1, short y1, unsigned long arg
 /* the same with corners between the screen's units, for shapes thinner than
 one (the display has several pixels to a unit) */
 void halo_mod_draw_box_real(float x0, float y0, float x1, float y1, unsigned long argb);
+/* a filled triangle, its corners clockwise on the screen, in one draw (as
+halo_mod_draw_box_real, between the screen's units) */
+void halo_mod_draw_triangle_real(float x0, float y0, float x1, float y1, float x2, float y2, unsigned long argb);
 
 #endif

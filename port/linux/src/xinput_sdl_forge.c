@@ -69,6 +69,9 @@ drive the controller.
 
 /* main/console.c */
 extern unsigned char console_is_active(void);
+/* port/linux/game/menu_functions.c: two or more players on this machine
+(co-op, or split screen in a network game) */
+extern unsigned char pc_menu_split_players(void);
 
 /* ---------- device tables */
 
@@ -108,9 +111,13 @@ the touch controls (their swipe, gyroscope or stick: halo_linux_mouse_aiming,
 halo_linux_touch_aiming) */
 static Uint64 mouse_aimed_ms = 0;
 static Uint64 stick_aimed_ms = 0;
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 static Uint64 touch_aimed_ms = 0;
 #endif
+/* while the dev tools' free camera flies (not the monitor, whose look is the
+player's), the touch controls' swipe and gyroscope turn the camera
+(halo_linux_forge_touch_look) and not the player (halo_linux_touch_look) */
+static volatile int forge_free_camera = FALSE;
 
 /* the right stick's deflection that counts as aiming with it, clear of a
 worn stick's drift */
@@ -170,7 +177,7 @@ int halo_linux_mouse_look(short gamepad_index, float *yaw, float *pitch)
 	return TRUE;
 }
 
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 /* the touch controls moved the player or the aim (halo_linux_touch_aiming) */
 static void touch_used(void)
 {
@@ -182,14 +189,15 @@ static void touch_used(void)
 
 /* the touch controls' stick as the player's movement (input_abstraction.c's
 keyboard_controls_update), forward and strafe -1..1, whatever the
-profile's sticks do; nonzero while it is pushed. Nothing but on Android. */
+profile's sticks do; nonzero while it is pushed. Nothing but on Android and
+the web (port/web/site/touch.js). */
 int halo_linux_touch_move(short controller_index, float *forward, float *strafe)
 {
 	*forward = 0.0f;
 	*strafe = 0.0f;
 	if (controller_index != 0)
 		return FALSE;
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 	if (!touch_input_move(forward, strafe))
 		return FALSE;
 	touch_used();
@@ -203,16 +211,16 @@ int halo_linux_touch_move(short controller_index, float *forward, float *strafe)
 the mouse's rate per pixel (the view applies its own sensitivity), each
 apart: player_control.c inverts the swipe as the profile inverts the stick,
 not the gyroscope, which turns as the phone does, and makes them the
-stick's rate before the magnetism. Nothing but on Android. */
+stick's rate before the magnetism. Nothing but on Android and the web. */
 int halo_linux_touch_look(short gamepad_index, float *yaw, float *pitch, float *gyro_yaw, float *gyro_pitch)
 {
 	*yaw = 0.0f;
 	*pitch = 0.0f;
 	*gyro_yaw = 0.0f;
 	*gyro_pitch = 0.0f;
-	if (gamepad_index != 0)
+	if (gamepad_index != 0 || forge_free_camera)
 		return FALSE;
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 	touch_input_look(0.0022f, yaw, pitch, gyro_yaw, gyro_pitch);
 	if (*yaw == 0.0f && *pitch == 0.0f && *gyro_yaw == 0.0f && *gyro_pitch == 0.0f)
 		return FALSE;
@@ -228,7 +236,7 @@ assist (input.touch_aim_assist false): no magnetism, as for the mouse
 (player_control.c), until a stick moves the aim again */
 int halo_linux_touch_aiming(short gamepad_index)
 {
-#ifdef HALO_ANDROID
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
 	int aiming;
 
 	if (gamepad_index != 0 || touch_input_aim_assist())
@@ -335,6 +343,53 @@ static volatile int forge_flying_keys = FALSE;
 void halo_linux_forge_set_flying(int flying)
 {
 	forge_flying_keys = flying;
+}
+
+void halo_linux_forge_set_free_camera(int free_camera)
+{
+	forge_free_camera = free_camera;
+}
+
+/* the touch controls' swipe and gyroscope since the last call, for the free
+camera (camera/director_forge.c), in radians at the mouse's rate per pixel as
+halo_linux_mouse_look's are; nothing but on Android and the web */
+int halo_linux_forge_touch_look(float *yaw, float *pitch)
+{
+	*yaw = 0.0f;
+	*pitch = 0.0f;
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
+	{
+		float gyro_yaw = 0.0f;
+		float gyro_pitch = 0.0f;
+
+		touch_input_look(0.0022f, yaw, pitch, &gyro_yaw, &gyro_pitch);
+		*yaw += gyro_yaw;
+		*pitch += gyro_pitch;
+		if (*yaw == 0.0f && *pitch == 0.0f)
+			return FALSE;
+		touch_used();
+		return TRUE;
+	}
+#else
+	return FALSE;
+#endif
+}
+
+/* the buttons the touch controls pressed on port 0 at its last read, before the dev tools' filter: the dev tools take
+them as they take the first gamepad's (halo_linux_forge_read_keys) */
+static XINPUT_GAMEPAD forge_touch_pad;
+
+static void forge_touch_pad_note(const XINPUT_GAMEPAD *before, const XINPUT_GAMEPAD *after)
+{
+	int index;
+
+	memset(&forge_touch_pad, 0, sizeof(forge_touch_pad));
+	forge_touch_pad.wButtons = (WORD)(after->wButtons & ~before->wButtons);
+	for (index = 0; index < (int)sizeof(after->bAnalogButtons); index++)
+	{
+		if (after->bAnalogButtons[index] > before->bAnalogButtons[index])
+			forge_touch_pad.bAnalogButtons[index] = after->bAnalogButtons[index];
+	}
 }
 
 /* while the camera flies, the D-pad, the shoulder buttons and the left
@@ -791,6 +846,14 @@ the same weapon straight back. Timed in milliseconds, not polls: polls come
 once a frame, at the display's refresh rate. */
 #define WHEEL_PRESS_MS 50
 #define WHEEL_SCROLL_GAP_MS 200
+/* how far the wheel turns before it switches: a notch. A browser's notch is
+pixels, which SDL counts as a notch per 100, and some send fewer for one
+(about half), so in the web build half of SDL's notch is one */
+#ifdef HALO_WEB
+#define WHEEL_NOTCH 0.5f
+#else
+#define WHEEL_NOTCH 1.0f
+#endif
 
 /* debug.test_input "bot:<seed>": a scripted player for the automated
 network tests (port/linux/game/network_test.c), different for each seed:
@@ -867,7 +930,7 @@ static void wheel_update(void)
 	pthread_mutex_lock(&mouse_lock);
 	if (!wheel_scrolling)
 	{
-		if (fabsf(mouse_wheel_accumulated) >= 1.0f)
+		if (fabsf(mouse_wheel_accumulated) >= WHEEL_NOTCH)
 		{
 			wheel_scrolling = TRUE;
 			wheel_direction = mouse_wheel_accumulated > 0.0f ? 1 : -1;
@@ -929,6 +992,46 @@ static int sdl_gamepads(SDL_Gamepad *gamepads[PORT_COUNT])
 #endif
 	SDL_free(ids);
 	return found;
+}
+
+/* whether one gamepad is port 1's (port_gamepad) */
+static BOOL lone_gamepad_split;
+
+/* no button of the gamepad held, its sticks and triggers at rest */
+static BOOL gamepad_idle(SDL_Gamepad *gamepad)
+{
+	int index;
+
+	for (index = 0; index < SDL_GAMEPAD_BUTTON_COUNT; index++)
+	{
+		if (SDL_GetGamepadButton(gamepad, (SDL_GamepadButton)index))
+			return FALSE;
+	}
+	for (index = 0; index < SDL_GAMEPAD_AXIS_COUNT; index++)
+	{
+		if (abs(SDL_GetGamepadAxis(gamepad, (SDL_GamepadAxis)index)) > 8000)
+			return FALSE;
+	}
+	return TRUE;
+}
+
+/* the gamepad of a port: the first shares port 0 with the keyboard, but for
+two or more players with one gamepad (co-op, split screen), port 1 has it
+(the keyboard's player is 1, the gamepad's 2). It changes port only at rest:
+a button held across the change would be pressed again on the other port
+(the B that leaves a profile screen leaving the game as player 1's) */
+static SDL_Gamepad *port_gamepad(SDL_Gamepad *gamepads[PORT_COUNT], int count, int port)
+{
+	if (count == 1)
+	{
+		BOOL split = pc_menu_split_players() != 0;
+
+		if (split != lone_gamepad_split && gamepad_idle(gamepads[0]))
+			lone_gamepad_split = split;
+		if (lone_gamepad_split)
+			return port == 1 ? gamepads[0] : NULL;
+	}
+	return port < count ? gamepads[port] : NULL;
 }
 
 static SHORT stick(Sint16 value, BOOL flip)
@@ -999,8 +1102,8 @@ static void sdl_gamepad_state(SDL_Gamepad *gamepad, XINPUT_GAMEPAD *pad)
 }
 
 /* the dev tools' keys and buttons (port/linux/game/forge.c): the keyboard,
-the mouse's buttons and the first SDL gamepad, which is merged into
-controller 1 */
+the mouse's buttons, the SDL gamepad that is merged into controller 1
+(port_gamepad) and the touch controls (forge_touch_pad) */
 int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
 {
 	struct platform_input_state input;
@@ -1010,6 +1113,7 @@ int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
 	SDL_Gamepad *gamepad;
 	BOOL mouse;
 	BOOL captured = forge_menu_keys_captured;
+	const XINPUT_GAMEPAD *touch = &forge_touch_pad;
 
 	memset(keys, 0, sizeof(*keys));
 	if (!forge_enabled() || console_is_active())
@@ -1017,15 +1121,18 @@ int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
 	platform_input_read(&input, FALSE);
 	mod_filter_keys(&input);
 	mouse = !input.mouse_released;
-	gamepad = sdl_gamepads(gamepads) > 0 ? gamepads[0] : NULL;
+	gamepad = port_gamepad(gamepads, sdl_gamepads(gamepads), 0);
 
 #define PAD_BUTTON(button) (gamepad && SDL_GetGamepadButton(gamepad, (button)))
 #define PAD_TRIGGER(axis) (gamepad && SDL_GetGamepadAxis(gamepad, (axis)) > 8192)
-	keys->toggle_flying = k[SDL_SCANCODE_HOME] || (!captured && PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_UP));
-	keys->menu = k[SDL_SCANCODE_1] || (!captured && PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_RIGHT));
-	keys->up = k[SDL_SCANCODE_R] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
-	keys->down = k[SDL_SCANCODE_F] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
-	keys->fast = k[SDL_SCANCODE_LSHIFT] || k[SDL_SCANCODE_RSHIFT] || PAD_TRIGGER(SDL_GAMEPAD_AXIS_LEFT_TRIGGER);
+#define TOUCH_DIGITAL(button) ((touch->wButtons & (button)) != 0)
+#define TOUCH_ANALOG(button) (touch->bAnalogButtons[(button)] > 0x40)
+	keys->toggle_flying = k[SDL_SCANCODE_HOME] || (!captured && (PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_UP) || TOUCH_DIGITAL(XINPUT_GAMEPAD_DPAD_UP)));
+	keys->menu = k[SDL_SCANCODE_1] || (!captured && (PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_RIGHT) || TOUCH_DIGITAL(XINPUT_GAMEPAD_DPAD_RIGHT)));
+	keys->up = k[SDL_SCANCODE_R] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) || TOUCH_ANALOG(XINPUT_GAMEPAD_BLACK);
+	keys->down = k[SDL_SCANCODE_F] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) || TOUCH_ANALOG(XINPUT_GAMEPAD_WHITE);
+	keys->fast = k[SDL_SCANCODE_LSHIFT] || k[SDL_SCANCODE_RSHIFT] || PAD_TRIGGER(SDL_GAMEPAD_AXIS_LEFT_TRIGGER) ||
+		TOUCH_ANALOG(XINPUT_GAMEPAD_LEFT_TRIGGER);
 	if (!forge_typing())
 	{
 		bindings_read();
@@ -1036,24 +1143,34 @@ int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
 	}
 	keys->faster = k[SDL_SCANCODE_UP] != 0;
 	keys->slower = k[SDL_SCANCODE_DOWN] != 0;
-	keys->menu_up = k[SDL_SCANCODE_UP] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_UP);
-	keys->menu_down = k[SDL_SCANCODE_DOWN] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_DOWN);
-	keys->menu_left = k[SDL_SCANCODE_LEFT] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_LEFT);
-	keys->menu_right = k[SDL_SCANCODE_RIGHT] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
+	keys->menu_up = k[SDL_SCANCODE_UP] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_UP) || TOUCH_DIGITAL(XINPUT_GAMEPAD_DPAD_UP);
+	keys->menu_down = k[SDL_SCANCODE_DOWN] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_DOWN) ||
+		TOUCH_DIGITAL(XINPUT_GAMEPAD_DPAD_DOWN);
+	keys->menu_left = k[SDL_SCANCODE_LEFT] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_LEFT) ||
+		TOUCH_DIGITAL(XINPUT_GAMEPAD_DPAD_LEFT);
+	keys->menu_right = k[SDL_SCANCODE_RIGHT] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_DPAD_RIGHT) ||
+		TOUCH_DIGITAL(XINPUT_GAMEPAD_DPAD_RIGHT);
 	keys->menu_select = k[SDL_SCANCODE_RETURN] || k[SDL_SCANCODE_KP_ENTER] ||
-		(mouse && m[SDL_BUTTON_LEFT]) || PAD_BUTTON(SDL_GAMEPAD_BUTTON_SOUTH);
-	keys->menu_close = k[SDL_SCANCODE_ESCAPE] || k[SDL_SCANCODE_BACKSPACE] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_EAST);
+		(mouse && m[SDL_BUTTON_LEFT]) || PAD_BUTTON(SDL_GAMEPAD_BUTTON_SOUTH) || TOUCH_ANALOG(XINPUT_GAMEPAD_A);
+	keys->menu_close = k[SDL_SCANCODE_ESCAPE] || k[SDL_SCANCODE_BACKSPACE] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_EAST) ||
+		TOUCH_ANALOG(XINPUT_GAMEPAD_B);
 	keys->mouse_right = mouse && m[SDL_BUTTON_RIGHT];
 	keys->mouse_left = mouse && m[SDL_BUTTON_LEFT];
 	keys->grab = k[SDL_SCANCODE_F4] != 0;
 	keys->rotation_axis = k[SDL_SCANCODE_T] != 0;
 	keys->rotation_snap = k[SDL_SCANCODE_V] != 0;
-	keys->remove_object = k[SDL_SCANCODE_DELETE] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_BACK);
-	keys->tab_previous = k[SDL_SCANCODE_PAGEUP] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
-	keys->tab_next = k[SDL_SCANCODE_PAGEDOWN] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
-	keys->pad_menu = PAD_BUTTON(SDL_GAMEPAD_BUTTON_WEST);
-	keys->pad_remove = PAD_BUTTON(SDL_GAMEPAD_BUTTON_NORTH);
-	keys->pad_turn = PAD_TRIGGER(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+	keys->remove_object = k[SDL_SCANCODE_DELETE] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_BACK) ||
+		TOUCH_DIGITAL(XINPUT_GAMEPAD_BACK);
+	keys->tab_previous = k[SDL_SCANCODE_PAGEUP] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) ||
+		TOUCH_ANALOG(XINPUT_GAMEPAD_WHITE);
+	keys->tab_next = k[SDL_SCANCODE_PAGEDOWN] || PAD_BUTTON(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) ||
+		TOUCH_ANALOG(XINPUT_GAMEPAD_BLACK);
+	keys->pad_menu = PAD_BUTTON(SDL_GAMEPAD_BUTTON_WEST) || TOUCH_ANALOG(XINPUT_GAMEPAD_X);
+	keys->pad_remove = PAD_BUTTON(SDL_GAMEPAD_BUTTON_NORTH) || TOUCH_ANALOG(XINPUT_GAMEPAD_Y);
+	keys->pad_turn = PAD_TRIGGER(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) || TOUCH_ANALOG(XINPUT_GAMEPAD_RIGHT_TRIGGER);
+	keys->pad_select = PAD_BUTTON(SDL_GAMEPAD_BUTTON_SOUTH) || TOUCH_ANALOG(XINPUT_GAMEPAD_A);
+	keys->pad_cancel = PAD_BUTTON(SDL_GAMEPAD_BUTTON_EAST) || TOUCH_ANALOG(XINPUT_GAMEPAD_B);
+	keys->pad_start = PAD_BUTTON(SDL_GAMEPAD_BUTTON_START) || TOUCH_DIGITAL(XINPUT_GAMEPAD_START);
 	if (gamepad)
 	{
 		/* SDL's y is down; a dead zone so a resting stick is still */
@@ -1065,6 +1182,8 @@ int halo_linux_forge_read_keys(struct halo_linux_forge_keys *keys)
 	}
 #undef PAD_BUTTON
 #undef PAD_TRIGGER
+#undef TOUCH_DIGITAL
+#undef TOUCH_ANALOG
 	return TRUE;
 }
 
@@ -1097,9 +1216,12 @@ static DWORD connected_gamepads(void)
 	DWORD mask = XDEVICE_PORT0_MASK;
 	int port;
 
-	/* the first pad shares port 0 with the keyboard */
-	for (port = 1; port < count; port++)
-		mask |= 1UL << port;
+	/* the first pad shares port 0 with the keyboard (port_gamepad) */
+	for (port = 1; port < PORT_COUNT; port++)
+	{
+		if (port_gamepad(gamepads, count, port))
+			mask |= 1UL << port;
+	}
 	return mask;
 }
 
@@ -1204,8 +1326,21 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 			else
 				keyboard_controls(held, &state->Gamepad);
 		}
-		if (count > 0)
+		if (port_gamepad(gamepads, count, 0))
 			sdl_gamepad_state(gamepads[0], &state->Gamepad);
+		/* (the automated tests' player is the game's, not the dev tools') */
+		test_input_gamepad(&state->Gamepad);
+		{
+			/* (before the dev tools' filter: what the touch controls press is
+			theirs as the gamepad's is, and kept from the game as it is) */
+			XINPUT_GAMEPAD before = state->Gamepad;
+
+			touch_input_gamepad(&state->Gamepad);
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
+			touch_input_controls(&state->Gamepad, input.menus);
+#endif
+			forge_touch_pad_note(&before, &state->Gamepad);
+		}
 		if (forge_enabled())
 		{
 			forge_filter_gamepad(&state->Gamepad, input.menus);
@@ -1218,11 +1353,6 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 					(1UL << HALO_KEYBOARD_STRAFE_LEFT) | (1UL << HALO_KEYBOARD_STRAFE_RIGHT);
 			}
 		}
-		test_input_gamepad(&state->Gamepad);
-		touch_input_gamepad(&state->Gamepad);
-#ifdef HALO_ANDROID
-		touch_input_controls(&state->Gamepad, input.menus);
-#endif
 		if (abs(state->Gamepad.sThumbRX) > STICK_AIMING_DEFLECTION ||
 			abs(state->Gamepad.sThumbRY) > STICK_AIMING_DEFLECTION)
 		{
@@ -1231,9 +1361,9 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 			pthread_mutex_unlock(&mouse_lock);
 		}
 	}
-	else if (port < count)
+	else if (port_gamepad(gamepads, count, port))
 	{
-		sdl_gamepad_state(gamepads[port], &state->Gamepad);
+		sdl_gamepad_state(port_gamepad(gamepads, count, port), &state->Gamepad);
 	}
 
 	if (memcmp(&state->Gamepad, &controllers[port].previous, sizeof(state->Gamepad)))
@@ -1256,17 +1386,18 @@ DWORD WINAPI XInputSetState(HANDLE device, PXINPUT_FEEDBACK feedback)
 	feedback->Header.dwStatus = ERROR_SUCCESS;
 	if (port < 0)
 		return ERROR_DEVICE_NOT_CONNECTED;
-#ifdef HALO_ANDROID
-	/* the phone vibrates for the touch controls' player */
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
+	/* the phone vibrates for the touch controls' player (in a browser, where
+	it can) */
 	if (port == 0)
 		touch_input_rumble(feedback->Rumble.wLeftMotorSpeed, feedback->Rumble.wRightMotorSpeed);
 #endif
 	count = sdl_gamepads(gamepads);
-	if (port < count)
+	if (port_gamepad(gamepads, count, port))
 	{
 		/* the game refreshes the motors every frame; rumble a little longer
 		than that so they do not stutter */
-		SDL_RumbleGamepad(gamepads[port], feedback->Rumble.wLeftMotorSpeed,
+		SDL_RumbleGamepad(port_gamepad(gamepads, count, port), feedback->Rumble.wLeftMotorSpeed,
 			feedback->Rumble.wRightMotorSpeed, 100);
 	}
 	return ERROR_SUCCESS;

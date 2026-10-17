@@ -408,8 +408,8 @@ maps, the Custom Edition multiplayer maps and the Forge maps (layouts), and
 the map chosen goes straight to Server Setup, whose GAME TYPE stays Forge
 (its options' rows still change it). Forge is not one of the gametypes in
 Multiplayer's game setup; gametypes saved from it before stay Forge. In every other game the
-game plays as usual. `HALO_FORGE=all` turns the tools on in every game, for
-development.
+game plays as usual. `game.forge = "all"` (`HALO_FORGE=all`) turns the tools on in
+every game, for development.
 
 | Keyboard and mouse | Controller | Effect |
 | --- | --- | --- |
@@ -666,6 +666,7 @@ the setting for one start of the game. It has priority over the file.
 | `game.start_difficulty` | `""` | `HALO_START_DIFFICULTY` | With a campaign `start_map`: `"easy"`, `"normal"`, `"hard"` or `"impossible"`. Empty: normal. |
 | `game.import` | `""` | `HALO_IMPORT` | Tags to bring into the maps from other maps: `"donor:group:tag name"` with `\|` between them, for example `"a30:scen:scenery\rocks\boulder_granite_large\boulder_granite_large"`. The launcher sets it from `mods.json`. |
 | `game.import_into` | `""` | `HALO_IMPORT_INTO` | The maps `game.import` applies to, `"bloodgulch,wizard"`. Empty: every map but the menu's. |
+| `game.forge` | `"forge"` | `HALO_FORGE` | Where the dev tools (Forge) are on. `"forge"`: in local and system link games of the Forge game type. `"all"`: in every game, for development. Every machine of a system link game needs the same. Refer to "Dev tools". |
 | `game.forge_monitor` | `true` | `HALO_FORGE_MONITOR` | In a Forge game, the builder flies as the monitor, whose tags come from The Maw (`c40.map`) as the map loads; `false`, or without that map, flies the camera free of the player. Refer to "Dev tools". |
 | `game.enhanced_animations` | `true` | `HALO_ENHANCED_ANIMATIONS` | `true`: the player bipeds' grenade throws keep their legs moving, blended by speed and direction (crouched throws stay crouched, throws in the air use the jump's legs), Warthog and Scorpion riders stay seated to throw and let go of the grips to throw and reload, and a player turns with the aim while throwing, as while meleeing. `false`: the original animations, which freeze the legs during a throw and stand a rider up. Only in config.toml, not in the menus. |
 | `paths.data` | `""` | `HALO_DATA_ROOT` | The data root. Refer to "Start the game". |
@@ -702,7 +703,7 @@ the setting for one start of the game. It has priority over the file.
 | `update.auto` | `true` | `HALO_UPDATE_AUTO` | `true`: at start-up, the game looks for a new version. Refer to "Updates". `false`: the game does not look. |
 | `crash_reports.upload` | `"ask"` | `HALO_CRASH_REPORTS` | Windows only. `"yes"`: the game sends a report of each crash to the developers. `"no"`: the game sends no reports. `"ask"`: the game asks at the next crash and writes the answer here. Refer to "Crash reports" in [port/windows/README.md](../windows/README.md#crash-reports). |
 | `debug.update_answer` | `""` | `HALO_UPDATE_ANSWER` | The answer to the update question, for automatic tests: `yes`, `no` or `never`. Empty: the game asks. |
-| `debug.forge_menu_tab` | `-1` | `HALO_FORGE_MENU_TAB` | With the dev tools on (a Forge game), a few seconds into a game: open their menu on this tab (0 is the first), for screenshots of it (`debug.screenshot_directory`); `100` opens an object's popup instead, on the first object of the map, and `101` the popup of a held object. `-1`: never. |
+| `debug.forge_menu_tab` | `-1` | `HALO_FORGE_MENU_TAB` | With the dev tools on (a Forge game), a few seconds into a game: open their menu on this tab (0 is the first), for screenshots of it (`debug.screenshot_directory`); `100` opens an object's popup instead, on the first object of the map, `101` the popup of a held object, and `102` a line being typed, with its character grid. `-1`: never. |
 | `debug.forge_layout_save` | `0` | `HALO_FORGE_LAYOUT_SAVE` | For automated tests: in a local game, save the Forge layout to this slot (`1` to `16`) a few seconds in, once, and log where the player is; `0` never. |
 | `debug.forge_test_edit` | `0` | `HALO_FORGE_TEST_EDIT` | For automated tests of Forge in system link (with `debug.network_test` and the `forge` variant): `1`, the host spawns a scenery object a few seconds in, and a client asks it to spawn one, then to move it and to remove it; both log what they send and take. |
 | `debug.forge_test_monitor` | `0` | `HALO_FORGE_TEST_MONITOR` | For automated tests of Forge's monitor (`game.forge_monitor`): `1`, each machine's player becomes the monitor ten seconds into a game, rises, and lands ten seconds later; what the player's unit is and where is logged every two seconds. |

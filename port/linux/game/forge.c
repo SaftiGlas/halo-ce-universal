@@ -156,6 +156,8 @@ enum
 	/* debug.forge_menu_tab: an object's popup rather than a tab */
 	FORGE_DEBUG_POPUP_TAB = 100,
 	FORGE_DEBUG_HELD_POPUP_TAB = 101,
+	/* ... and a line being typed, with its character grid */
+	FORGE_DEBUG_TEXT_ENTRY_TAB = 102,
 	/* the menu's font fits this many lines on the screen: smaller than the
 	mods' large font, so the menu leaves most of the view free */
 	FORGE_MENU_FONT_LINES = 26,
@@ -166,6 +168,10 @@ enum
 	FORGE_MENU_FRESH_MILLISECONDS = 150,
 	FORGE_CATEGORY_COUNT = 5,
 	FORGE_TAG_NAME_SIZE = 256,
+	/* the sides a disc of the menu is drawn with (forge_menu_disc), and the
+	steps of a rounded corner's quarter turn (forge_menu_corner) */
+	FORGE_MENU_DISC_SIDES = 16,
+	FORGE_MENU_CORNER_STEPS = 6,
 	FORGE_KEY_REPEAT_DELAY_MILLISECONDS = 400,
 	FORGE_KEY_REPEAT_INTERVAL_MILLISECONDS = 70,
 	/* surfaces of objects the aim passes through (the player's own vehicle,
@@ -220,10 +226,6 @@ up by their bounding sphere, at least this big */
 
 /* the menu's colours (forge_ui), 0xAARRGGBB: the deep navy panel and bright
 blue highlight of Halo's own menus, laid out as Halo: Reach's forge menu */
-#define FORGE_MENU_PANEL_COLOR 0xc8112640UL
-#define FORGE_MENU_HEADER_TOP_COLOR 0xe83a6a9eUL
-#define FORGE_MENU_HEADER_BOTTOM_COLOR 0xe81c3a60UL
-#define FORGE_MENU_FOOTER_COLOR 0xd80a1a2eUL
 #define FORGE_MENU_CAP_COLOR 0xe00a1628UL
 #define FORGE_MENU_CAP_TEXT_COLOR 0xffb8d8ffUL
 #define FORGE_MENU_BAR_LEFT_COLOR 0xe82896ffUL
@@ -247,6 +249,13 @@ this many texels wide and high */
 #define FORGE_MENU_BUTTON_ART_WIDTH 16
 #define FORGE_MENU_BUTTON_ART_HEIGHT 20
 /* the count of objects when few more can be made, and when none can */
+/* a popup is drawn as the pause menu's box is (port/assets/menus/port_svg/pause,
+pausebox_*.svg): its navy three quarters opaque, a blue border, round corners
+(screen units) */
+#define FORGE_POPUP_FILL_COLOR 0xbf0a2649UL
+#define FORGE_POPUP_BORDER_COLOR 0xff2896ffUL
+#define FORGE_POPUP_RADIUS 8.5f
+#define FORGE_POPUP_BORDER 2.f
 #define FORGE_MENU_BUDGET_LOW_COLOR 0xffffb347UL
 #define FORGE_MENU_BUDGET_FULL_COLOR 0xffff5a4aUL
 
@@ -389,7 +398,21 @@ enum
 	FORGE_TEXT_KEY_LEFT_SHIFT = 225,
 	FORGE_TEXT_KEY_RIGHT_SHIFT = 229,
 	/* the keys read each frame: all up to the right shift */
-	FORGE_TEXT_KEYS_READ = 230
+	FORGE_TEXT_KEYS_READ = 230,
+	/* the character grid (forge_text_grid_rows): its columns, and its rows
+	with the last, its keys (forge_text_grid_keys) */
+	FORGE_TEXT_GRID_COLUMNS = 10,
+	FORGE_TEXT_GRID_ROWS = 5
+};
+
+/* the keys of the character grid's last row */
+enum
+{
+	_forge_text_grid_shift = 0,
+	_forge_text_grid_space,
+	_forge_text_grid_delete,
+	_forge_text_grid_done,
+	NUMBER_OF_FORGE_TEXT_GRID_KEYS
 };
 
 /* what the keys from 1 on type, plain and with shift (a US keyboard); a
@@ -397,6 +420,18 @@ space where a key types nothing (the space bar is read by itself, and a
 percent sign would be taken for a format by the menus' strings) */
 static char const forge_text_plain[] = "1234567890     -=[]  ;'`,./";
 static char const forge_text_shifted[] = "!@#$ ^&*()     _+()  :\"~<>?";
+
+/* the character grid, for a line typed without a keyboard (a controller, the
+touch controls): the D-pad chooses a key and A types it, in capitals while
+shift is on */
+static char const *const forge_text_grid_rows[FORGE_TEXT_GRID_ROWS - 1] =
+{
+	"abcdefghij",
+	"klmnopqrst",
+	"uvwxyz-_.'",
+	"0123456789"
+};
+static char const *const forge_text_grid_keys[NUMBER_OF_FORGE_TEXT_GRID_KEYS] = { "SHIFT", "SPACE", "DELETE", "DONE" };
 
 static struct
 {
@@ -409,6 +444,13 @@ static struct
 	unsigned long length;
 	char text[FORGE_TEXT_MAXIMUM_LENGTH + 1];
 	struct forge_key keys[FORGE_TEXT_KEY_COUNT];
+	/* the character grid's chosen key, and its shift */
+	short grid_row;
+	short grid_column;
+	boolean grid_shift;
+	struct forge_key pad_select_key;
+	struct forge_key pad_cancel_key;
+	struct forge_key pad_start_key;
 } forge_text_entry_globals;
 
 /* ---------- private code */
@@ -1036,14 +1078,19 @@ static void forge_menu_state_load(
 	return;
 }
 
+/* forge_layout.c's: a file written beside itself, then in its place */
+FILE *forge_file_begin(char const *path, char *temporary_path, unsigned long size);
+int forge_file_commit(FILE *file, char const *temporary_path, char const *path);
+
 /* writes the menu's place for the next session */
 static void forge_menu_state_save(
 	void)
 {
+	char temporary_path[256];
 	FILE *file;
 
 	forge_globals.menu_state_changed = FALSE;
-	if ((file = fopen(FORGE_MENU_STATE_FILE, "w")) != NULL)
+	if ((file = forge_file_begin(FORGE_MENU_STATE_FILE, temporary_path, sizeof(temporary_path))) != NULL)
 	{
 		short category_index;
 
@@ -1059,12 +1106,9 @@ static void forge_menu_state_save(
 				forge_globals.category_first_entry_indices[category_index],
 				forge_globals.category_selected_names[category_index]);
 		}
-		fclose(file);
 	}
-	else
-	{
+	if (!file || !forge_file_commit(file, temporary_path, FORGE_MENU_STATE_FILE))
 		terminal_printf(global_real_argb_orange, "forge: could not write %s", FORGE_MENU_STATE_FILE);
-	}
 
 	return;
 }
@@ -1087,6 +1131,8 @@ static void forge_hold_begin(
 	forge_globals.held_original_position = object->object.position;
 	forge_globals.held_original_forward = object->object.forward;
 	forge_globals.held_original_up = object->object.up;
+	/* (a mod may pick it up while a popup is shown: it stays there) */
+	forge_globals.held_popup_position = object->object.position;
 	forge_angles_from_orientation(&object->object.forward, &object->object.up, forge_globals.held_angles);
 
 	return;
@@ -1545,15 +1591,105 @@ static boolean forge_debug_monitor_rises(
 	return forge_debug_monitor_enabled();
 }
 
+/* a character at the end of the line, while it has room */
+static void forge_text_entry_type(
+	char character)
+{
+	if (forge_text_entry_globals.length < forge_text_entry_globals.maximum_length)
+	{
+		forge_text_entry_globals.text[forge_text_entry_globals.length++] = character;
+		forge_text_entry_globals.text[forge_text_entry_globals.length] = 0;
+	}
+
+	return;
+}
+
+static void forge_text_entry_delete(
+	void)
+{
+	if (forge_text_entry_globals.length > 0)
+		forge_text_entry_globals.text[--forge_text_entry_globals.length] = 0;
+
+	return;
+}
+
+/* the line is taken */
+static void forge_text_entry_take(
+	void)
+{
+	forge_text_entry_globals.active = FALSE;
+	forge_text_entry_globals.done(forge_text_entry_globals.text);
+
+	return;
+}
+
+/* the key of the character grid's last row over a column */
+static short forge_text_grid_key(
+	short column)
+{
+	return (short)(column * NUMBER_OF_FORGE_TEXT_GRID_KEYS / FORGE_TEXT_GRID_COLUMNS);
+}
+
+/* the grid's chosen key is pressed: its character typed, or its key's doing */
+static void forge_text_grid_press(
+	void)
+{
+	short row = forge_text_entry_globals.grid_row;
+
+	if (row < FORGE_TEXT_GRID_ROWS - 1)
+	{
+		char character = forge_text_grid_rows[row][forge_text_entry_globals.grid_column];
+
+		if (forge_text_entry_globals.grid_shift && character >= 'a' && character <= 'z')
+			character = (char)(character - 'a' + 'A');
+		forge_text_entry_type(character);
+	}
+	else
+	{
+		switch (forge_text_grid_key(forge_text_entry_globals.grid_column))
+		{
+		case _forge_text_grid_shift:
+			forge_text_entry_globals.grid_shift = !forge_text_entry_globals.grid_shift;
+			break;
+		case _forge_text_grid_space:
+			forge_text_entry_type(' ');
+			break;
+		case _forge_text_grid_delete:
+			forge_text_entry_delete();
+			break;
+		case _forge_text_grid_done:
+			forge_text_entry_take();
+			break;
+		}
+	}
+
+	return;
+}
+
 /* the line being typed: the keys that went down (and those held, again and
-again) type, backspace deletes, enter takes the line, escape leaves it */
+again) type, backspace deletes, enter takes the line, escape leaves it; and
+the character grid, with the D-pad and A, X deleting, Y the shift, start
+taking the line and B leaving it */
 static void forge_text_entry_update(
+	struct halo_linux_forge_keys const *keys,
+	boolean up,
+	boolean down,
+	boolean left,
+	boolean right,
 	boolean take,
+	boolean pad_delete,
+	boolean pad_shift,
 	unsigned long milliseconds)
 {
 	unsigned char held[FORGE_TEXT_KEYS_READ];
 	boolean shift;
 	boolean primed = forge_text_entry_globals.primed;
+	boolean pad_select = forge_key_pressed(&forge_text_entry_globals.pad_select_key, keys->pad_select, TRUE,
+		milliseconds);
+	boolean pad_cancel = forge_key_pressed(&forge_text_entry_globals.pad_cancel_key, keys->pad_cancel, FALSE,
+		milliseconds);
+	boolean pad_start = forge_key_pressed(&forge_text_entry_globals.pad_start_key, keys->pad_start, FALSE,
+		milliseconds);
 	short key;
 
 	halo_linux_forge_read_text_keys(held, sizeof(held));
@@ -1579,8 +1715,7 @@ static void forge_text_entry_update(
 		}
 		if (key == FORGE_TEXT_KEY_BACKSPACE)
 		{
-			if (forge_text_entry_globals.length > 0)
-				forge_text_entry_globals.text[--forge_text_entry_globals.length] = 0;
+			forge_text_entry_delete();
 		}
 		else if (key < FORGE_TEXT_KEY_1)
 		{
@@ -1597,17 +1732,58 @@ static void forge_text_entry_update(
 			if (character == ' ')
 				character = 0;
 		}
-		if (character && forge_text_entry_globals.length < forge_text_entry_globals.maximum_length)
-		{
-			forge_text_entry_globals.text[forge_text_entry_globals.length++] = character;
-			forge_text_entry_globals.text[forge_text_entry_globals.length] = 0;
-		}
+		if (character)
+			forge_text_entry_type(character);
 	}
-	if (take && primed)
+	/* (the buttons held when it began, the A that chose the row, do nothing) */
+	if (!primed)
+		return;
+
+	if (pad_cancel)
 	{
 		forge_text_entry_globals.active = FALSE;
-		forge_text_entry_globals.done(forge_text_entry_globals.text);
+		return;
 	}
+	if (up || down)
+	{
+		forge_text_entry_globals.grid_row = (short)((forge_text_entry_globals.grid_row +
+			(down ? 1 : FORGE_TEXT_GRID_ROWS - 1)) % FORGE_TEXT_GRID_ROWS);
+	}
+	if (left != right)
+	{
+		if (forge_text_entry_globals.grid_row == FORGE_TEXT_GRID_ROWS - 1)
+		{
+			/* a key at a time, to a column under its middle */
+			short grid_key = (short)((forge_text_grid_key(forge_text_entry_globals.grid_column) +
+				(right ? 1 : NUMBER_OF_FORGE_TEXT_GRID_KEYS - 1)) % NUMBER_OF_FORGE_TEXT_GRID_KEYS);
+
+			forge_text_entry_globals.grid_column =
+				(short)(grid_key * FORGE_TEXT_GRID_COLUMNS / NUMBER_OF_FORGE_TEXT_GRID_KEYS + 1);
+		}
+		else
+		{
+			forge_text_entry_globals.grid_column = (short)((forge_text_entry_globals.grid_column +
+				(right ? 1 : FORGE_TEXT_GRID_COLUMNS - 1)) % FORGE_TEXT_GRID_COLUMNS);
+		}
+	}
+	if (pad_delete)
+		forge_text_entry_delete();
+	if (pad_shift)
+		forge_text_entry_globals.grid_shift = !forge_text_entry_globals.grid_shift;
+	if (pad_select)
+		forge_text_grid_press();
+	/* (enter takes the line; the A that is also menu_select typed a key) */
+	if (forge_text_entry_globals.active && (pad_start || (take && !keys->pad_select)))
+		forge_text_entry_take();
+
+	return;
+}
+
+/* debug.forge_menu_tab 102: the line typed is not kept */
+static void forge_debug_text_typed(
+	char const *text)
+{
+	platform_log("forge: typed \"%s\"", text);
 
 	return;
 }
@@ -1687,7 +1863,7 @@ static void forge_update_keys(
 	{
 		/* the keyboard is the line's until it is taken or left */
 		if (flying)
-			forge_text_entry_update(select, milliseconds);
+			forge_text_entry_update(keys, up, down, left, right, select, pad_menu, pad_remove, milliseconds);
 		else
 			forge_text_entry_globals.active = FALSE;
 	}
@@ -1734,6 +1910,13 @@ static void forge_update_keys(
 						break;
 					}
 				}
+			}
+			else if (debug_tab == FORGE_DEBUG_TEXT_ENTRY_TAB)
+			{
+				director_forge_set_flying(FORGE_LOCAL_PLAYER_INDEX, TRUE);
+				flying = TRUE;
+				forge_menu_fonts_choose();
+				forge_text_entry_begin("Name of the layout", "Layout 1", 63, forge_debug_text_typed);
 			}
 		}
 
@@ -1923,6 +2106,7 @@ static void forge_update_keys(
 			keys->pad_remove));
 	halo_linux_forge_capture_menu_keys(forge_globals.keys_captured);
 	halo_linux_forge_set_flying(flying);
+	halo_linux_forge_set_free_camera(forge_globals.active && director_forge_flying(FORGE_LOCAL_PLAYER_INDEX));
 	forge_globals.game_time = forge_globals.active ? game_time_get() : 0;
 
 	return;
@@ -1965,6 +2149,7 @@ static struct
 } forge_menu_fonts[NUMBER_OF_FORGE_MENU_FONTS];
 
 int config_boolean(char const *name);
+char const *config_string(char const *name);
 
 /* chooses the menu's fonts in this map: when the menu opens */
 static void forge_menu_fonts_choose(
@@ -2144,28 +2329,32 @@ static void forge_menu_gradient(
 	return;
 }
 
-/* a filled disc, in strips a quarter of a unit high */
+/* a filled disc: a fan of triangles about its middle, one draw each */
 static void forge_menu_disc(
 	real center_x,
 	real center_y,
 	real radius,
 	unsigned long argb)
 {
-	real step = 0.25f;
-	real y;
+	short side;
 
-	for (y = center_y - radius; y < center_y + radius; y += step)
+	for (side = 0; side < FORGE_MENU_DISC_SIDES; side++)
 	{
-		real middle = y + step / 2.f - center_y;
-		real half = square_root(MAX(radius * radius - middle * middle, 0.f));
+		real from = 2.f * _pi * (real)side / FORGE_MENU_DISC_SIDES;
+		real to = 2.f * _pi * (real)(side + 1) / FORGE_MENU_DISC_SIDES;
 
-		halo_mod_draw_box_real(center_x - half, y, center_x + half, y + step, forge_menu_color(argb));
+		/* (the screen's y runs down: a growing angle turns clockwise) */
+		halo_mod_draw_triangle_real(center_x, center_y,
+			center_x + cosine(from) * radius, center_y + sine(from) * radius,
+			center_x + cosine(to) * radius, center_y + sine(to) * radius,
+			forge_menu_color(argb));
 	}
 
 	return;
 }
 
-/* a small triangle pointing up or down, its middle at x, between y0 and y1 */
+/* a small triangle pointing up or down, its middle at x, between y0 and y1,
+in one draw */
 static void forge_menu_arrow(
 	real x,
 	real y0,
@@ -2173,17 +2362,96 @@ static void forge_menu_arrow(
 	boolean down,
 	unsigned long argb)
 {
-	real step = 0.25f;
 	real height = y1 - y0;
-	real y;
 
-	for (y = y0; y < y1; y += step)
+	if (down)
+		halo_mod_draw_triangle_real(x - height, y0, x + height, y0, x, y1, forge_menu_color(argb));
+	else
+		halo_mod_draw_triangle_real(x, y0, x + height, y1, x - height, y1, forge_menu_color(argb));
+
+	return;
+}
+
+/* a quarter turn of a ring about a corner's middle, from the angle on,
+clockwise (the screen's y runs down); a filled quarter of a disc when inner
+is 0. A triangle or two a step, each one draw */
+static void forge_menu_corner(
+	real center_x,
+	real center_y,
+	real outer,
+	real inner,
+	real angle,
+	unsigned long argb)
+{
+	short step;
+
+	for (step = 0; step < FORGE_MENU_CORNER_STEPS; step++)
 	{
-		real share = (y + step / 2.f - y0) / height;
-		real half = height * (down ? 1.f - share : share);
+		real from = angle + 0.5f * _pi * (real)step / FORGE_MENU_CORNER_STEPS;
+		real to = angle + 0.5f * _pi * (real)(step + 1) / FORGE_MENU_CORNER_STEPS;
+		real outer_from_x = center_x + cosine(from) * outer;
+		real outer_from_y = center_y + sine(from) * outer;
+		real outer_to_x = center_x + cosine(to) * outer;
+		real outer_to_y = center_y + sine(to) * outer;
 
-		halo_mod_draw_box_real(x - half, y, x + half, y + step, forge_menu_color(argb));
+		if (inner <= 0.f)
+		{
+			halo_mod_draw_triangle_real(center_x, center_y, outer_from_x, outer_from_y, outer_to_x, outer_to_y,
+				forge_menu_color(argb));
+		}
+		else
+		{
+			real inner_from_x = center_x + cosine(from) * inner;
+			real inner_from_y = center_y + sine(from) * inner;
+			real inner_to_x = center_x + cosine(to) * inner;
+			real inner_to_y = center_y + sine(to) * inner;
+
+			halo_mod_draw_triangle_real(outer_from_x, outer_from_y, outer_to_x, outer_to_y, inner_to_x, inner_to_y,
+				forge_menu_color(argb));
+			halo_mod_draw_triangle_real(outer_from_x, outer_from_y, inner_to_x, inner_to_y, inner_from_x, inner_from_y,
+				forge_menu_color(argb));
+		}
 	}
+
+	return;
+}
+
+/* a panel as the pause menu's box: filled, round cornered, with a border
+along its edge */
+static void forge_menu_rounded_panel(
+	short x0,
+	short y0,
+	short x1,
+	short y1,
+	unsigned long fill,
+	unsigned long border)
+{
+	real left = (real)x0;
+	real top = (real)y0;
+	real right = (real)x1;
+	real bottom = (real)y1;
+	real radius = MIN(FORGE_POPUP_RADIUS, MIN(right - left, bottom - top) / 2.f);
+	real inner = radius - FORGE_POPUP_BORDER;
+
+	/* the fill: a cross, and a quarter disc in each corner (none overlap, so
+	the fill is as see-through everywhere) */
+	halo_mod_draw_box_real(left + radius, top, right - radius, bottom, forge_menu_color(fill));
+	halo_mod_draw_box_real(left, top + radius, left + radius, bottom - radius, forge_menu_color(fill));
+	halo_mod_draw_box_real(right - radius, top + radius, right, bottom - radius, forge_menu_color(fill));
+	forge_menu_corner(left + radius, top + radius, radius, 0.f, _pi, fill);
+	forge_menu_corner(right - radius, top + radius, radius, 0.f, 1.5f * _pi, fill);
+	forge_menu_corner(right - radius, bottom - radius, radius, 0.f, 0.f, fill);
+	forge_menu_corner(left + radius, bottom - radius, radius, 0.f, 0.5f * _pi, fill);
+
+	/* the border: its four sides, and a quarter ring in each corner */
+	halo_mod_draw_box_real(left + radius, top, right - radius, top + FORGE_POPUP_BORDER, forge_menu_color(border));
+	halo_mod_draw_box_real(left + radius, bottom - FORGE_POPUP_BORDER, right - radius, bottom, forge_menu_color(border));
+	halo_mod_draw_box_real(left, top + radius, left + FORGE_POPUP_BORDER, bottom - radius, forge_menu_color(border));
+	halo_mod_draw_box_real(right - FORGE_POPUP_BORDER, top + radius, right, bottom - radius, forge_menu_color(border));
+	forge_menu_corner(left + radius, top + radius, radius, inner, _pi, border);
+	forge_menu_corner(right - radius, top + radius, radius, inner, 1.5f * _pi, border);
+	forge_menu_corner(right - radius, bottom - radius, radius, inner, 0.f, border);
+	forge_menu_corner(left + radius, bottom - radius, radius, inner, 0.5f * _pi, border);
 
 	return;
 }
@@ -2419,16 +2687,21 @@ static void forge_render_menu(
 	struct halo_mod_menu const *page = forge_menu_page();
 	short tab_count = (short)(FORGE_CATEGORY_COUNT + halo_mods_menu_page_count());
 	short window_width = (short)(window->x1 - window->x0);
+	/* (the border and the corners' round inside the edge) */
+	short inset = (short)(FORGE_POPUP_BORDER + 2.f);
 	short x0 = (short)(window->x0 + FORGE_MENU_MARGIN);
 	short x1 = (short)(x0 + MIN(window_width - 2 * FORGE_MENU_MARGIN, FORGE_MENU_MAX_WIDTH));
 	short y0 = (short)(window->y0 + FORGE_MENU_MARGIN);
-	short columns_y = (short)(y0 + header_height);
+	short inner_x0 = (short)(x0 + inset);
+	short inner_x1 = (short)(x1 - inset);
+	short columns_y = (short)(y0 + inset + header_height);
 	short rows_y = (short)(columns_y + row_height + 2);
 	short rows_y1 = (short)(rows_y + FORGE_MENU_VISIBLE_ENTRIES * row_height);
-	short y1 = (short)(rows_y1 + FORGE_MENU_PADDING + footer_height);
-	short text_x0 = (short)(x0 + FORGE_MENU_PADDING + 2);
+	short y1 = (short)(rows_y1 + FORGE_MENU_PADDING + footer_height + inset);
+	short footer_y = (short)(y1 - inset - footer_height);
+	short text_x0 = (short)(inner_x0 + FORGE_MENU_PADDING + 2);
 	/* the names leave room at the right for the scroll arrows */
-	short text_x1 = (short)(x1 - FORGE_MENU_PADDING - 10);
+	short text_x1 = (short)(inner_x1 - FORGE_MENU_PADDING - 10);
 	short name_x0 = (short)(text_x0 + forge_menu_text_width(font, "000") * 106 / 100 + 8);
 	boolean budget_full = FALSE;
 	short counts[FORGE_MENU_VISIBLE_ENTRIES];
@@ -2441,17 +2714,21 @@ static void forge_render_menu(
 	forge_menu_look.fade = fresh ? 0.f : MIN(forge_menu_look.fade + seconds * FORGE_MENU_FADE_SPEED, 1.f);
 	forge_menu_fade = forge_menu_look.fade;
 
-	/* the panel: the header, the columns and rows, the buttons */
-	forge_menu_box(x0, y0, x1, y1, FORGE_MENU_PANEL_COLOR);
-	forge_menu_gradient(x0, y0, x1, columns_y, FORGE_MENU_HEADER_TOP_COLOR, FORGE_MENU_HEADER_BOTTOM_COLOR, TRUE);
-	forge_menu_box(x0, (short)(y1 - footer_height), x1, y1, FORGE_MENU_FOOTER_COLOR);
+	/* the panel, as the pause menu's box: the header, the columns and rows,
+	the buttons, with a rule between the header and the rest, and above the
+	buttons */
+	forge_menu_rounded_panel(x0, y0, x1, y1, FORGE_POPUP_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
+	forge_menu_box(text_x0, (short)(columns_y - 1), (short)(inner_x1 - FORGE_MENU_PADDING), columns_y,
+		FORGE_MENU_RULE_COLOR);
+	forge_menu_box(text_x0, footer_y, (short)(inner_x1 - FORGE_MENU_PADDING), (short)(footer_y + 1),
+		FORGE_MENU_RULE_COLOR);
 
 	/* the header: the tab between the shoulder buttons, and which of the
 	tabs it is */
 	{
-		short middle_y = (short)(y0 + header_height / 2);
-		short left = (short)(x0 + 4 + forge_menu_cap(small_font, (short)(x0 + 4), middle_y, FALSE, "LB") + 4);
-		short right = (short)(x1 - 4 - forge_menu_cap(small_font, (short)(x1 - 4), middle_y, TRUE, "RB") - 4);
+		short middle_y = (short)(y0 + inset + header_height / 2);
+		short left = (short)(inner_x0 + 4 + forge_menu_cap(small_font, (short)(inner_x0 + 4), middle_y, FALSE, "LB") + 4);
+		short right = (short)(inner_x1 - 4 - forge_menu_cap(small_font, (short)(inner_x1 - 4), middle_y, TRUE, "RB") - 4);
 		short title_y = (short)(middle_y - line_height / 2);
 		short title_width;
 		short place_width;
@@ -2488,13 +2765,14 @@ static void forge_render_menu(
 			budget_full = used >= maximum;
 			_snprintf(line, sizeof(line), "%d / %d", used, maximum);
 			forge_menu_text(small_font, text_x0, (short)(text_y + line_height - small_height),
-				(short)(x1 - FORGE_MENU_PADDING), HALO_MOD_TEXT_RIGHT,
+				(short)(inner_x1 - FORGE_MENU_PADDING), HALO_MOD_TEXT_RIGHT,
 				budget_full
 					? FORGE_MENU_BUDGET_FULL_COLOR
 					: used * 10 >= maximum * 9 ? FORGE_MENU_BUDGET_LOW_COLOR : FORGE_MENU_DIM_TEXT_COLOR,
 				line);
 		}
-		forge_menu_box(x0, (short)(rows_y - 2), x1, (short)(rows_y - 1), FORGE_MENU_RULE_COLOR);
+		forge_menu_box(text_x0, (short)(rows_y - 2), (short)(inner_x1 - FORGE_MENU_PADDING), (short)(rows_y - 1),
+			FORGE_MENU_RULE_COLOR);
 	}
 
 	/* the rows: the highlight under the chosen one, then every row */
@@ -2507,10 +2785,11 @@ static void forge_render_menu(
 		short bar_y = (short)PIN((short)forge_menu_look.entry_bar_y, rows_y,
 			rows_y + (FORGE_MENU_VISIBLE_ENTRIES - 1) * row_height);
 
-		forge_menu_gradient(x0, bar_y, x1, (short)(bar_y + row_height), FORGE_MENU_BAR_LEFT_COLOR,
+		/* (inside the border) */
+		forge_menu_gradient(inner_x0, bar_y, inner_x1, (short)(bar_y + row_height), FORGE_MENU_BAR_LEFT_COLOR,
 			FORGE_MENU_BAR_RIGHT_COLOR, FALSE);
-		forge_menu_box(x0, bar_y, x1, (short)(bar_y + 1), FORGE_MENU_BAR_EDGE_COLOR);
-		forge_menu_box(x0, (short)(bar_y + row_height - 1), x1, (short)(bar_y + row_height),
+		forge_menu_box(inner_x0, bar_y, inner_x1, (short)(bar_y + 1), FORGE_MENU_BAR_EDGE_COLOR);
+		forge_menu_box(inner_x0, (short)(bar_y + row_height - 1), inner_x1, (short)(bar_y + row_height),
 			FORGE_MENU_BAR_EDGE_COLOR);
 	}
 	else
@@ -2577,7 +2856,7 @@ static void forge_render_menu(
 
 	/* arrows at the right when there are rows above or below those shown */
 	{
-		real arrow_x = (real)(x1 - FORGE_MENU_PADDING - 4);
+		real arrow_x = (real)(inner_x1 - FORGE_MENU_PADDING - 4);
 		real arrow_height = (real)row_height * 0.3f;
 
 		if (forge_globals.first_entry_index > 0)
@@ -2593,8 +2872,8 @@ static void forge_render_menu(
 	}
 
 	/* the buttons */
-	forge_menu_hints(font, (short)(x0 + FORGE_MENU_PADDING), (short)(x1 - FORGE_MENU_PADDING),
-		(short)(y1 - footer_height + (footer_height - line_height) / 2), page ? page_hints : object_hints,
+	forge_menu_hints(font, (short)(inner_x0 + FORGE_MENU_PADDING), (short)(inner_x1 - FORGE_MENU_PADDING),
+		(short)(footer_y + (footer_height - line_height) / 2), page ? page_hints : object_hints,
 		page ? NUMBEROF(page_hints) : NUMBEROF(object_hints));
 
 	forge_menu_fade = 1.f;
@@ -2602,8 +2881,9 @@ static void forge_render_menu(
 	return;
 }
 
-/* a mod's popup (forge_popup_open): a small panel beside the crosshair, in
-the menu's look, with the popup's title and its rows (the buttons are the
+/* a mod's popup (forge_popup_open): a small panel beside the crosshair, as
+the pause menu's box is (round cornered, with a blue border), with the
+popup's title and its rows (the buttons are the
 menu's, and are not shown again) */
 static void forge_render_popup(
 	rectangle2d const *window)
@@ -2621,7 +2901,10 @@ static void forge_render_popup(
 	short row_count = (short)MIN(forge_globals.entry_count, FORGE_POPUP_VISIBLE_ENTRIES);
 	short window_width = (short)(window->x1 - window->x0);
 	short width = (short)MIN(window_width - 2 * FORGE_MENU_MARGIN, FORGE_POPUP_WIDTH);
-	short height = (short)(title_height + FORGE_MENU_PADDING + MAX(row_count, 1) * row_height + FORGE_MENU_PADDING);
+	/* (the border and the corners' round inside the edge) */
+	short inset = (short)(FORGE_POPUP_BORDER + 2.f);
+	short height = (short)(inset + title_height + FORGE_MENU_PADDING + MAX(row_count, 1) * row_height +
+		FORGE_MENU_PADDING + inset);
 	/* at the right of the crosshair, which stays in sight, and in the window */
 	short x0 = (short)PIN((window->x0 + window->x1) / 2 + FORGE_POPUP_OFFSET, window->x0 + FORGE_MENU_MARGIN,
 		MAX(window->x1 - FORGE_MENU_MARGIN - width, window->x0 + FORGE_MENU_MARGIN));
@@ -2629,9 +2912,10 @@ static void forge_render_popup(
 		MAX(window->y1 - FORGE_MENU_MARGIN - height, window->y0 + FORGE_MENU_MARGIN));
 	short x1 = (short)(x0 + width);
 	short y1 = (short)(y0 + height);
-	short rows_y = (short)(y0 + title_height + FORGE_MENU_PADDING);
-	short text_x0 = (short)(x0 + FORGE_MENU_PADDING + 2);
-	short text_x1 = (short)(x1 - FORGE_MENU_PADDING);
+	short title_y = (short)(y0 + inset);
+	short rows_y = (short)(title_y + title_height + FORGE_MENU_PADDING);
+	short text_x0 = (short)(x0 + inset + FORGE_MENU_PADDING + 2);
+	short text_x1 = (short)(x1 - inset - FORGE_MENU_PADDING);
 	char title[128];
 	char fitted[192];
 	short entry_index;
@@ -2641,13 +2925,14 @@ static void forge_render_popup(
 	forge_menu_look.fade = fresh ? 0.f : MIN(forge_menu_look.fade + seconds * FORGE_MENU_FADE_SPEED, 1.f);
 	forge_menu_fade = forge_menu_look.fade;
 
-	forge_menu_box(x0, y0, x1, y1, FORGE_MENU_PANEL_COLOR);
-	forge_menu_gradient(x0, y0, x1, (short)(y0 + title_height), FORGE_MENU_HEADER_TOP_COLOR,
-		FORGE_MENU_HEADER_BOTTOM_COLOR, TRUE);
+	forge_menu_rounded_panel(x0, y0, x1, y1, FORGE_POPUP_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
 	forge_menu_display_name(page->title, title, sizeof(title));
-	forge_menu_fit(font, (short)(width - 2 * FORGE_MENU_PADDING), title, fitted, sizeof(fitted));
-	forge_menu_text(font, x0, (short)(y0 + (title_height - line_height) / 2), x1, HALO_MOD_TEXT_CENTER,
+	forge_menu_fit(font, (short)(width - 2 * (inset + FORGE_MENU_PADDING)), title, fitted, sizeof(fitted));
+	forge_menu_text(font, x0, (short)(title_y + (title_height - line_height) / 2), x1, HALO_MOD_TEXT_CENTER,
 		FORGE_MENU_TITLE_TEXT_COLOR, fitted);
+	/* (a rule under the title, short of the border) */
+	forge_menu_box(text_x0, (short)(title_y + title_height), text_x1, (short)(title_y + title_height + 1),
+		FORGE_MENU_RULE_COLOR);
 
 	/* the rows: the highlight under the chosen one, then every row */
 	forge_menu_look.entry_bar_y = forge_menu_glide(
@@ -2657,10 +2942,14 @@ static void forge_render_popup(
 	bar_y = (short)PIN((short)forge_menu_look.entry_bar_y, rows_y, rows_y + (MAX(row_count, 1) - 1) * row_height);
 	if (forge_globals.entry_count > 0)
 	{
-		forge_menu_gradient(x0, bar_y, x1, (short)(bar_y + row_height), FORGE_MENU_BAR_LEFT_COLOR,
+		/* (inside the border) */
+		short bar_x0 = (short)(x0 + inset);
+		short bar_x1 = (short)(x1 - inset);
+
+		forge_menu_gradient(bar_x0, bar_y, bar_x1, (short)(bar_y + row_height), FORGE_MENU_BAR_LEFT_COLOR,
 			FORGE_MENU_BAR_RIGHT_COLOR, FALSE);
-		forge_menu_box(x0, bar_y, x1, (short)(bar_y + 1), FORGE_MENU_BAR_EDGE_COLOR);
-		forge_menu_box(x0, (short)(bar_y + row_height - 1), x1, (short)(bar_y + row_height),
+		forge_menu_box(bar_x0, bar_y, bar_x1, (short)(bar_y + 1), FORGE_MENU_BAR_EDGE_COLOR);
+		forge_menu_box(bar_x0, (short)(bar_y + row_height - 1), bar_x1, (short)(bar_y + row_height),
 			FORGE_MENU_BAR_EDGE_COLOR);
 	}
 	for (entry_index = forge_globals.first_entry_index;
@@ -2704,7 +2993,80 @@ static void forge_render_popup(
 	return;
 }
 
-/* the line being typed, low in the window, over the menu */
+/* the character grid, in the menu's look, its bottom at y: a cell a key, the
+chosen one highlighted, the last row's four keys each across a quarter */
+static void forge_render_text_grid(
+	rectangle2d const *window,
+	short bottom)
+{
+	long font = _forge_menu_font_large;
+	short line_height = forge_menu_line_height(font);
+	short cell_height = (short)(line_height + 6);
+	short window_width = (short)(window->x1 - window->x0);
+	short cell_width = (short)PIN((window_width - 2 * FORGE_MENU_MARGIN - 2 * FORGE_MENU_PADDING) /
+		FORGE_TEXT_GRID_COLUMNS, 12, 2 * line_height + 8);
+	short grid_width = (short)(cell_width * FORGE_TEXT_GRID_COLUMNS);
+	short x0 = (short)((window->x0 + window->x1 - grid_width) / 2 - FORGE_MENU_PADDING);
+	short x1 = (short)(x0 + grid_width + 2 * FORGE_MENU_PADDING);
+	short y1 = bottom;
+	short y0 = (short)(y1 - FORGE_TEXT_GRID_ROWS * cell_height - 2 * FORGE_MENU_PADDING);
+	short cells_x0 = (short)(x0 + FORGE_MENU_PADDING);
+	short row;
+
+	forge_menu_fade = 1.f;
+	/* (the padding is wider than the border and the corners' round) */
+	forge_menu_rounded_panel(x0, y0, x1, y1, FORGE_POPUP_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
+	for (row = 0; row < FORGE_TEXT_GRID_ROWS; row++)
+	{
+		short top = (short)(y0 + FORGE_MENU_PADDING + row * cell_height);
+		short text_y = (short)(top + (cell_height - line_height) / 2);
+		boolean keys_row = row == FORGE_TEXT_GRID_ROWS - 1;
+		short count = keys_row ? NUMBER_OF_FORGE_TEXT_GRID_KEYS : FORGE_TEXT_GRID_COLUMNS;
+		short index;
+
+		for (index = 0; index < count; index++)
+		{
+			short left = (short)(cells_x0 + grid_width * index / count);
+			short right = (short)(cells_x0 + grid_width * (index + 1) / count);
+			boolean selected = row == forge_text_entry_globals.grid_row && (keys_row
+				? index == forge_text_grid_key(forge_text_entry_globals.grid_column)
+				: index == forge_text_entry_globals.grid_column);
+			unsigned long text_color = selected ? FORGE_MENU_SELECTED_TEXT_COLOR : FORGE_MENU_TEXT_COLOR;
+			char label[8];
+
+			if (selected)
+			{
+				forge_menu_gradient(left, top, right, (short)(top + cell_height), FORGE_MENU_BAR_LEFT_COLOR,
+					FORGE_MENU_BAR_RIGHT_COLOR, FALSE);
+			}
+			if (keys_row)
+			{
+				_snprintf(label, sizeof(label), "%s", forge_text_grid_keys[index]);
+				/* (shift is lit while it is on) */
+				if (index == _forge_text_grid_shift && forge_text_entry_globals.grid_shift && !selected)
+					text_color = FORGE_MENU_PLACE_TEXT_COLOR;
+			}
+			else
+			{
+				char character = forge_text_grid_rows[row][index];
+
+				if (forge_text_entry_globals.grid_shift && character >= 'a' && character <= 'z')
+					character = (char)(character - 'a' + 'A');
+				label[0] = character;
+				label[1] = 0;
+			}
+			label[sizeof(label) - 1] = 0;
+			forge_menu_text(keys_row ? _forge_menu_font_small : font, left, keys_row
+				? (short)(top + (cell_height - forge_menu_line_height(_forge_menu_font_small)) / 2)
+				: text_y, right, HALO_MOD_TEXT_CENTER, text_color, label);
+		}
+	}
+
+	return;
+}
+
+/* the line being typed, low in the window, over the menu, with the
+character grid above it */
 static void forge_render_text_entry(
 	long font_tag_index,
 	rectangle2d const *window,
@@ -2717,8 +3079,9 @@ static void forge_render_text_entry(
 	bounds.x1 = (short)(window->x1 - FORGE_MENU_MARGIN);
 	bounds.y0 = (short)(window->y1 - FORGE_MENU_MARGIN - 4 * line_height);
 	bounds.y1 = (short)(bounds.y0 + line_height);
-	halo_mod_draw_box((short)(bounds.x0 - 8), (short)(bounds.y0 - 6), (short)(bounds.x1 + 8),
-		(short)(bounds.y0 + 3 * line_height + 6), 0xD0101418);
+	forge_render_text_grid(window, (short)(bounds.y0 - 6 - FORGE_MENU_PADDING));
+	forge_menu_rounded_panel((short)(bounds.x0 - 8), (short)(bounds.y0 - 6), (short)(bounds.x1 + 8),
+		(short)(bounds.y0 + 3 * line_height + 6), FORGE_POPUP_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
 
 	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_yellow,
 		forge_text_entry_globals.prompt);
@@ -2729,7 +3092,7 @@ static void forge_render_text_entry(
 	line[NUMBEROF(line) - 1] = 0;
 	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_white, line);
 	offset_rectangle2d(&bounds, 0, line_height);
-	_snprintf(line, NUMBEROF(line), "type on the keyboard (%lu of %lu), backspace deletes, enter/A takes it, escape leaves it",
+	_snprintf(line, NUMBEROF(line), "%lu of %lu   A type  X delete  Y shift  start done  B leave",
 		forge_text_entry_globals.length, forge_text_entry_globals.maximum_length);
 	line[NUMBEROF(line) - 1] = 0;
 	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_grey, line);
@@ -2814,12 +3177,9 @@ int forge_mode_on(
 {
 	static int every_game = -1;
 
+	/* game.forge (port_config.c) */
 	if (every_game < 0)
-	{
-		char const *text = getenv("HALO_FORGE");
-
-		every_game = text && strcmp(text, "all") == 0;
-	}
+		every_game = strcmp(config_string("game.forge"), "all") == 0;
 
 	/* (not in a saved film, which replays what was recorded) */
 	return every_game ||

@@ -126,6 +126,7 @@ symbols in this file:
 
 #include "camera_scripting.h"
 #include "dead_camera.h"
+#include "coop_spectate.h" /* port: port/linux/game/coop_spectate.c */
 #include "editor_flying_camera.h"
 #include "first_person_camera.h"
 #include "flying_camera.h"
@@ -786,8 +787,12 @@ static void director_choose_camera_game(
 	}
 	else
 	{
-		struct player_datum *player = player_get(local_player_get_player_index(local_player_index));
-		boolean use_dead_camera = player->unit_index == NONE && player->statistics.deaths > 0;
+		long player_index = local_player_get_player_index(local_player_index);
+		struct player_datum *player = player_get(player_index);
+		/* port: and a network co-op player who hasn't spawned yet, waiting for
+		the level's first checkpoint, watches too */
+		boolean use_dead_camera = player->unit_index == NONE &&
+			(player->statistics.deaths > 0 || players_coop_waiting_to_start(player_index));
 
 		/* (port: not a client in another's game, the host's rules: a flying
 		camera would see all of it, and one behind the player round its
@@ -799,17 +804,25 @@ static void director_choose_camera_game(
 			director_choose_game_perspective(local_player_index, initialize);
 			if (use_dead_camera)
 			{
-				if (director->camera_proc != (director_camera_update_proc)dead_camera_update)
+				/* port: a dead network co-op player watches a living teammate
+				(port/linux/game/coop_spectate.c), or its own body if nobody is alive */
+				long watched_unit_index = coop_spectating() ? coop_spectate_unit(local_player_index) : NONE;
+
+				if (director->camera_proc != (director_camera_update_proc)dead_camera_update ||
+					(watched_unit_index != NONE &&
+						((struct dead_camera *)director->camera_data)->unit_index != watched_unit_index))
 				{
 					dead_camera_new(
 						(struct dead_camera *)director->camera_data,
 						local_player_index,
-						NONE);
+						watched_unit_index);
 					director_set_camera(
 						local_player_index,
 						(director_camera_update_proc)dead_camera_update,
 						TRUE);
 				}
+				if (watched_unit_index != NONE)
+					coop_spectate_camera((struct dead_camera *)director->camera_data);
 			}
 			else if (director->camera_proc == (director_camera_update_proc)dead_camera_update)
 			{
@@ -999,6 +1012,20 @@ static boolean director_update_controls(
 					{
 						controls->facing_delta.yaw += mouse_yaw;
 						controls->facing_delta.pitch += mouse_pitch;
+					}
+					/* and the touch controls' swipe (port/linux/src/xinput_sdl_forge.c) */
+					{
+						real touch_yaw;
+						real touch_pitch;
+
+						/* (and what is held, turned as by the mouse) */
+						if (halo_linux_forge_touch_look(&touch_yaw, &touch_pitch))
+						{
+							controls->facing_delta.yaw += touch_yaw;
+							controls->facing_delta.pitch += touch_pitch;
+							mouse_yaw += touch_yaw;
+							mouse_pitch += touch_pitch;
+						}
 					}
 					if (gamepad->sticks[_gamepad_stick_left].x == 0 && gamepad->sticks[_gamepad_stick_left].y == 0)
 					{

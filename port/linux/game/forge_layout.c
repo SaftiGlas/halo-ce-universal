@@ -250,6 +250,46 @@ static char const *const forge_layout_multiplayer_maps[FORGE_LAYOUT_MULTIPLAYER_
 	"longest"
 };
 
+/* ---------- files written whole
+
+A file Forge writes (a layout, a prefab, the menu's place) is written beside
+itself first, "<name>.new", and takes the old one's place only once it is all
+there: a game stopped while it writes (an Android app closed, a full disk)
+leaves the file as it was. */
+
+FILE *forge_file_begin(
+	char const *path,
+	char *temporary_path,
+	unsigned long size)
+{
+	_snprintf(temporary_path, size, "%s.new", path);
+	temporary_path[size - 1] = 0;
+
+	return fopen(temporary_path, "wb");
+}
+
+/* FALSE when it could not all be written: the file stays as it was */
+int forge_file_commit(
+	FILE *file,
+	char const *temporary_path,
+	char const *path)
+{
+	boolean written = !ferror(file);
+
+	written = fclose(file) == 0 && written;
+	/* (rename replaces a file at once where the system can, but not on
+	Windows, whose old file goes first) */
+	if (written && rename(temporary_path, path) != 0)
+	{
+		remove(path);
+		written = rename(temporary_path, path) == 0;
+	}
+	if (!written)
+		remove(temporary_path);
+
+	return written;
+}
+
 /* ---------- private code */
 
 /* cache_files.c's */
@@ -363,6 +403,28 @@ static boolean forge_layout_read_header(
 		_snprintf(name, name_size, "Layout %d", slot);
 
 	return TRUE;
+}
+
+/* the layout file at path, as text, in a buffer of FORGE_LAYOUT_MAXIMUM_TEXT;
+its length, or -1 when it cannot be read or is longer than that holds (it is
+then not taken in part) */
+static long forge_layout_read_file(
+	char const *path,
+	char *text)
+{
+	FILE *file = fopen(path, "rb");
+	long length = -1;
+
+	if (file)
+	{
+		length = (long)fread(text, 1, FORGE_LAYOUT_MAXIMUM_TEXT - 1, file);
+		if (fgetc(file) != EOF)
+			length = -1;
+		fclose(file);
+	}
+	text[length > 0 ? length : 0] = 0;
+
+	return length;
 }
 
 /* the line without its line break */
@@ -786,6 +848,7 @@ static boolean forge_layout_save(
 	short slot)
 {
 	char path[FORGE_LAYOUT_PATH_SIZE];
+	char temporary_path[FORGE_LAYOUT_PATH_SIZE];
 	struct halo_layout_writer writer;
 	FILE *file;
 
@@ -805,13 +868,14 @@ static boolean forge_layout_save(
 	forge_layout_directory(path, sizeof(path));
 	_mkdir(path);
 	forge_layout_slot_path(slot, path, sizeof(path));
-	if ((file = fopen(path, "wb")) == NULL)
+	file = forge_file_begin(path, temporary_path, sizeof(temporary_path));
+	if (file)
+		fwrite(writer.text, 1, writer.length, file);
+	if (!file || !forge_file_commit(file, temporary_path, path))
 	{
 		terminal_printf(global_real_argb_orange, "forge: could not write %s", path);
 		return FALSE;
 	}
-	fwrite(writer.text, 1, writer.length, file);
-	fclose(file);
 
 	forge_layout_globals.current_slot = slot;
 	terminal_printf(global_real_argb_green, "forge: saved %s", forge_layout_globals.slot_names[slot]);
@@ -1051,18 +1115,14 @@ static boolean forge_layout_load(
 	short slot)
 {
 	char path[FORGE_LAYOUT_PATH_SIZE];
-	unsigned long length;
-	FILE *file;
 
 	forge_layout_slot_path(slot, path, sizeof(path));
-	if ((file = fopen(path, "rb")) == NULL)
+	if (forge_layout_read_file(path, forge_layout_globals.written_text) < 0)
 	{
-		terminal_printf(global_real_argb_orange, "forge: could not read %s", path);
+		terminal_printf(global_real_argb_orange, "forge: could not read %s (or it is over %d bytes)", path,
+			FORGE_LAYOUT_MAXIMUM_TEXT - 1);
 		return FALSE;
 	}
-	length = (unsigned long)fread(forge_layout_globals.written_text, 1, FORGE_LAYOUT_MAXIMUM_TEXT - 1, file);
-	fclose(file);
-	forge_layout_globals.written_text[length] = 0;
 
 	forge_layout_apply(forge_layout_globals.written_text, FALSE);
 
@@ -1084,20 +1144,18 @@ static boolean forge_layout_rewrite_header(
 	short slot)
 {
 	char path[FORGE_LAYOUT_PATH_SIZE];
+	char temporary_path[FORGE_LAYOUT_PATH_SIZE];
 	char *text = forge_layout_globals.written_text;
 	char const *next = text;
-	unsigned long length;
 	boolean header = TRUE;
 	FILE *file;
 
+	/* (a file that does not all fit is not written again from its start) */
 	forge_layout_slot_path(slot, path, sizeof(path));
-	if ((file = fopen(path, "rb")) == NULL)
+	if (forge_layout_read_file(path, text) < 0)
 		return FALSE;
-	length = (unsigned long)fread(text, 1, FORGE_LAYOUT_MAXIMUM_TEXT - 1, file);
-	fclose(file);
-	text[length] = 0;
 
-	if ((file = fopen(path, "wb")) == NULL)
+	if ((file = forge_file_begin(path, temporary_path, sizeof(temporary_path))) == NULL)
 		return FALSE;
 	fprintf(file, "name %s\n", forge_layout_globals.slot_names[slot]);
 	if (forge_layout_globals.slot_descriptions[slot][0])
@@ -1126,9 +1184,8 @@ static boolean forge_layout_rewrite_header(
 		if (*next == '\n')
 			next++;
 	}
-	fclose(file);
 
-	return TRUE;
+	return forge_file_commit(file, temporary_path, path);
 }
 
 /* puts the layout in the map list or takes it out: its file's "listed 1"

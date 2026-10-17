@@ -117,6 +117,9 @@ struct forge_prefab_object
 /* ---------- globals */
 
 boolean tag_index_is_group(long tag_index, long group_tag);
+/* forge_layout.c's: a file written beside itself, then in its place */
+FILE *forge_file_begin(char const *path, char *temporary_path, unsigned long size);
+int forge_file_commit(FILE *file, char const *temporary_path, char const *path);
 
 static struct
 {
@@ -408,6 +411,7 @@ static boolean forge_prefabs_save(
 	char const *name)
 {
 	char path[FORGE_PREFABS_PATH_SIZE];
+	char temporary_path[FORGE_PREFABS_PATH_SIZE];
 	real_point3d origin;
 	short index;
 	FILE *file;
@@ -435,7 +439,7 @@ static boolean forge_prefabs_save(
 	forge_prefabs_directory(path, sizeof(path));
 	_mkdir(path);
 	forge_prefabs_slot_path(slot, path, sizeof(path));
-	if ((file = fopen(path, "wb")) == NULL)
+	if ((file = forge_file_begin(path, temporary_path, sizeof(temporary_path))) == NULL)
 	{
 		terminal_printf(global_real_argb_orange, "forge_prefabs: could not write %s", path);
 		return FALSE;
@@ -458,7 +462,11 @@ static boolean forge_prefabs_save(
 			object->object.scale > 0.f ? object->object.scale : 1.f,
 			tag_get_name(object->definition_index));
 	}
-	fclose(file);
+	if (!forge_file_commit(file, temporary_path, path))
+	{
+		terminal_printf(global_real_argb_orange, "forge_prefabs: could not write %s", path);
+		return FALSE;
+	}
 
 	return TRUE;
 }

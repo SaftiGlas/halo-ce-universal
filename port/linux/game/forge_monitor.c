@@ -67,18 +67,21 @@ is turned, and how much faster with the fast key: the free camera's
 extern struct cache_file_tag_instance *global_tag_instances;
 /* the platform layer's (port/linux/src/port_config.c) */
 int config_boolean(const char *name);
+char const *config_string(const char *name);
 
 /* ---------- globals */
 
 static struct
 {
-	/* the monitor's tag in the map whose tags these are */
+	/* the monitor's tag in the map whose tags these are, by their address and
+	the scenario's name (every map's tags are at the same address) */
 	void *tag_instances;
+	char scenario_name[256];
 	long definition_index;
 	/* local player 0's rise (1) and sink (-1) keys, and their fast key */
 	int rise;
 	int fast;
-} forge_monitor_globals = { NULL, NONE, 0, 0 };
+} forge_monitor_globals = { NULL, "", NONE, 0, 0 };
 
 /* ---------- public code */
 
@@ -87,25 +90,43 @@ static struct
 int forge_monitor_import_wanted(
 	void)
 {
-	char const *text = getenv("HALO_FORGE");
-
 	return config_boolean("game.forge_monitor") &&
-		((text && strcmp(text, "all") == 0) || game_variant_set_is_forge());
+		(strcmp(config_string("game.forge"), "all") == 0 || game_variant_set_is_forge());
 }
 
 /* the monitor's biped in this map, or NONE */
 long forge_monitor_definition(
 	void)
 {
-	if (forge_monitor_globals.tag_instances != (void *)global_tag_instances)
+	char const *scenario_name = global_tag_instances && global_scenario_index != NONE
+		? tag_get_name(global_scenario_index)
+		: "";
+
+	if (forge_monitor_globals.tag_instances != (void *)global_tag_instances ||
+		strcmp(forge_monitor_globals.scenario_name, scenario_name) != 0)
 	{
 		forge_monitor_globals.tag_instances = (void *)global_tag_instances;
+		_snprintf(forge_monitor_globals.scenario_name, sizeof(forge_monitor_globals.scenario_name), "%s",
+			scenario_name);
+		forge_monitor_globals.scenario_name[sizeof(forge_monitor_globals.scenario_name) - 1] = 0;
 		forge_monitor_globals.definition_index = global_tag_instances
 			? tag_loaded(BIPED_DEFINITION_TAG, FORGE_MONITOR_TAG_NAME)
 			: NONE;
 	}
 
 	return forge_monitor_globals.definition_index;
+}
+
+/* a new map (game/mods.c): its tags are looked in again, even where they
+are at the same address under the same scenario name */
+void forge_monitor_new_map(
+	void)
+{
+	forge_monitor_globals.tag_instances = NULL;
+	forge_monitor_globals.scenario_name[0] = 0;
+	forge_monitor_globals.definition_index = NONE;
+
+	return;
 }
 
 int forge_unit_is_monitor(
