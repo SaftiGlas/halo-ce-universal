@@ -255,7 +255,12 @@ static void forge_edit_delete(
 	long object_index)
 {
 	/* nothing marked: nothing happens */
-	if (object_index != NONE)
+	if (object_index != NONE && forge_object_holds_flag(object_index))
+	{
+		terminal_printf(global_real_argb_orange, "forge_edit: %s is the game type's: it can be moved, not removed",
+			forge_edit_object_name(object_get(object_index)->definition_index));
+	}
+	else if (object_index != NONE)
 	{
 		struct forge_edit_object *record;
 
@@ -662,7 +667,12 @@ static boolean forge_edit_duplicate(
 
 	forge_layout_object_budget(&used, &maximum);
 	forge_edit_record(object_index, &record);
-	if (used >= maximum)
+	if (forge_object_holds_flag(object_index))
+	{
+		terminal_printf(global_real_argb_orange, "forge_edit: %s is the game type's: it cannot be copied",
+			forge_edit_object_name(record.definition_index));
+	}
+	else if (used >= maximum)
 	{
 		terminal_printf(global_real_argb_orange, "forge_edit: the layout cannot keep another object");
 	}

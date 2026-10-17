@@ -232,6 +232,9 @@ static struct
 	unsigned long applied_checksum;
 } forge_layout_globals = { "", 0, { { 0 } }, 0, { 0 }, 0, 0, 0, { { 0 } }, { { 0 } }, { 0 }, 0, NONE, 0, { { 0 } }, -1, 0 };
 
+/* TRUE while a layout's spawned object is made (forge_layout_creating_object) */
+static boolean forge_layout_creating;
+
 /* the multiplayer maps (interface/ui_widget_event_handler_functions.c) */
 static char const *const forge_layout_multiplayer_maps[FORGE_LAYOUT_MULTIPLAYER_MAP_COUNT] =
 {
@@ -991,7 +994,10 @@ static void forge_layout_load_forge_line(
 		/* (a scale that is none, or out of bounds: the tag's own) */
 		if (!(values[9] >= FORGE_LAYOUT_MINIMUM_SCALE && values[9] <= FORGE_LAYOUT_MAXIMUM_SCALE))
 			values[9] = 0.f;
+		/* (as it was saved, whatever the game type's vehicles and weapons) */
+		forge_layout_creating = TRUE;
 		object_index = forge_layout_new_object(definition_index, &position, &forward, &up, values[9]);
+		forge_layout_creating = FALSE;
 		if (object_index != NONE)
 			forge_layout_note_spawned(object_index);
 	}
@@ -1037,7 +1043,8 @@ static void forge_layout_load_forge_line(
 		if (!distributed_point_valid(&original, FORGE_LAYOUT_WORLD_BOUND))
 			return;
 		entry = forge_layout_find_map_object(definition_index, &original);
-		if (entry && object_try_and_get(entry->object_index))
+		/* (never a flag or ball, forge_object_holds_flag) */
+		if (entry && object_try_and_get(entry->object_index) && !forge_object_holds_flag(entry->object_index))
 		{
 			object_delete(entry->object_index);
 			entry->removed = TRUE;
@@ -1640,6 +1647,12 @@ static void forge_layout_debug_update(
 
 /* ---------- public code */
 
+boolean forge_layout_creating_object(
+	void)
+{
+	return forge_layout_creating;
+}
+
 void forge_layout_note_spawned(
 	long object_index)
 {
@@ -2114,7 +2127,7 @@ void forge_layout_handle_edit(
 		}
 		break;
 	case _forge_edit_remove:
-		if ((object_index = forge_layout_edit_object(&message)) != NONE)
+		if ((object_index = forge_layout_edit_object(&message)) != NONE && !forge_object_holds_flag(object_index))
 		{
 			forge_layout_note_removed(object_index);
 			object_delete(object_index);

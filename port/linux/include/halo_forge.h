@@ -236,6 +236,12 @@ int forge_busy(void);
 tools would pick up, or -1 (NONE): never the player, what they ride or
 carry, nor projectiles, sound scenery and placeholders */
 long forge_object_at_crosshair(void);
+/* TRUE when objects of the definition are a game type's flag or ball, and
+when the object is one or carries one: the game type keeps those, and the
+game halts if one is deleted while it runs (objects.c), so the tools move
+them but never make, copy or remove them */
+int forge_definition_is_flag(long definition_index);
+int forge_object_holds_flag(long object_index);
 /* where an object of the definition would be placed at the crosshair,
 standing on the surface there; FALSE when the camera is outside the map */
 int forge_placement_at_crosshair(long definition_index, float position[3]);

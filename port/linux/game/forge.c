@@ -117,6 +117,8 @@ escape belongs to it alone.
 #include "interface/interface.h"
 #include "interface/terminal.h"
 #include "interface/ui_widget.h"
+#include "items/weapon_definitions.h"
+#include "items/weapons.h"
 #include "math/integer_math.h"
 #include "math/real_math.h"
 #include "objects/object_definitions.h"
@@ -230,7 +232,6 @@ blue highlight of Halo's own menus, laid out as Halo: Reach's forge menu */
 #define FORGE_MENU_CAP_TEXT_COLOR 0xffb8d8ffUL
 #define FORGE_MENU_BAR_LEFT_COLOR 0xe82896ffUL
 #define FORGE_MENU_BAR_RIGHT_COLOR 0x901a5aa0UL
-#define FORGE_MENU_BAR_EDGE_COLOR 0xc0a8d8ffUL
 #define FORGE_MENU_RULE_COLOR 0x602896ffUL
 #define FORGE_MENU_SCROLL_COLOR 0xc02896ffUL
 #define FORGE_MENU_TITLE_TEXT_COLOR 0xfff0f2f4UL
@@ -256,6 +257,9 @@ pausebox_*.svg): its navy three quarters opaque, a blue border, round corners
 #define FORGE_POPUP_BORDER_COLOR 0xff2896ffUL
 #define FORGE_POPUP_RADIUS 8.5f
 #define FORGE_POPUP_BORDER 2.f
+/* the chosen row of the menu and of a popup: a black box with the popup's
+border and round corners */
+#define FORGE_MENU_HIGHLIGHT_FILL_COLOR 0xe0000000UL
 #define FORGE_MENU_BUDGET_LOW_COLOR 0xffffb347UL
 #define FORGE_MENU_BUDGET_FULL_COLOR 0xffff5a4aUL
 
@@ -918,7 +922,7 @@ static void forge_menu_count_categories(
 
 		for (category_index = 0; category_index < FORGE_CATEGORY_COUNT; category_index++)
 		{
-			if (forge_categories[category_index].object_type == object_type)
+			if (forge_categories[category_index].object_type == object_type && !forge_definition_is_flag(tag_index))
 				forge_globals.category_counts[category_index]++;
 		}
 	}
@@ -952,7 +956,7 @@ static void forge_menu_build(
 	while ((tag_index = tag_iterator_next(&iterator)) != NONE &&
 		forge_globals.entry_count < FORGE_MAXIMUM_MENU_ENTRIES)
 	{
-		if (object_definition_get(tag_index)->object.type == object_type)
+		if (object_definition_get(tag_index)->object.type == object_type && !forge_definition_is_flag(tag_index))
 			forge_globals.entries[forge_globals.entry_count++] = tag_index;
 	}
 	qsort(
@@ -1271,6 +1275,11 @@ static void forge_remove_at_crosshair(
 	{
 		terminal_printf(global_real_argb_orange, "forge: nothing to remove there");
 	}
+	else if (forge_object_holds_flag(object_index))
+	{
+		terminal_printf(global_real_argb_orange, "forge: %s is the game type's: it can be moved, not removed",
+			tag_get_name(object_get(object_index)->definition_index));
+	}
 	else if (forge_client())
 	{
 		struct object_datum *object = object_get(object_index);
@@ -1445,6 +1454,14 @@ static void forge_hold_end(
 	long object_index = forge_globals.held_object_index;
 	struct object_datum *object = object_get(object_index);
 	char const *name = tag_get_name(object->definition_index);
+
+	/* a flag or ball is put back instead */
+	if (remove_object && forge_object_holds_flag(object_index))
+	{
+		terminal_printf(global_real_argb_orange, "forge: %s is the game type's: it can be moved, not removed", name);
+		cancel = TRUE;
+		remove_object = FALSE;
+	}
 
 	/* a mod's objects that go with it: put down with it, or gone with it
 	(told before it is removed) */
@@ -2786,11 +2803,8 @@ static void forge_render_menu(
 			rows_y + (FORGE_MENU_VISIBLE_ENTRIES - 1) * row_height);
 
 		/* (inside the border) */
-		forge_menu_gradient(inner_x0, bar_y, inner_x1, (short)(bar_y + row_height), FORGE_MENU_BAR_LEFT_COLOR,
-			FORGE_MENU_BAR_RIGHT_COLOR, FALSE);
-		forge_menu_box(inner_x0, bar_y, inner_x1, (short)(bar_y + 1), FORGE_MENU_BAR_EDGE_COLOR);
-		forge_menu_box(inner_x0, (short)(bar_y + row_height - 1), inner_x1, (short)(bar_y + row_height),
-			FORGE_MENU_BAR_EDGE_COLOR);
+		forge_menu_rounded_panel(inner_x0, bar_y, inner_x1, (short)(bar_y + row_height),
+			FORGE_MENU_HIGHLIGHT_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
 	}
 	else
 	{
@@ -2946,11 +2960,8 @@ static void forge_render_popup(
 		short bar_x0 = (short)(x0 + inset);
 		short bar_x1 = (short)(x1 - inset);
 
-		forge_menu_gradient(bar_x0, bar_y, bar_x1, (short)(bar_y + row_height), FORGE_MENU_BAR_LEFT_COLOR,
-			FORGE_MENU_BAR_RIGHT_COLOR, FALSE);
-		forge_menu_box(bar_x0, bar_y, bar_x1, (short)(bar_y + 1), FORGE_MENU_BAR_EDGE_COLOR);
-		forge_menu_box(bar_x0, (short)(bar_y + row_height - 1), bar_x1, (short)(bar_y + row_height),
-			FORGE_MENU_BAR_EDGE_COLOR);
+		forge_menu_rounded_panel(bar_x0, bar_y, bar_x1, (short)(bar_y + row_height),
+			FORGE_MENU_HIGHLIGHT_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
 	}
 	for (entry_index = forge_globals.first_entry_index;
 		entry_index < forge_globals.entry_count &&
@@ -3514,6 +3525,36 @@ long forge_object_at_crosshair(
 	}
 
 	return object_index;
+}
+
+int forge_definition_is_flag(
+	long definition_index)
+{
+	/* (as weapon_is_flag, items/weapons.c) */
+	return object_definition_get(definition_index)->object.type == _object_type_weapon &&
+		TEST_FLAG(weapon_definition_get(definition_index)->weapon.flags, 3);
+}
+
+int forge_object_holds_flag(
+	long object_index)
+{
+	struct object_datum *object = object_try_and_get(object_index);
+	boolean holds_flag = FALSE;
+
+	if (object)
+	{
+		long child_index;
+
+		holds_flag = object->object.type == _object_type_weapon && weapon_is_flag(object_index);
+		for (child_index = object->object.first_child_object_index;
+			!holds_flag && child_index != NONE;
+			child_index = object_get(child_index)->object.next_object_index)
+		{
+			holds_flag = forge_object_holds_flag(child_index);
+		}
+	}
+
+	return holds_flag;
 }
 
 int forge_placement_at_crosshair(

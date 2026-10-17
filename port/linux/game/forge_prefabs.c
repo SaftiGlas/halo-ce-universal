@@ -205,7 +205,8 @@ static long forge_prefabs_marked_object(
 	struct object_datum *object = object_index != NONE ? object_try_and_get(object_index) : NULL;
 
 	if (!object || !TEST_FLAG(FORGE_PREFABS_OBJECT_MASK, object->object.type) ||
-		object->object.parent_object_index != NONE || forge_prefabs_holds_player(object_index))
+		object->object.parent_object_index != NONE || forge_prefabs_holds_player(object_index) ||
+		forge_object_holds_flag(object_index))
 	{
 		object_index = NONE;
 	}
@@ -1338,7 +1339,8 @@ void forge_prefabs_object_toggle(
 	struct object_datum *object = object_index != NONE ? object_try_and_get(object_index) : NULL;
 
 	if (!object || !TEST_FLAG(FORGE_PREFABS_OBJECT_MASK, object->object.type) ||
-		object->object.parent_object_index != NONE || forge_prefabs_holds_player(object_index))
+		object->object.parent_object_index != NONE || forge_prefabs_holds_player(object_index) ||
+		forge_object_holds_flag(object_index))
 	{
 		object_index = NONE;
 	}
