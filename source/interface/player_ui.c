@@ -225,6 +225,14 @@ static void clear_profile_edit_data(
 
 static long player1_last_used_profile_index = NONE;
 struct player_ui_globals player_ui_globals = { 0 };
+/* port: the PC options (game_engine.h) of the gametype being edited, as
+edit_profile's variant, and of the multiplayer gametype */
+static struct
+{
+	struct game_variant_options original;
+	struct game_variant_options current;
+} player_ui_edit_options;
+static struct game_variant_options player_ui_multiplayer_options;
 static char player1_profile_path[0x100] = { 0 };
 
 /* ---------- public code */
@@ -359,6 +367,13 @@ struct player_profile *player_ui_get_edit_player_profile(
 	return result;
 }
 
+/* port: the saved game file being edited (NONE for none) */
+long player_ui_get_edit_profile_index(
+	void)
+{
+	return player_ui_globals.edit_profile_index;
+}
+
 struct game_variant *player_ui_get_edit_playlist_profile(
 	void)
 {
@@ -369,6 +384,13 @@ struct game_variant *player_ui_get_edit_playlist_profile(
 	else
 		result = NULL;
 	return result;
+}
+
+/* port: the PC options of the gametype being edited (game_engine.h) */
+struct game_variant_options *player_ui_get_edit_playlist_options(
+	void)
+{
+	return player_ui_get_edit_playlist_profile() ? &player_ui_edit_options.current : NULL;
 }
 
 boolean player_ui_edit_profile_is_dirty(
@@ -412,7 +434,10 @@ boolean player_ui_edit_profile_is_dirty(
 				if (csmemcmp(
 					&player_ui_globals.edit_profile.original.variant,
 					&player_ui_globals.edit_profile.current.variant,
-					sizeof(struct game_variant)))
+					sizeof(struct game_variant)) ||
+					/* port: and its PC options */
+					csmemcmp(&player_ui_edit_options.original, &player_ui_edit_options.current,
+						sizeof(struct game_variant_options)))
 				{
 					result = TRUE;
 				}
@@ -496,6 +521,19 @@ void player_ui_local_player_joined_multiplayer_game(
 	return;
 }
 
+/* port: the local player out of this game and the next (a split screen
+player who quit: player_ui_autojoin_players_to_next_multiplayer_game would
+join them again) */
+void player_ui_local_player_left_multiplayer_game(
+	short local_player_index)
+{
+	if (local_player_index < 0 || local_player_index >= MAXIMUM_NUMBER_OF_LOCAL_PLAYERS)
+		return;
+	player_ui_globals.local_players[local_player_index].prejoined_multiplayer = FALSE;
+	player_ui_globals.multiplayer_autojoin[local_player_index] = FALSE;
+	return;
+}
+
 boolean player_ui_rumble_disabled(
 	short local_player_index)
 {
@@ -554,7 +592,22 @@ void player_ui_set_game_variant(
 
 	csmemcpy(&player_ui_globals.multiplayer_variant, variant, sizeof(*variant));
 	player_ui_globals.multiplayer_variant_specified = TRUE;
+	/* port: its PC options, the defaults until they are given */
+	game_variant_options_default(variant, &player_ui_multiplayer_options);
 	return;
+}
+
+/* port: the PC options of the multiplayer gametype (player_ui_set_game_variant's) */
+void player_ui_set_game_variant_options(
+	struct game_variant_options const *options)
+{
+	player_ui_multiplayer_options = *options;
+}
+
+struct game_variant_options const *player_ui_get_game_variant_options(
+	void)
+{
+	return &player_ui_multiplayer_options;
 }
 
 boolean player_ui_game_variant_specified(
@@ -604,8 +657,10 @@ void player_ui_fast_setup_network_server(
 	game_connection_set(_game_connection_local);
 	main_set_multiplayer_map_name("");
 	player_ui_globals.multiplayer_variant_specified = FALSE;
+	/* port: the pregame screen the menus open (the port's lobby with its
+	menus loaded, as ui_widget.c opens it), not ui.map's by name */
 	if (ui_widget_load_by_name_or_tag(
-		"ui\\shell\\main_menu\\multiplayer_type_select\\connected\\pregame\\connected_pregame_screen",
+		pc_menus_screen("ui\\shell\\main_menu\\multiplayer_type_select\\connected\\pregame\\connected_pregame_screen"),
 		NONE,
 		NULL,
 		NONE,
@@ -715,6 +770,9 @@ void player_ui_begin_editing_profile(
 					&player_ui_globals.edit_profile.current.variant,
 					&player_ui_globals.edit_profile.original.variant,
 					sizeof(struct game_variant));
+				/* port: and its PC options */
+				playlist_profile_get_options(profile_index, &player_ui_edit_options.original);
+				player_ui_edit_options.current = player_ui_edit_options.original;
 			}
 			else
 			{
@@ -756,6 +814,24 @@ boolean player_ui_save_profile(
 			player_profile_save(
 				player_ui_globals.edit_profile_index,
 				&player_ui_globals.edit_profile.current.player);
+			/* port: a local player playing with the profile gets its
+			changes now (its button and stick layouts, sensitivity,
+			inversion), not when the profile is next chosen */
+			{
+				short local_player_index;
+
+				for (local_player_index = 0; local_player_index < MAXIMUM_NUMBER_OF_LOCAL_PLAYERS; local_player_index++)
+				{
+					if (player_ui_globals.local_players[local_player_index].active_profile_index ==
+						player_ui_globals.edit_profile_index)
+					{
+						player_ui_set_active_player_profile(
+							local_player_index,
+							player_ui_globals.edit_profile_index,
+							&player_ui_globals.edit_profile.current.player);
+					}
+				}
+			}
 			result = TRUE;
 			break;
 
@@ -785,9 +861,10 @@ boolean player_ui_save_profile(
 						player_ui_globals.edit_profile.current.variant.human_readable_game_description);
 					if (new_profile_index != NONE)
 					{
-						playlist_profile_save(
+						playlist_profile_save_with_options(
 							new_profile_index,
-							&player_ui_globals.edit_profile.current.variant);
+							&player_ui_globals.edit_profile.current.variant,
+							&player_ui_edit_options.current);
 						player_ui_globals.edit_profile_index = new_profile_index;
 						if (saved_game_file_get_path_to_enclosing_directory(
 							new_profile_index,
@@ -812,9 +889,10 @@ boolean player_ui_save_profile(
 			}
 			else
 			{
-				playlist_profile_save(
+				playlist_profile_save_with_options(
 					player_ui_globals.edit_profile_index,
-					&player_ui_globals.edit_profile.current.variant);
+					&player_ui_globals.edit_profile.current.variant,
+					&player_ui_edit_options.current);
 				if (saved_game_file_get_path_to_enclosing_directory(
 					player_ui_globals.edit_profile_index,
 					directory_path))
@@ -1156,6 +1234,35 @@ void player0_look_invert_pitch(
 	}
 
 	set_local_player_controls_from_player_profile(0);
+	return;
+}
+
+/* port: a saved game file deleted (delete_enumerated_saved_game_file): the
+files after it moved down its memory unit's list, so the indices of the
+players' profiles and the one being edited follow them, and none is left
+naming the file deleted. A player profile deleted before the one in use
+left that one's index naming the next file, often the next profile made,
+which the profile in use was then saved over (taking its name, while its
+folder kept the new profile's name, which then read as in use). */
+void player_ui_saved_game_file_removed(
+	long removed_index)
+{
+	short local_player_index;
+
+	for (local_player_index = 0; local_player_index < MAXIMUM_NUMBER_OF_LOCAL_PLAYERS; local_player_index++)
+	{
+		player_ui_globals.local_players[local_player_index].active_profile_index =
+			saved_game_file_index_after_removal(
+				player_ui_globals.local_players[local_player_index].active_profile_index,
+				removed_index);
+	}
+	player_ui_globals.edit_profile_index = saved_game_file_index_after_removal(
+		player_ui_globals.edit_profile_index,
+		removed_index);
+	player1_last_used_profile_index = saved_game_file_index_after_removal(
+		player1_last_used_profile_index,
+		removed_index);
+
 	return;
 }
 

@@ -295,6 +295,11 @@ void player_control_new_unit(
 	long unit_index);
 void player_control_action_test_reset(
 	void);
+void player_control_action_test_note(
+	unsigned long unit_control_flags,
+	real_euler_angles2d const *facing_delta,
+	real_vector2d const *throttle,
+	real primary_trigger);
 boolean player_control_action_test_accept(
 	void);
 boolean player_control_action_test_back(
@@ -353,6 +358,12 @@ boolean player_teleport(
 	long player_index,
 	long source_unit_index,
 	real_point3d const *position);
+/* port: the player's unit made again as one of another definition, or NONE
+(Forge's monitor, port/linux/game/forge_monitor.c) */
+long player_replace_unit(
+	long player_index,
+	long definition_index,
+	real_point3d const *position);
 
 boolean local_player_exists(
 	long local_player_index);
@@ -372,6 +383,24 @@ short players_get_respawn_failure(
 	void);
 
 boolean players_respawn_coop(
+	void);
+/* port: network co-op checkpoints (players.c): remember where the players
+were at the last checkpoint, and respawn everyone there. Players other than
+the first are held back from spawning on a new level: until its opening
+cutscene ends and a teammate has been free on foot a few seconds (not
+riding a vehicle, nor held by the scripts). */
+boolean players_coop_waiting_to_start(
+	long player_index);
+/* port: the co-op host's bringto command: everyone comes to the host */
+boolean players_coop_bring_to_host(
+	void);
+/* port: TRUE if `position` is inside a switch trigger for the BSP that is
+loaded. A player left there switches the level on the next tick. */
+boolean player_position_switches_bsp(
+	real_point3d const *position);
+void players_note_checkpoint(
+	void);
+void players_respawn_at_checkpoint(
 	void);
 void players_reconnect_to_structure_bsp(
 	void);
@@ -421,6 +450,15 @@ void players_debug_render(
 void debug_player_teleport(
 	short player_index,
 	short location_index);
+/* port: player names the host's ban command can always name */
+char player_name_character_ascii(
+	wchar_t character);
+boolean player_name_clean(
+	wchar_t *name,
+	long count);
+boolean player_name_valid(
+	wchar_t const *name,
+	long count);
 
 /* ---------- globals */
 
