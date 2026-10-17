@@ -3122,14 +3122,18 @@ void forge_update(
 	/* at most a tenth of a second, so a hitch does not fling a held object */
 	real seconds = MIN((real)(milliseconds - forge_globals.milliseconds) / MILLISECONDS_PER_SECOND, 0.1f);
 
-	/* source mods first (game/mods.c), whether or not the tools are on */
-	halo_mods_update();
-
-	forge_globals.milliseconds = milliseconds;
+	/* whether the tools are on this frame, before the mods are asked: a
+	mod's own key opens its popup (forge_popup_open), which needs them on
+	(forge_render turns this off after each frame) */
 	forge_globals.active = halo_linux_forge_read_keys(&keys) &&
 		local_player_get_player_index(FORGE_LOCAL_PLAYER_INDEX) != NONE;
 	if (!forge_globals.active)
 		csmemset(&keys, 0, sizeof(keys));
+
+	/* source mods first (game/mods.c), whether or not the tools are on */
+	halo_mods_update();
+
+	forge_globals.milliseconds = milliseconds;
 	forge_update_keys(&keys, milliseconds, seconds);
 
 	return;
