@@ -480,34 +480,48 @@ the mouse's buttons (triggers) work only the tools. The keys that move the
 player (W, A, S, D) keep moving it all the while. In the menu X closes
 it too, and LB and RB change tab.
 
-**Layouts** (`game/forge_layout.c`): the **Map** tab of the menu saves
+**Map variants** (`game/forge_layout.c`): the **Map** tab of the menu saves
 what Forge changed in the map (the objects spawned, the map's own objects
 moved or removed, the spawns, zones, AI characters and waypoints, gravity, the sky) as
-a layout: choose one with left and right (or a new one), Save, Load it,
+a map variant, as Halo 3's Forge does: choose one with left and right (or a new one), Save, Load it,
 Reset the map, Remove all objects (choose it twice: every
 vehicle, weapon, piece of equipment, scenery and device goes, the players
 stay; Reset the map brings back the map's own, not what Forge placed; items
 still return at their spawns until those are removed on the Spawns tab),
-Delete it. Up to 16 a map, in
-`u/forge/<map>/layout_NN.txt` of the save root; new ones are called
-"Layout N". The **Name** and **Description** rows change what a layout is
+Delete it. A variant is a file of its own, `forge_maps/<map>_<name>.mvar`
+beside the `custom_maps` folder (in the data root), named for the variant's
+name when it is first saved; the Map tab lists up to 64 of a map, in the
+order of their file names. The `.mvar` format is binary, in chunks, and is
+described in [docs/forge_mvar.md](../../docs/forge_mvar.md): the variant's
+name, description, author and base map, then each object's id, type, tag,
+place, turn (a quaternion), scale, team, spawn flags and game types, each
+Forge part's settings, and the editor's notes (group, comment). The object's
+popup (X) sets its **Team**, **Placed at start** (off: made only while
+Forge is on, to edit), **Game types** (with Forge off, made only in that
+game type), **Respawn** (kept, not used yet), **Group** and **Comment**.
+Only the game's machine saves variants (a local game, a system link host):
+the other machines play the host's and keep none. The layouts of before,
+`u/forge/<map>/layout_NN.txt` in the save root, are made variants in
+`forge_maps` once, when the variants are first listed; the text files stay
+where they are (`u/forge/<map>/converted.txt` notes which were made). The
+**Name** and **Description** rows change what a variant is
 called and what the map list says about it: select the row and type on the
 keyboard (letters, digits, spaces and the usual marks; backspace deletes,
-enter takes the line, escape leaves it as it was). For a new layout they
+enter takes the line, escape leaves it as it was). For a new variant they
 are kept until it is saved. Without a keyboard, `python -m
 tools.mod_launcher layouts rename MAP N NAME` and `layouts describe MAP N
-TEXT` do the same (`layouts` lists them). A saved layout loads only when
+TEXT` do the same (`layouts` lists them). A saved variant loads only when
 it is asked for (Load it, or chosen in the map list, below): the map chosen
 by its own name is the map as the game has it.
 
-A layout with **Show in the map list** on is a map of its own: the
+A variant with **Show in the map list** on is a map of its own: the
 multiplayer map list of local (splitscreen) games shows it after the 13
 maps of the game, with its base map's picture, the layout's name as its
 title and its description (or, when it has none, "A Forge map made on
 <map>"). Choosing it
-plays the base map with that layout, in any game type, also in system link:
-the host loads the layout and sends it to each machine that joins (the
-other machines need not have it). The host's objects reach them as all its
+plays the base map with that variant, in any game type, also in system link:
+the host loads the variant and sends it to each machine that joins (the
+other machines need not have it, and do not save it). The host's objects reach them as all its
 objects do; each machine makes the layout's scenery itself and takes its
 zones, gravity and sky. Kill and teleport zones act on the host, gravity
 zones and gravity on every machine. The tags the layout uses from other
@@ -704,7 +718,7 @@ the setting for one start of the game. It has priority over the file.
 | `crash_reports.upload` | `"ask"` | `HALO_CRASH_REPORTS` | Windows only. `"yes"`: the game sends a report of each crash to the developers. `"no"`: the game sends no reports. `"ask"`: the game asks at the next crash and writes the answer here. Refer to "Crash reports" in [port/windows/README.md](../windows/README.md#crash-reports). |
 | `debug.update_answer` | `""` | `HALO_UPDATE_ANSWER` | The answer to the update question, for automatic tests: `yes`, `no` or `never`. Empty: the game asks. |
 | `debug.forge_menu_tab` | `-1` | `HALO_FORGE_MENU_TAB` | With the dev tools on (a Forge game), a few seconds into a game: open their menu on this tab (0 is the first), for screenshots of it (`debug.screenshot_directory`); `100` opens an object's popup instead, on the first object of the map, `101` the popup of a held object, and `102` a line being typed, with its character grid. `-1`: never. |
-| `debug.forge_layout_save` | `0` | `HALO_FORGE_LAYOUT_SAVE` | For automated tests: in a local game, save the Forge layout to this slot (`1` to `16`) a few seconds in, once, and log where the player is; `0` never. |
+| `debug.forge_layout_save` | `0` | `HALO_FORGE_LAYOUT_SAVE` | For automated tests: in a local game, save the Forge layout as this map variant of the map (`1` to `64`, as its Map tab lists them; one past those there are is a new one) a few seconds in, once, and log where the player is; `0` never. |
 | `debug.forge_test_edit` | `0` | `HALO_FORGE_TEST_EDIT` | For automated tests of Forge in system link (with `debug.network_test` and the `forge` variant): `1`, the host spawns a scenery object a few seconds in, and a client asks it to spawn one, then to move it and to remove it; both log what they send and take. |
 | `debug.forge_test_monitor` | `0` | `HALO_FORGE_TEST_MONITOR` | For automated tests of Forge's monitor (`game.forge_monitor`): `1`, each machine's player becomes the monitor ten seconds into a game, rises, and lands ten seconds later; what the player's unit is and where is logged every two seconds. |
 | `debug.forge_test_prefab` | `0` | `HALO_FORGE_TEST_PREFAB` | For automated tests of Forge's prefabs: in a local Forge game, a few seconds in, once, select this many of the map's objects, save them as a prefab and place it beside them; how many were selected, read back and made is logged. `0` never. |

@@ -247,65 +247,97 @@ def test_the_fzf_rows_of_a_donors_tags_are_marked(mods, tmp_path):
     assert launcher.saved_imports(mods) == [ROCK]
 
 
-def test_layouts_are_listed_with_those_in_the_map_list(tmp_path, mods, capsys):
+def variant_bytes(name: str, description: str = "", listed: bool = False,
+                  scenario: str = "levels\\test\\bloodgulch\\bloodgulch", tail: bytes = b"") -> bytes:
+    """a map variant as the game writes one (docs/forge_mvar.md): _blf, mvhd,
+    then tail (more chunks), then _eof"""
+    import struct
+    import zlib
+
+    def chunk(tag: bytes, contents: bytes) -> bytes:
+        return struct.pack("<4sIHH", tag, len(contents), 1, 0) + contents
+
+    header = struct.pack("<64s128s32s256sIIBBHI", name.encode(), description.encode(), b"tester",
+                         scenario.encode(), 1, 2, int(listed), 0, 0, 1)
+    rest = chunk(b"mvhd", header) + tail + chunk(b"_eof", b"")
+    length = 24 + len(rest)
+    return chunk(b"_blf", struct.pack("<4sII", b"mvar", length, zlib.crc32(rest) & 0xFFFFFFFF)) + rest
+
+
+def write_variant(path: Path, *args, **kwargs) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(variant_bytes(*args, **kwargs))
+    return path
+
+
+def test_variants_are_listed_by_file_name_with_those_in_the_map_list(tmp_path, mods, capsys):
     from tools import mod_layouts
 
-    forge = tmp_path / "saves" / "u" / "forge" / "bloodgulch"
-    write(forge / "layout_01.txt", "name Layout 1\n[forge]\n")
-    write(forge / "layout_03.txt", "name Big base\ndescription Two forts and a bridge\nlisted 1\n[forge]\n")
-    write(forge / "layout_02.txt", "[forge]\ndescription not the header's\n")
-    found = mod_layouts.layouts(tmp_path / "saves", "bloodgulch")
+    forge_maps = tmp_path / "data" / "forge_maps"
+    write_variant(forge_maps / "bloodgulch_b.mvar", "Big base", "Two forts and a bridge", listed=True)
+    write_variant(forge_maps / "bloodgulch_a.mvar", "Arena")
+    write_variant(forge_maps / "wizard_a.mvar", "Towers", scenario="levels\\test\\wizard\\wizard")
+    # neither damaged files nor other files are variants
+    damaged = bytearray(variant_bytes("Broken"))
+    damaged[-20] ^= 1
+    (forge_maps / "bloodgulch_c.mvar").write_bytes(bytes(damaged))
+    write(forge_maps / "notes.txt", "not a variant\n")
+    found = mod_layouts.layouts(tmp_path / "data", "bloodgulch")
     assert found == [
-        {"slot": 1, "name": "Layout 1", "description": "", "listed": False},
-        {"slot": 2, "name": "Layout 2", "description": "", "listed": False},
-        {"slot": 3, "name": "Big base", "description": "Two forts and a bridge", "listed": True},
+        {"slot": 1, "file": "bloodgulch_a.mvar", "name": "Arena", "description": "", "listed": False},
+        {"slot": 2, "file": "bloodgulch_b.mvar", "name": "Big base", "description": "Two forts and a bridge",
+         "listed": True},
     ]
-    assert launcher.main(["--mods-dir", str(mods), "layouts", "--saves", str(tmp_path / "saves")]) == 0
+    assert mod_layouts.maps_with_layouts(tmp_path / "data") == ["bloodgulch", "wizard"]
+    assert launcher.main(["--mods-dir", str(mods), "layouts", "--data", str(tmp_path / "data")]) == 0
     output = capsys.readouterr().out
-    assert "3. Big base  (in the map list)" in output
+    assert "2. Big base  (bloodgulch_b.mvar, in the map list)" in output
     assert "      Two forts and a bridge" in output
 
 
-def test_a_layout_is_renamed_on_its_first_line(tmp_path, mods):
+def test_a_variant_is_renamed_in_its_header(tmp_path, mods):
     from tools import mod_layouts
 
-    saves = tmp_path / "saves"
-    path = write(saves / "u" / "forge" / "bloodgulch" / "layout_02.txt", "name Layout 2\nversion 1\n[forge]\n")
-    assert launcher.main(["--mods-dir", str(mods), "layouts", "rename", "bloodgulch", "2", "Red", "base",
-                          "--saves", str(saves)]) == 0
-    assert path.read_text().splitlines() == ["name Red base", "version 1", "[forge]"]
+    data = tmp_path / "data"
+    tail = b"strt" + (4).to_bytes(4, "little") + (1).to_bytes(2, "little") + bytes(2) + bytes(4)
+    path = write_variant(data / "forge_maps" / "bloodgulch_x.mvar", "Layout 2", tail=tail)
+    before = path.read_bytes()
+    assert launcher.main(["--mods-dir", str(mods), "layouts", "rename", "bloodgulch", "1", "Red", "base",
+                          "--data", str(data)]) == 0
+    after = path.read_bytes()
+    mod_layouts.check(after)
+    assert mod_layouts.read_header(after)["name"] == "Red base"
+    # only the name (and the CRC) changed: the other chunks are as they were
+    assert len(after) == len(before) and after[-24:] == before[-24:]
     with pytest.raises(mod_layouts.LayoutError):
-        mod_layouts.rename(saves, "bloodgulch", 5, "missing")
+        mod_layouts.rename(data, "bloodgulch", 5, "missing")
     with pytest.raises(mod_layouts.LayoutError):
-        mod_layouts.rename(saves, "bloodgulch", 2, "x" * 64)
+        mod_layouts.rename(data, "bloodgulch", 1, "x" * 64)
     with pytest.raises(mod_layouts.LayoutError):
-        mod_layouts.rename(saves, "bloodgulch", 2, "100% base")
+        mod_layouts.rename(data, "bloodgulch", 1, "100% base")
 
 
-def test_a_layout_is_described_in_its_header(tmp_path, mods, capsys):
+def test_a_variant_is_described_in_its_header(tmp_path, mods, capsys):
     from tools import mod_layouts
 
-    saves = tmp_path / "saves"
-    path = write(saves / "u" / "forge" / "bloodgulch" / "layout_02.txt",
-                 "name Red base\nversion 1\nlisted 1\n[forge]\nspawn scen 0 0 0\n[sky]\nlook night\n")
-    assert launcher.main(["--mods-dir", str(mods), "layouts", "describe", "bloodgulch", "2", "Forts", "and", "a",
-                          "bridge", "--saves", str(saves)]) == 0
-    assert "bloodgulch layout 2: Forts and a bridge" in capsys.readouterr().out
-    assert path.read_text().splitlines() == [
-        "name Red base", "description Forts and a bridge", "version 1", "listed 1", "[forge]", "spawn scen 0 0 0",
-        "[sky]", "look night"]
+    data = tmp_path / "data"
+    path = write_variant(data / "forge_maps" / "bloodgulch_x.mvar", "Red base", listed=True)
+    assert launcher.main(["--mods-dir", str(mods), "layouts", "describe", "bloodgulch", "1", "Forts", "and", "a",
+                          "bridge", "--data", str(data)]) == 0
+    assert "bloodgulch variant 1: Forts and a bridge" in capsys.readouterr().out
+    header = mod_layouts.read_header(path.read_bytes())
+    assert (header["name"], header["description"], header["listed"]) == ("Red base", "Forts and a bridge", True)
     # again replaces it; none takes it away
-    assert mod_layouts.describe(saves, "bloodgulch", 2, "  A  canyon ") == "A canyon"
-    assert path.read_text().splitlines()[:3] == ["name Red base", "description A canyon", "version 1"]
-    assert launcher.main(["--mods-dir", str(mods), "layouts", "describe", "bloodgulch", "2", "--saves",
-                          str(saves)]) == 0
+    assert mod_layouts.describe(data, "bloodgulch", 1, "  A  canyon ") == "A canyon"
+    assert mod_layouts.read_header(path.read_bytes())["description"] == "A canyon"
+    assert launcher.main(["--mods-dir", str(mods), "layouts", "describe", "bloodgulch", "1", "--data",
+                          str(data)]) == 0
     assert "(no description)" in capsys.readouterr().out
-    assert path.read_text().splitlines() == [
-        "name Red base", "version 1", "listed 1", "[forge]", "spawn scen 0 0 0", "[sky]", "look night"]
+    assert mod_layouts.read_header(path.read_bytes())["description"] == ""
     with pytest.raises(mod_layouts.LayoutError):
-        mod_layouts.describe(saves, "bloodgulch", 5, "missing")
+        mod_layouts.describe(data, "bloodgulch", 5, "missing")
     with pytest.raises(mod_layouts.LayoutError):
-        mod_layouts.describe(saves, "bloodgulch", 2, "x" * 128)
+        mod_layouts.describe(data, "bloodgulch", 1, "x" * 128)
 
 
 def test_a_layout_goes_with_a_multiplayer_launch():
@@ -314,4 +346,4 @@ def test_a_layout_goes_with_a_multiplayer_launch():
     with pytest.raises(launcher.LauncherError):
         launcher.with_layout({"map": "a10", "variant": "", "difficulty": "hard"}, 3)
     with pytest.raises(launcher.LauncherError):
-        launcher.with_layout({"map": "bloodgulch", "variant": "slayer", "difficulty": ""}, 17)
+        launcher.with_layout({"map": "bloodgulch", "variant": "slayer", "difficulty": ""}, 65)

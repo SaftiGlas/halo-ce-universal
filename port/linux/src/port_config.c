@@ -332,9 +332,9 @@ static const struct config_setting config_settings[] =
 		"With a multiplayer start_map, the game variant it is played with:\n"
 		"\"slayer\", \"team_slayer\", \"ctf\", \"king\", \"oddball\", \"race\"..." },
 	{ "game.start_layout", _config_integer, "0", "HALO_START_LAYOUT", _environment_value, _platform_desktop,
-		"With a multiplayer start_map, play it with this Forge layout of it (1 to\n"
-		"16, as the map list's Forge maps are); 0 none. The mod launcher's --layout\n"
-		"sets it." },
+		"With a multiplayer start_map, play it with this Forge map variant of it\n"
+		"(forge_maps\\*.mvar), counted as its Map tab lists them (1 to 64, in the\n"
+		"order of their file names); 0 none. The mod launcher's --layout sets it." },
 	{ "game.start_difficulty", _config_string, "\"\"", "HALO_START_DIFFICULTY", _environment_value, _platform_desktop,
 		"With a campaign start_map: \"easy\", \"normal\", \"hard\" or \"impossible\";\n"
 		"empty for normal." },
@@ -583,8 +583,10 @@ static const struct config_setting config_settings[] =
 		"of a held object, and 102 a line being typed (its character grid); -1\n"
 		"never." },
 	{ "debug.forge_layout_save", _config_integer, "0", "HALO_FORGE_LAYOUT_SAVE", _environment_value, _platform_desktop,
-		"For automated tests: in a local game, save the Forge layout to this slot (1\n"
-		"to 16) a few seconds in, once, and log where the player is; 0 never." },
+		"For automated tests: in a local game, save the Forge layout as this map\n"
+		"variant of the map (1 to 64, as its Map tab lists them; one past those\n"
+		"there are is a new one) a few seconds in, once, and log where the player\n"
+		"is; 0 never." },
 	{ "debug.forge_test_edit", _config_integer, "0", "HALO_FORGE_TEST_EDIT", _environment_value, _platform_desktop,
 		"For automated tests of Forge in system link (with debug.network_test and the\n"
 		"forge variant): 1, the host spawns a scenery object a few seconds in, and a\n"

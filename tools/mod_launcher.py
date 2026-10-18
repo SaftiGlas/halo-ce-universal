@@ -10,7 +10,7 @@
     python -m tools.mod_launcher map [MAP]        the map the game starts at: show, set or none
     python -m tools.mod_launcher maps             the maps of the game data
     python -m tools.mod_launcher import ...       tags to bring into the maps from other maps
-    python -m tools.mod_launcher layouts [MAP]    the saved Forge layouts (rename MAP N NAME...,
+    python -m tools.mod_launcher layouts [MAP]    the saved Forge map variants (rename MAP N NAME...,
                                                   describe MAP N TEXT...)
 
 Everything is kept in mods/mods.json (an older mods/enabled.json is taken
@@ -207,7 +207,7 @@ def launch_environment(launch: Optional[Dict[str, str]]) -> Dict[str, str]:
 
 
 def with_layout(launch: Optional[Dict[str, str]], layout: int) -> Dict[str, str]:
-    """the launch played with a Forge layout of its map (game.start_layout)"""
+    """the launch played with a Forge map variant of its map (game.start_layout)"""
     if not launch or launch.get("difficulty") or not launch.get("variant"):
         raise LauncherError("--layout goes with a multiplayer map")
     if not 1 <= layout <= mod_layouts.SLOT_COUNT:
@@ -220,7 +220,7 @@ def describe_launch(launch: Optional[Dict[str, str]]) -> str:
         return "the main menu"
     info = mod_maps.find_map(launch["map"], mod_maps.find_maps())
     detail = launch.get("variant") or launch.get("difficulty")
-    layout = f", Forge layout {launch['layout']}" if launch.get("layout") else ""
+    layout = f", Forge map variant {launch['layout']}" if launch.get("layout") else ""
     return (f"{info.title} ({info.name})" if info else launch["map"]) + (f", {detail}" if detail else "") + layout
 
 
@@ -522,7 +522,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     running.add_argument("--map", help="start at this map (see `maps`) without the menus, for this run")
     running.add_argument("--variant", help="with a multiplayer --map: the game variant (default slayer)")
     running.add_argument("--difficulty", help="with a campaign --map: easy, normal, hard or impossible")
-    running.add_argument("--layout", type=int, help="with a multiplayer map: play it with this Forge layout (1-16)")
+    running.add_argument("--layout", type=int,
+                         help="with a multiplayer map: play it with this Forge map variant (its number in `layouts`)")
     running.add_argument("--menu", action="store_true", help="open the main menu, not the saved map")
     running.add_argument("args", nargs=argparse.REMAINDER, help="arguments for the game (after --)")
     mapping = sub.add_parser("map", help="the map the game starts at (kept in mods.json)")
@@ -540,11 +541,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     importing.add_argument("--group", default="scen", help="the tag group (default scen, scenery)")
     laying_out = sub.add_parser(
         "layouts",
-        help="the saved Forge layouts: list, rename, describe",
+        help="the saved Forge map variants: list, rename, describe",
         description="[MAP] | rename MAP N NAME... | describe MAP N TEXT... (see tools/mod_layouts.py)")
     laying_out.add_argument("action", nargs="?")
     laying_out.add_argument("values", nargs="*")
-    laying_out.add_argument("--saves", type=Path, help="the save root (default HALO_SAVE_ROOT or the game's)")
+    laying_out.add_argument("--data", type=Path, help="the data root, with forge_maps (default as `maps` finds it)")
     args = parser.parse_args(argv)
     try:
         if args.command is None:
@@ -582,7 +583,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         elif args.command == "import":
             import_command(args)
         elif args.command == "layouts":
-            mod_layouts.command(args.action, args.values, args.saves)
+            mod_layouts.command(args.action, args.values, args.data)
     except (LauncherError, ModError, ValueError, mod_layouts.LayoutError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

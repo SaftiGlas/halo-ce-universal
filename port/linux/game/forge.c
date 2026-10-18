@@ -250,10 +250,12 @@ this many texels wide and high */
 #define FORGE_MENU_BUTTON_ART_WIDTH 16
 #define FORGE_MENU_BUTTON_ART_HEIGHT 20
 /* the count of objects when few more can be made, and when none can */
-/* a popup is drawn as the pause menu's box is (port/assets/menus/port_svg/pause,
-pausebox_*.svg): its navy three quarters opaque, a blue border, round corners
-(screen units) */
-#define FORGE_POPUP_FILL_COLOR 0xbf0a2649UL
+/* a popup is shaped as the pause menu's box is (port/assets/menus/port_svg/pause,
+pausebox_*.svg), a blue border and round corners (screen units), but filled
+black three quarters opaque. The menu's header and buttons are as black, its
+rows the pause box's navy, as opaque. */
+#define FORGE_POPUP_FILL_COLOR 0xbf000000UL
+#define FORGE_MENU_FILL_COLOR 0xbf0a2649UL
 #define FORGE_POPUP_BORDER_COLOR 0xff2896ffUL
 #define FORGE_POPUP_RADIUS 8.5f
 #define FORGE_POPUP_BORDER 2.f
@@ -2434,13 +2436,17 @@ static void forge_menu_corner(
 }
 
 /* a panel as the pause menu's box: filled, round cornered, with a border
-along its edge */
-static void forge_menu_rounded_panel(
+along its edge; band_y0 to band_y1 (below the top corners and above the
+bottom ones) is filled with band_fill */
+static void forge_menu_banded_panel(
 	short x0,
 	short y0,
 	short x1,
 	short y1,
+	short band_y0,
+	short band_y1,
 	unsigned long fill,
+	unsigned long band_fill,
 	unsigned long border)
 {
 	real left = (real)x0;
@@ -2449,12 +2455,38 @@ static void forge_menu_rounded_panel(
 	real bottom = (real)y1;
 	real radius = MIN(FORGE_POPUP_RADIUS, MIN(right - left, bottom - top) / 2.f);
 	real inner = radius - FORGE_POPUP_BORDER;
+	real band_top = PIN((real)band_y0, top + radius, bottom - radius);
+	real band_bottom = PIN((real)band_y1, band_top, bottom - radius);
+	real span_tops[3];
+	real span_bottoms[3];
+	short span_index;
 
-	/* the fill: a cross, and a quarter disc in each corner (none overlap, so
-	the fill is as see-through everywhere) */
-	halo_mod_draw_box_real(left + radius, top, right - radius, bottom, forge_menu_color(fill));
-	halo_mod_draw_box_real(left, top + radius, left + radius, bottom - radius, forge_menu_color(fill));
-	halo_mod_draw_box_real(right - radius, top + radius, right, bottom - radius, forge_menu_color(fill));
+	span_tops[0] = top;
+	span_bottoms[0] = band_top;
+	span_tops[1] = band_top;
+	span_bottoms[1] = band_bottom;
+	span_tops[2] = band_bottom;
+	span_bottoms[2] = bottom;
+
+	/* the fill: a cross, cut across at the band's edges, and a quarter disc
+	in each corner (none overlap, so the fill is as see-through everywhere) */
+	for (span_index = 0; span_index < 3; span_index++)
+	{
+		unsigned long argb = span_index == 1 ? band_fill : fill;
+		real span_top = span_tops[span_index];
+		real span_bottom = span_bottoms[span_index];
+		real side_top = MAX(span_top, top + radius);
+		real side_bottom = MIN(span_bottom, bottom - radius);
+
+		if (span_bottom <= span_top)
+			continue;
+		halo_mod_draw_box_real(left + radius, span_top, right - radius, span_bottom, forge_menu_color(argb));
+		if (side_bottom > side_top)
+		{
+			halo_mod_draw_box_real(left, side_top, left + radius, side_bottom, forge_menu_color(argb));
+			halo_mod_draw_box_real(right - radius, side_top, right, side_bottom, forge_menu_color(argb));
+		}
+	}
 	forge_menu_corner(left + radius, top + radius, radius, 0.f, _pi, fill);
 	forge_menu_corner(right - radius, top + radius, radius, 0.f, 1.5f * _pi, fill);
 	forge_menu_corner(right - radius, bottom - radius, radius, 0.f, 0.f, fill);
@@ -2469,6 +2501,20 @@ static void forge_menu_rounded_panel(
 	forge_menu_corner(right - radius, top + radius, radius, inner, 1.5f * _pi, border);
 	forge_menu_corner(right - radius, bottom - radius, radius, inner, 0.f, border);
 	forge_menu_corner(left + radius, bottom - radius, radius, inner, 0.5f * _pi, border);
+
+	return;
+}
+
+/* a panel as the pause menu's box, filled with one colour */
+static void forge_menu_rounded_panel(
+	short x0,
+	short y0,
+	short x1,
+	short y1,
+	unsigned long fill,
+	unsigned long border)
+{
+	forge_menu_banded_panel(x0, y0, x1, y1, y0, y0, fill, fill, border);
 
 	return;
 }
@@ -2733,8 +2779,9 @@ static void forge_render_menu(
 
 	/* the panel, as the pause menu's box: the header, the columns and rows,
 	the buttons, with a rule between the header and the rest, and above the
-	buttons */
-	forge_menu_rounded_panel(x0, y0, x1, y1, FORGE_POPUP_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
+	buttons; the header and the buttons on black, the rows on navy */
+	forge_menu_banded_panel(x0, y0, x1, y1, columns_y, footer_y, FORGE_POPUP_FILL_COLOR, FORGE_MENU_FILL_COLOR,
+		FORGE_POPUP_BORDER_COLOR);
 	forge_menu_box(text_x0, (short)(columns_y - 1), (short)(inner_x1 - FORGE_MENU_PADDING), columns_y,
 		FORGE_MENU_RULE_COLOR);
 	forge_menu_box(text_x0, footer_y, (short)(inner_x1 - FORGE_MENU_PADDING), (short)(footer_y + 1),

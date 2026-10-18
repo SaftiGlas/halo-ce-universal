@@ -114,10 +114,11 @@ when a line is being typed already. */
 int forge_text_entry_begin(char const *prompt, char const *initial, unsigned long maximum_length,
 	void (*done)(char const *text));
 
-/* layouts (port/linux/game/forge_layout.c) */
-/* the name of a map's folder of u:\forge, where its layouts and prefabs
-are kept: the last part of its scenario's name, without what would make
-it another folder */
+/* layouts (port/linux/game/forge_layout.c): map variants, kept as .mvar
+files in the forge_maps folder beside custom_maps */
+/* the name of a map's folder of u:\forge, where its prefabs are kept (and
+its layouts were, before they were map variants): the last part of its
+scenario's name, without what would make it another folder */
 void forge_map_folder_name(char const *scenario_name, char *name, unsigned long size);
 
 /* a new map, after the mods' new map hooks: notes the map's own objects,
@@ -136,14 +137,49 @@ most it keeps: one made past that is not saved with it (the spawn menu makes
 none then, and says so) */
 void forge_layout_object_budget(short *used, short *maximum);
 
-/* layouts shown as maps of their own in the multiplayer map list of local
+/* what a variant keeps about each of its objects besides its tag and
+place (docs/forge_mvar.md): an id of its own in the variant (given when it
+is made, or when one of the map's own is first saved); its team (NONE, -1,
+none, else 0 to 15); its spawn flags (placed at start: made when the
+variant loads; with the tools off, one that is not, or is not of the game
+type, is not made); the seconds it respawns after (0 the game type's; kept,
+not used yet); the game types it is in (a bit for each, 1 << game_engine_ctf
+and so on, 0 every one); and the editor's notes, which a system link host
+does not send: a group (0 none), whether it is locked, a comment */
+enum
+{
+	FORGE_OBJECT_SPAWN_AT_START = 0x01,
+	FORGE_OBJECT_SPAWN_NEVER_RESPAWN = 0x02,
+	FORGE_OBJECT_MAXIMUM_RESPAWN_SECONDS = 600,
+	FORGE_OBJECT_MAXIMUM_GROUP = 99,
+	FORGE_OBJECT_COMMENT_SIZE = 64
+};
+struct forge_object_properties
+{
+	unsigned long id;
+	short team;
+	short spawn_flags;
+	short respawn_seconds;
+	unsigned short game_types;
+	short group;
+	short locked;
+	char comment[FORGE_OBJECT_COMMENT_SIZE];
+};
+/* the object's properties (FALSE, with a new object's, when the layout
+does not keep it: a player's, an object of the game's); setting them is the
+game's machine's, and keeps the object's id (FALSE when they were not set) */
+int forge_layout_get_properties(long object_index, struct forge_object_properties *properties);
+int forge_layout_set_properties(long object_index, struct forge_object_properties const *properties);
+
+/* variants shown as maps of their own in the multiplayer map list of local
 games (the "Show in the map list" row): after the game's 13 maps, with the
 picture of the map they are made on (its index in that list, 0 to 12) and
-the layout's name. forge_custom_maps_refresh reads them again and returns
+the variant's name. forge_custom_maps_refresh reads them again and returns
 how many there are; forge_custom_map_select chooses the one to play the
 next game with (NONE: none, a map of the game), and forge_custom_map_selected
 is that one's index, or NONE. By name: the base map's short name
-("bloodgulch") and the layout's number, for game.start_layout. */
+("bloodgulch") and the variant's number in its Map tab (its variants in the
+order of their file names), for game.start_layout. */
 short forge_custom_maps_refresh(void);
 short forge_custom_map_base_index(short index);
 char const *forge_custom_map_base_name(short index);
@@ -154,11 +190,12 @@ void forge_custom_map_select(short index);
 short forge_custom_map_selected(void);
 int forge_custom_map_select_by_name(char const *map_name, short slot);
 /* system link (port/linux/game/network_distributed.c): the host sends the
-layout of the map to a client that has loaded it, and again to every
-client when the tools or a mod have changed it; the client applies what
-the host's objects do not bring (scenery, devices, the mods' parts). While
-it does, forge_layout_loading_for_client is TRUE, and mods leave out what
-is the host's (forge_ai's characters); while the host writes that text,
+layout of the map, as a variant, to a client that has loaded it, and again
+to every client when the tools or a mod have changed it; the client applies
+what the host's objects do not bring (scenery, devices, the mods' parts),
+and saves nothing. While it does, forge_layout_loading_for_client is TRUE,
+and mods leave out what is the host's (forge_ai's characters); while the
+host writes that variant,
 forge_layout_saving_for_client is TRUE, and mods leave the same out of
 what they save (it only moves about, and would be sent over and over). */
 void forge_layout_send_to_client(long machine_index);

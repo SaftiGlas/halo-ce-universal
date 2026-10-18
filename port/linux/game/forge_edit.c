@@ -28,6 +28,15 @@ right button closes it. The rows:
 	Height            up and down, by a twentieth of a world unit
 	Prefab            select it for a prefab, or leave it out again
 	                  (forge_prefabs.c)
+	Team              the team it is kept for: none, red, blue, or 2 to 15
+	Placed at start   made when the map variant loads, or only while
+	                  Forge is on (to edit)
+	Game types        every game type, or one of them: with Forge off it
+	                  is made only in that one
+	Respawn           the seconds it respawns after, by 5 (0 the game
+	                  type's; kept with the variant, not used yet)
+	Group             the editor's group it is in (1 to 99, 0 none)
+	Comment           a note about it, typed on the keyboard
 	Remove            remove it
 	Undo remove       bring back the last removed object (the last 16, one
 	                  at a time)
@@ -56,7 +65,10 @@ tools' pick up key); the other rows are the host's.
 A changed turn, tilt, roll or height is kept by the tools' layout as a moved object is
 (port/linux/game/forge_layout.c); a changed size is kept for the objects
 the tools made, which a layout saves with their scale, not for the map's
-own.
+own. Team, Placed at start, Game types, Respawn, Group and Comment are the
+object's properties in the map variant (forge_layout_set_properties): the
+host's in a system link game, kept for the objects the tools made and the
+map's own alike; a copy and an object brought back have them too.
 
 An object brought back is a new object of the same tag, place, turn and
 scale: what it carried (a biped's weapon) and its state (damage, an actor's
@@ -71,6 +83,7 @@ itself.
 #include "camera/observer.h"
 #include "cutscene/cinematics.h"
 #include "game/game.h"
+#include "game/game_engine.h"
 #include "game/players.h"
 #include "interface/terminal.h"
 #include "math/real_math.h"
@@ -92,7 +105,11 @@ enum
 	FORGE_EDIT_LOCAL_PLAYER_INDEX = 0,
 	FORGE_EDIT_LABEL_OFFSET = 14,
 	FORGE_EDIT_LABEL_MARGIN = 4,
-	FORGE_EDIT_TITLE_SIZE = 64
+	FORGE_EDIT_TITLE_SIZE = 64,
+	/* the teams an object may be kept for, and a step of its respawn time
+	(seconds) */
+	FORGE_EDIT_TEAM_COUNT = 16,
+	FORGE_EDIT_RESPAWN_STEP = 5
 };
 
 /* the popup's key on a keyboard (a controller's X is the tools' own) */
@@ -122,6 +139,8 @@ struct forge_edit_object
 	real_vector3d forward;
 	real_vector3d up;
 	real scale;
+	/* its properties in the map variant (forge_layout.c) */
+	struct forge_object_properties properties;
 };
 
 /* ---------- globals */
@@ -225,6 +244,7 @@ static void forge_edit_record(
 	record->forward = object->object.forward;
 	record->up = object->object.up;
 	record->scale = object->object.scale;
+	forge_layout_get_properties(object_index, &record->properties);
 
 	return;
 }
@@ -244,9 +264,13 @@ static long forge_edit_create(
 	object_index = object_new(&data);
 	if (object_index != NONE && record->scale != 1.f)
 		objects_scripting_set_scale(object_index, record->scale, 0);
-	/* kept by the tools' layout (port/linux/game/forge_layout.c) */
+	/* kept by the tools' layout (port/linux/game/forge_layout.c), with the
+	properties (its own id) */
 	if (object_index != NONE)
+	{
 		forge_layout_note_spawned(object_index);
+		forge_layout_set_properties(object_index, &record->properties);
+	}
 
 	return object_index;
 }
@@ -478,6 +502,13 @@ enum
 	_forge_edit_row_roll,
 	_forge_edit_row_height,
 	_forge_edit_row_prefab,
+	/* (its properties in the map variant) */
+	_forge_edit_row_team,
+	_forge_edit_row_at_start,
+	_forge_edit_row_game_types,
+	_forge_edit_row_respawn,
+	_forge_edit_row_group,
+	_forge_edit_row_comment,
 	_forge_edit_row_remove,
 	/* (about a held object: the step it turns in) */
 	_forge_edit_row_undo,
@@ -559,6 +590,193 @@ static void forge_edit_popup_opened(
 	return;
 }
 
+/* the game types a row of Game types names, in the order it goes through
+them: every one (0), then each alone */
+static unsigned short const forge_edit_game_types[] =
+{
+	0,
+	FLAG(game_engine_ctf),
+	FLAG(game_engine_slayer),
+	FLAG(game_engine_oddball),
+	FLAG(game_engine_king),
+	FLAG(game_engine_race)
+};
+static char const *const forge_edit_game_type_names[] =
+{
+	"every one",
+	"Capture the Flag",
+	"Slayer",
+	"Oddball",
+	"King of the Hill",
+	"Race"
+};
+
+/* the place of the game types in that order, or NONE (several of them,
+from a file) */
+static short forge_edit_game_type_index(
+	unsigned short game_types)
+{
+	short index;
+
+	for (index = 0; index < NUMBEROF(forge_edit_game_types); index++)
+	{
+		if (forge_edit_game_types[index] == game_types)
+			return index;
+	}
+
+	return NONE;
+}
+
+/* a property row's label and value */
+static void forge_edit_property_text(
+	short row,
+	char *label,
+	unsigned long label_size,
+	char *value,
+	unsigned long value_size)
+{
+	struct forge_object_properties properties;
+	boolean kept = forge_edit_popup_object() &&
+		forge_layout_get_properties(forge_edit_globals.popup_object_index, &properties);
+	short game_type_index;
+
+	switch (row)
+	{
+	case _forge_edit_row_team:
+		_snprintf(label, label_size, "Team");
+		if (kept)
+		{
+			_snprintf(value, value_size, properties.team == NONE ? "none" : properties.team == 0 ? "red" :
+				properties.team == 1 ? "blue" : "%d", (int)properties.team);
+		}
+		break;
+	case _forge_edit_row_at_start:
+		_snprintf(label, label_size, "Placed at start");
+		if (kept)
+			_snprintf(value, value_size, "%s", TEST_FLAG(properties.spawn_flags, 0) ? "yes" : "no, only in Forge");
+		break;
+	case _forge_edit_row_game_types:
+		_snprintf(label, label_size, "Game types");
+		if (kept)
+		{
+			game_type_index = forge_edit_game_type_index(properties.game_types);
+			_snprintf(value, value_size, "%s", game_type_index != NONE ? forge_edit_game_type_names[game_type_index] :
+				"several");
+		}
+		break;
+	case _forge_edit_row_respawn:
+		_snprintf(label, label_size, "Respawn");
+		if (kept)
+		{
+			if (properties.respawn_seconds)
+				_snprintf(value, value_size, "%d seconds", (int)properties.respawn_seconds);
+			else
+				_snprintf(value, value_size, "the game type's");
+		}
+		break;
+	case _forge_edit_row_group:
+		_snprintf(label, label_size, "Group");
+		if (kept)
+		{
+			if (properties.group)
+				_snprintf(value, value_size, "%d", (int)properties.group);
+			else
+				_snprintf(value, value_size, "none");
+		}
+		break;
+	case _forge_edit_row_comment:
+		_snprintf(label, label_size, "Comment");
+		if (kept)
+			_snprintf(value, value_size, "%s", properties.comment[0] ? properties.comment : "(type one)");
+		break;
+	}
+	/* (the host's, or the game's own object: not one the variant keeps) */
+	if (!kept && forge_edit_popup_object())
+		_snprintf(value, value_size, "%s", halo_mods_authoritative() ? "not kept" : "the host's");
+
+	return;
+}
+
+/* the object the comment being typed is about */
+static long forge_edit_comment_object_index = NONE;
+
+static void forge_edit_comment_typed(
+	char const *text)
+{
+	struct forge_object_properties properties;
+
+	if (forge_edit_comment_object_index != NONE &&
+		forge_layout_get_properties(forge_edit_comment_object_index, &properties))
+	{
+		_snprintf(properties.comment, sizeof(properties.comment), "%s", text);
+		properties.comment[sizeof(properties.comment) - 1] = 0;
+		if (forge_layout_set_properties(forge_edit_comment_object_index, &properties))
+			terminal_printf(global_real_argb_green, "forge_edit: the comment is kept with the variant");
+	}
+	forge_edit_comment_object_index = NONE;
+
+	return;
+}
+
+/* left and right change a property row's value, enter or A types the
+comment */
+static void forge_edit_property_change(
+	long object_index,
+	short row,
+	int direction)
+{
+	struct forge_object_properties properties;
+	short step = direction < 0 ? -1 : 1;
+	short game_type_index;
+
+	if (!forge_layout_get_properties(object_index, &properties))
+	{
+		terminal_printf(global_real_argb_orange, "forge_edit: the map variant does not keep this object");
+		return;
+	}
+	if (row == _forge_edit_row_comment)
+	{
+		if (direction == 0)
+		{
+			forge_edit_comment_object_index = object_index;
+			if (!forge_text_entry_begin("Comment (kept with the map variant)", properties.comment,
+				FORGE_OBJECT_COMMENT_SIZE - 1, forge_edit_comment_typed))
+			{
+				forge_edit_comment_object_index = NONE;
+				terminal_printf(global_real_argb_orange, "forge_edit: something is being typed already");
+			}
+		}
+		return;
+	}
+	/* (enter or A as right) */
+	switch (row)
+	{
+	case _forge_edit_row_team:
+		/* none (NONE), then 0 to 15 */
+		properties.team = (short)((properties.team + 1 + step + FORGE_EDIT_TEAM_COUNT + 1) % (FORGE_EDIT_TEAM_COUNT + 1) - 1);
+		break;
+	case _forge_edit_row_at_start:
+		properties.spawn_flags ^= FORGE_OBJECT_SPAWN_AT_START;
+		break;
+	case _forge_edit_row_game_types:
+		game_type_index = forge_edit_game_type_index(properties.game_types);
+		game_type_index = (short)(game_type_index == NONE ? 0 :
+			(game_type_index + step + NUMBEROF(forge_edit_game_types)) % NUMBEROF(forge_edit_game_types));
+		properties.game_types = forge_edit_game_types[game_type_index];
+		break;
+	case _forge_edit_row_respawn:
+		properties.respawn_seconds = (short)PIN(properties.respawn_seconds + step * FORGE_EDIT_RESPAWN_STEP, 0,
+			FORGE_OBJECT_MAXIMUM_RESPAWN_SECONDS);
+		break;
+	case _forge_edit_row_group:
+		properties.group = (short)((properties.group + step + FORGE_OBJECT_MAXIMUM_GROUP + 1) % (FORGE_OBJECT_MAXIMUM_GROUP + 1));
+		break;
+	}
+	forge_layout_set_properties(object_index, &properties);
+
+	return;
+}
+
 static short forge_edit_popup_row_count(
 	void)
 {
@@ -608,6 +826,14 @@ static void forge_edit_popup_row_text(
 		_snprintf(label, label_size, "Prefab");
 		_snprintf(value, value_size, "%s",
 			forge_prefabs_object_selected(forge_edit_globals.popup_object_index) ? "selected" : "not selected");
+		break;
+	case _forge_edit_row_team:
+	case _forge_edit_row_at_start:
+	case _forge_edit_row_game_types:
+	case _forge_edit_row_respawn:
+	case _forge_edit_row_group:
+	case _forge_edit_row_comment:
+		forge_edit_property_text(row, label, label_size, value, value_size);
 		break;
 	case _forge_edit_row_remove:
 		_snprintf(label, label_size, "Remove");
@@ -776,6 +1002,11 @@ static int forge_edit_popup_row_change(
 	if (!halo_mods_authoritative())
 	{
 		terminal_printf(global_real_argb_orange, "forge_edit: on a client only Move works, the rest is the host's");
+		return FALSE;
+	}
+	if (row >= _forge_edit_row_team && row <= _forge_edit_row_comment)
+	{
+		forge_edit_property_change(object_index, row, direction);
 		return FALSE;
 	}
 

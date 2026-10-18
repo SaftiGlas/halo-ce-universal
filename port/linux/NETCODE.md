@@ -201,7 +201,9 @@ limits, and readies a second weapon picked up while firing; version 29 sends
 a Forge game's layout to its clients and takes their Forge tools' edits for
 the host to make (`port/linux/game/forge_layout.c`); version 30 gives a Forge
 zone a shape, square or circle, in the layout, which gravity zones need on
-every machine.
+every machine; version 31 sends the layout as a map variant (the binary
+`.mvar` of `docs/forge_mvar.md`, at most 256 KB) in place of its text, with
+each object's id, team, spawn flags and game types.
 
 `port/linux/network_format.txt` records the wire format of the current
 version (`tools/network_format.py`): `test_linux_port.py` fails when the
