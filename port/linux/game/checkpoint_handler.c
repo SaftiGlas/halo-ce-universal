@@ -1,7 +1,7 @@
 /*
 CHECKPOINT_HANDLER.C
 
-One of Forge's parts (halo_mod.h, mods.c): checkpoints by hand, with the game's
+One of Forge's parts (halo_mod.h, halo_mods.c): checkpoints by hand, with the game's
 own checkpoints.
 
 	F5      take a checkpoint now

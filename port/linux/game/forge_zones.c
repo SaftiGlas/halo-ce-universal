@@ -1,7 +1,7 @@
 /*
 FORGE_ZONES.C
 
-One of Forge's parts (halo_mod.h, mods.c): kill, gravity and teleport zones,
+One of Forge's parts (halo_mod.h, halo_mods.c): kill, gravity and teleport zones,
 boxes placed with the dev tools' crosshair (port/linux/game/forge.c).
 
 Everything is in the dev tools' menu (1, D-pad right or, flying, X), on the

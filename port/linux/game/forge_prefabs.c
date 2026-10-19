@@ -1,7 +1,7 @@
 /*
 FORGE_PREFABS.C
 
-One of Forge's parts (halo_mod.h, mods.c): several objects selected with the dev
+One of Forge's parts (halo_mod.h, halo_mods.c): several objects selected with the dev
 tools' crosshair (port/linux/game/forge.c), saved together as a prefab, and
 placed again as often as wanted.
 

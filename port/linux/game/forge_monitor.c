@@ -117,7 +117,7 @@ long forge_monitor_definition(
 	return forge_monitor_globals.definition_index;
 }
 
-/* a new map (game/mods.c): its tags are looked in again, even where they
+/* a new map (game/halo_mods.c): its tags are looked in again, even where they
 are at the same address under the same scenario name */
 void forge_monitor_new_map(
 	void)

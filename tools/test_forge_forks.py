@@ -25,8 +25,10 @@ FORKS = [
         {
             # the file's name, at the head of its comment
             "XINPUT_SDL.C",
-            # a name being typed has the keyboard (forge_typing)
-            "\t\tconsole_active = console_is_active();",
+            # a name being typed has the keyboard (forge_typing), as a chat
+            # line typed does
+            "\t\t/* (a chat line typed takes the keyboard as the console does) */",
+            "\t\tconsole_active = console_is_active() || network_chat_typing();",
             # the touch controls are read before the dev tools' filter, in a
             # block that notes what they press (forge_touch_pad_note)
             "\t\ttouch_input_gamepad(&state->Gamepad);",

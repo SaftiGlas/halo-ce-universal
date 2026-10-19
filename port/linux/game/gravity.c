@@ -1,7 +1,7 @@
 /*
 GRAVITY.C
 
-One of Forge's parts (halo_mod.h, mods.c): the gravity of the whole map.
+One of Forge's parts (halo_mod.h, halo_mods.c): the gravity of the whole map.
 
 The dev tools' menu (1 / D-pad right) has a "Gravity" tab with one row:
 left and right change the gravity (normal, low, very low, moon, high, very

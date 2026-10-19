@@ -1,548 +1,400 @@
 /*
 MODS.C
 
-The hooks of Forge's parts (halo_mod.h): each part is a struct halo_mod of
-its own file, listed in halo_mod_parts below, and the dev tools' own hooks
-in main/main.c and interface/interface.c (forge_update, forge_render) call
-every part's first, in the list's order; game/game.c calls the tick and new
-map hooks, render/render.c the world drawing hooks. The list is the same in
-every build, so the menu's tabs and the order of the hooks are too.
+Mods: tag files played over a map's tags on this machine, as a resource
+pack is: a map's sounds (mod_sounds.c), bitmaps (mod_bitmaps.c), text
+(mod_strings.c) and models (mod_models.c) from Halo PC tag files, as the
+Halo Editing Kit and Invader write them, in the mods of the mods folder that
+are on, in their load order (port/linux/src/port_mods.c; the main menu's
+Mods chooses: menu_functions.c; the mod.toml files: docs/mods.md). Nothing a
+mod plays is anything the machines of a network game must agree on: no tag
+that the game simulates is played from a file (a model's nodes, markers and
+regions must be the map's: only what is drawn of it is the file's), and no
+mod is sent to another machine, so a mod is this machine's alone, in any
+game.
+
+When a map's tags load (scenario_tags_load), when the console asks
+(mods_reload) and when the Mods menu's OK keeps a new order (mods_apply),
+the mods are found again, and each of the map's tags of those groups that a
+mod has a file of (tags\<its name>.<its group's extension>)
+is played from the file, made what this build plays: the tag's definition
+takes the file's values in place, so everything that holds the tag keeps
+holding it, and the map's own values come back when the file goes. A file
+that is not what its group's reader can trust (each checks every count,
+offset and value against the file and against what the game reads), or
+that does not fit what the map's tags ask of the tag it replaces, is said
+and left out, and the map's tag played. mods_enable false gives every tag
+back until mods_enable true, or until the map changes.
 */
 
-#include "cseries.h"
-#include "bitmaps/bitmaps.h"
-#include "bitmaps/bitmap_group.h"
-#include "cache/cache_files.h"
-#include "cutscene/cinematics.h"
-#include "game/game.h"
-#include "game/game_globals.h"
-#include "game/players.h"
-#include "interface/interface.h"
-#include "math/integer_math.h"
-#include "rasterizer/rasterizer.h"
-#include "render/render.h"
-#include "scenario/scenario.h"
-#include "tag_files/tag_files.h"
-#include "tag_files/tag_groups.h"
-#include "text/draw_string.h"
-#include "text/font_group.h"
-#include "text/text_group.h"
+/* ---------- headers */
 
-#include <stdio.h>
+#include "cseries.h"
+#include "main/console.h"
+#include "mods.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+/* the game's (port) */
+char *tag_get_name(long tag_index);
 
 /* ---------- constants */
 
-/* the large font leaves room for this many lines on a 480 line screen */
-#define HALO_MOD_LARGE_FONT_LINES 18
-#define HALO_MOD_SCREEN_HEIGHT 480
+/* the most the mods' tags keep in memory (their files, their sounds'
+samples, their bitmaps' tags and their models' geometry; bitmaps' pixels
+are read as they are drawn) */
+#if defined(HALO_ANDROID) || defined(HALO_WEB)
+#define MAXIMUM_KEPT_BYTES (192UL * 1024 * 1024)
+#else
+#define MAXIMUM_KEPT_BYTES (512UL * 1024 * 1024)
+#endif
 
 /* ---------- globals */
 
-/* Forge's parts, in the order of their menu tabs and of their hooks */
-extern struct halo_mod const forge_ai_mod;
-extern struct halo_mod const forge_edit_mod;
-extern struct halo_mod const forge_prefabs_mod;
-extern struct halo_mod const forge_spawns_mod;
-extern struct halo_mod const forge_zones_mod;
-extern struct halo_mod const gravity_mod;
-extern struct halo_mod const sky_mod;
-extern struct halo_mod const forge_layout_mod;
-
 static struct
 {
-	short count;
-	struct halo_mod const *mods[HALO_MOD_MAXIMUM_COUNT];
-} halo_mod_globals =
-{
-	8,
-	{
-		&forge_ai_mod,
-		&forge_edit_mod,
-		&forge_prefabs_mod,
-		&forge_spawns_mod,
-		&forge_zones_mod,
-		&gravity_mod,
-		&sky_mod,
-		&forge_layout_mod
-	}
-};
-
-/* the fonts chosen (for so many lines) and the map they were chosen in */
-#define HALO_MOD_FONT_CACHE_COUNT 4
-
-static struct
-{
-	short lines;
-	char map_name[256];
-	long font_tag_index;
-} halo_mod_font_globals[HALO_MOD_FONT_CACHE_COUNT];
+	boolean map_loaded;
+	boolean enabled;
+	char map_name[64];
+	unsigned long kept_bytes;
+	/* how many times the mods had been found when they last were here
+	(port_mods_scans) */
+	unsigned long scans;
+	/* the groups' updates say what they did at the console (not as the
+	Mods menu applies them) */
+	boolean say;
+	/* how many of the map's strings, bitmaps, sounds and models the mods play */
+	long string_count;
+	long bitmap_count;
+	long sound_count;
+	long model_count;
+} mods_globals;
 
 /* ---------- private code */
 
-static boolean halo_mod_font_holds_text(
-	long font_tag_index)
+static void mods_let_go(boolean give_back);
+
+/* every group's tags played from the mods' files, or (remove_all) none */
+static void mods_update(
+	boolean remove_all,
+	boolean at_load)
 {
-	struct font_header *font = font_definition_get(font_tag_index);
-
-	return font_get_character_by_ascii_code(font, 'a') != NULL &&
-		font_get_character_by_ascii_code(font, 'Z') != NULL &&
-		font_get_character_by_ascii_code(font, '0') != NULL &&
-		font_get_character_by_ascii_code(font, '>') != NULL;
-}
-
-static void halo_mod_set_font(
-	long font,
-	int justification,
-	unsigned long argb)
-{
-	real_argb_color color;
-
-	color.alpha = (real)((argb >> 24) & 0xff) / 255.f;
-	color.red = (real)((argb >> 16) & 0xff) / 255.f;
-	color.green = (real)((argb >> 8) & 0xff) / 255.f;
-	color.blue = (real)(argb & 0xff) / 255.f;
-	draw_string_set_draw_mode(font, _text_style_plain, (short)justification, 0, &color);
+	mods_globals.string_count = mod_strings_update(remove_all, at_load);
+	mods_globals.bitmap_count = mod_bitmaps_update(remove_all, at_load);
+	mods_globals.sound_count = mod_sounds_update(remove_all, at_load);
+	mods_globals.model_count = mod_models_update(remove_all, at_load);
 
 	return;
 }
 
 /* ---------- public code */
 
-void halo_mod_register(
-	struct halo_mod const *mod)
+unsigned long mods_read_be16(
+	byte const *bytes)
 {
-	if (halo_mod_globals.count < HALO_MOD_MAXIMUM_COUNT)
+	return ((unsigned long)bytes[0] << 8) | bytes[1];
+}
+
+unsigned long mods_read_be32(
+	byte const *bytes)
+{
+	return ((unsigned long)bytes[0] << 24) | ((unsigned long)bytes[1] << 16) |
+		((unsigned long)bytes[2] << 8) | bytes[3];
+}
+
+short mods_read_short(
+	byte const *bytes)
+{
+	return (short)mods_read_be16(bytes);
+}
+
+real mods_read_real(
+	byte const *bytes)
+{
+	unsigned long bits = mods_read_be32(bytes);
+	real value;
+
+	memcpy(&value, &bits, sizeof(value));
+
+	return value;
+}
+
+/* whether `size` bytes at `offset` lie within `file_size` */
+boolean mods_in_file(
+	unsigned long offset,
+	unsigned long size,
+	unsigned long file_size)
+{
+	return offset <= file_size && size <= file_size - offset;
+}
+
+boolean mods_finite_real(
+	real value)
+{
+	return value == value && value - value == 0.f;
+}
+
+boolean mods_tag_file_header_valid(
+	byte const *file,
+	unsigned long group_tag,
+	short version)
+{
+	return mods_read_be32(file + MOD_TAG_FILE_GROUP_OFFSET) == group_tag &&
+		!memcmp(file + MOD_TAG_FILE_SIGNATURE_OFFSET, "blam", 4) &&
+		mods_read_be32(file + MOD_TAG_FILE_HEADER_SIZE_OFFSET) == MOD_TAG_FILE_HEADER_SIZE &&
+		mods_read_short(file + MOD_TAG_FILE_VERSION_OFFSET) == version;
+}
+
+long mods_tag_file_find(
+	long tag_index,
+	char const *extension)
+{
+	char const *name = tag_get_name(tag_index);
+	char tag_file[512];
+
+	if (!mods_globals.map_loaded || !name || !*name || strlen(name) + strlen(extension) >= sizeof(tag_file))
 	{
-		halo_mod_globals.mods[halo_mod_globals.count++] = mod;
+		return NONE;
 	}
-	else
+	strcpy(tag_file, name);
+	strcat(tag_file, extension);
+
+	return port_mods_file_find(tag_file, mods_globals.map_name);
+}
+
+byte *mods_tag_file_read(
+	long file,
+	unsigned long *size,
+	char const **reason)
+{
+	unsigned long stamp[2];
+	byte *data;
+
+	*reason = "it cannot be read";
+	if (!port_mods_file_stamp(file, size, stamp))
 	{
-		fprintf(stderr, "halo-linux: more than %d mods, %s does not run\n", HALO_MOD_MAXIMUM_COUNT, mod->name);
+		return NULL;
 	}
-
-	return;
-}
-
-void halo_mods_update(
-	void)
-{
-	short mod_index;
-
-	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
+	if (*size < MOD_TAG_FILE_HEADER_SIZE || *size > MAXIMUM_MOD_TAG_FILE_SIZE)
 	{
-		if (halo_mod_globals.mods[mod_index]->update)
-			halo_mod_globals.mods[mod_index]->update();
+		*reason = "it is not the size of a tag file";
+		return NULL;
 	}
-
-	return;
-}
-
-int halo_mods_grab(
-	void)
-{
-	short mod_index;
-
-	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
+	data = malloc(*size);
+	if (!data)
 	{
-		if (halo_mod_globals.mods[mod_index]->grab && halo_mod_globals.mods[mod_index]->grab())
-			return TRUE;
+		*reason = "out of memory";
+		return NULL;
 	}
-
-	return FALSE;
-}
-
-short halo_mods_count(
-	void)
-{
-	return halo_mod_globals.count;
-}
-
-struct halo_mod const *halo_mods_get(
-	short index)
-{
-	return index >= 0 && index < halo_mod_globals.count ? halo_mod_globals.mods[index] : NULL;
-}
-
-int halo_mods_remove(
-	void)
-{
-	short mod_index;
-
-	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
+	if (!port_mods_file_read(file, 0, data, *size))
 	{
-		if (halo_mod_globals.mods[mod_index]->remove_object && halo_mod_globals.mods[mod_index]->remove_object())
-			return TRUE;
-	}
-
-	return FALSE;
-}
-
-short halo_mods_menu_page_count(
-	void)
-{
-	short mod_index;
-	short count = 0;
-
-	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
-	{
-		if (halo_mod_globals.mods[mod_index]->menu)
-			count++;
-	}
-
-	return count;
-}
-
-short halo_mods_properties_page(
-	struct halo_mod_menu const **popup)
-{
-	short mod_index;
-	short page_index = 0;
-	short nearest_page_index = NONE;
-	float nearest_distance = 0.f;
-	boolean found = FALSE;
-
-	*popup = NULL;
-	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
-	{
-		struct halo_mod const *mod = halo_mod_globals.mods[mod_index];
-		float distance = 0.f;
-
-		if ((mod->menu || mod->popup) && mod->properties && mod->properties(&distance) &&
-			(!found || distance < nearest_distance))
-		{
-			found = TRUE;
-			nearest_page_index = mod->menu ? page_index : NONE;
-			nearest_distance = distance;
-			*popup = mod->popup;
-		}
-		if (mod->menu)
-			page_index++;
+		free(data);
+		return NULL;
 	}
 
-	return nearest_page_index;
+	return data;
 }
 
-struct halo_mod_menu const *halo_mods_menu_page(
-	short index)
+boolean mods_memory_take(
+	unsigned long size)
 {
-	short mod_index;
-
-	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
+	if (size > MAXIMUM_KEPT_BYTES - mods_globals.kept_bytes)
 	{
-		if (halo_mod_globals.mods[mod_index]->menu && index-- == 0)
-			return halo_mod_globals.mods[mod_index]->menu;
-	}
-
-	return NULL;
-}
-
-void halo_mods_render(
-	void)
-{
-	short mod_index;
-
-	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
-	{
-		if (halo_mod_globals.mods[mod_index]->render)
-			halo_mod_globals.mods[mod_index]->render();
-	}
-
-	return;
-}
-
-/* at the start of every game tick (game/game.c) */
-int halo_mods_authoritative(
-	void)
-{
-	return game_connection() == _game_connection_local || game_connection() == _game_connection_network_server;
-}
-
-void halo_mods_tick(
-	void)
-{
-	short mod_index;
-
-	/* a film replays what was recorded */
-	if (game_connection() == _game_connection_film_playback)
-		return;
-
-	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
-	{
-		if (halo_mod_globals.mods[mod_index]->tick)
-			halo_mod_globals.mods[mod_index]->tick();
-	}
-
-	return;
-}
-
-/* at the end of game_initialize_for_new_map (game/game.c) */
-void halo_mods_new_map(
-	void)
-{
-	short mod_index;
-
-	/* (Forge's monitor is found again in this map's tags, forge_monitor.c) */
-	forge_monitor_new_map();
-	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
-	{
-		if (halo_mod_globals.mods[mod_index]->new_map)
-			halo_mod_globals.mods[mod_index]->new_map();
-	}
-	/* then the layout that plays on this map, over what the mods set up */
-	forge_layout_new_map();
-
-	return;
-}
-
-/* in each player's window, after render_debug (render/render.c) */
-void halo_mods_render_world(
-	void)
-{
-	short mod_index;
-
-	for (mod_index = 0; mod_index < halo_mod_globals.count; mod_index++)
-	{
-		if (halo_mod_globals.mods[mod_index]->render_world)
-			halo_mod_globals.mods[mod_index]->render_world();
-	}
-
-	return;
-}
-
-int halo_mod_key_pressed(
-	struct halo_mod_key_state *state,
-	int key,
-	int ctrl)
-{
-	int down = halo_mod_key_down(key) && (!ctrl || halo_mod_key_down(HALO_MOD_KEY_CTRL));
-	int pressed = down && !state->down;
-
-	state->down = down;
-
-	return pressed;
-}
-
-int halo_mod_screen(
-	short *x0,
-	short *y0,
-	short *x1,
-	short *y1)
-{
-	rectangle2d window = render.camera.window_bounds;
-
-	if (local_player_get_player_index(0) == NONE)
 		return FALSE;
-	offset_rectangle2d(&window, -render.camera.viewport_bounds.x0, -render.camera.viewport_bounds.y0);
-	*x0 = window.x0;
-	*y0 = window.y0;
-	*x1 = window.x1;
-	*y1 = window.y1;
+	}
+	mods_globals.kept_bytes += size;
 
 	return TRUE;
 }
 
-long halo_mod_font(
-	int large)
+unsigned long mods_memory_left(
+	void)
 {
-	return large
-		? halo_mod_font_for_lines(HALO_MOD_LARGE_FONT_LINES)
-		: interface_get_tag_index(_interface_font_terminal);
+	return MAXIMUM_KEPT_BYTES - mods_globals.kept_bytes;
 }
 
-long halo_mod_font_for_lines(
-	short lines)
+void mods_memory_give(
+	unsigned long size)
 {
-	long terminal = interface_get_tag_index(_interface_font_terminal);
-	char const *map_name;
-	short cache_index;
-
-	if (lines <= 0 || global_scenario_index == NONE || terminal == NONE)
-		return terminal;
-
-	map_name = tag_get_name(global_scenario_index);
-	for (cache_index = 0; cache_index < HALO_MOD_FONT_CACHE_COUNT - 1; cache_index++)
-	{
-		if (halo_mod_font_globals[cache_index].lines == lines || halo_mod_font_globals[cache_index].lines == 0)
-			break;
-	}
-	if (halo_mod_font_globals[cache_index].lines != lines ||
-		strcmp(map_name, halo_mod_font_globals[cache_index].map_name) != 0)
-	{
-		struct tag_iterator iterator;
-		long font_tag_index;
-		short best_height = halo_mod_line_height(terminal);
-
-		halo_mod_font_globals[cache_index].lines = lines;
-		halo_mod_font_globals[cache_index].font_tag_index = terminal;
-		tag_iterator_new(&iterator, FONT_GROUP_TAG);
-		while ((font_tag_index = tag_iterator_next(&iterator)) != NONE)
-		{
-			short height = halo_mod_line_height(font_tag_index);
-
-			if (height > best_height &&
-				height <= HALO_MOD_SCREEN_HEIGHT / lines &&
-				halo_mod_font_holds_text(font_tag_index))
-			{
-				best_height = height;
-				halo_mod_font_globals[cache_index].font_tag_index = font_tag_index;
-			}
-		}
-		_snprintf(halo_mod_font_globals[cache_index].map_name, sizeof(halo_mod_font_globals[cache_index].map_name),
-			"%s", map_name);
-	}
-
-	return halo_mod_font_globals[cache_index].font_tag_index;
-}
-
-short halo_mod_line_height(
-	long font)
-{
-	struct font_header *header = font_definition_get(font);
-
-	return (short)(header->ascending_height + header->descending_height + header->leading_height);
-}
-
-short halo_mod_text_width(
-	long font,
-	char const *text)
-{
-	rectangle2d bounds;
-	rectangle2d text_bounds;
-	rectangle2d cursor_bounds;
-
-	set_rectangle2d(&bounds, 0, 0, SHORT_MAX, SHORT_MAX);
-	halo_mod_set_font(font, HALO_MOD_TEXT_LEFT, 0xffffffff);
-	draw_string_compute_bounds(&bounds, text, &text_bounds, &cursor_bounds);
-
-	return (short)(text_bounds.x1 - text_bounds.x0);
-}
-
-void halo_mod_draw_text(
-	long font,
-	short x0,
-	short y0,
-	short x1,
-	short y1,
-	int justification,
-	unsigned long argb,
-	char const *text)
-{
-	rectangle2d bounds;
-
-	set_rectangle2d(&bounds, x0, y0, x1, y1);
-	halo_mod_set_font(font, justification, argb);
-	rasterizer_draw_string(&bounds, NULL, NULL, 0, text);
+	mods_globals.kept_bytes -= MIN(size, mods_globals.kept_bytes);
 
 	return;
 }
 
-void halo_mod_draw_box(
-	short x0,
-	short y0,
-	short x1,
-	short y1,
-	unsigned long argb)
+char const *mods_map_name(
+	void)
 {
-	rectangle2d bounds;
+	return mods_globals.map_name;
+}
 
-	set_rectangle2d(&bounds, x0, y0, x1, y1);
-	draw_quad(&bounds, (pixel32)argb);
+boolean mods_map_loaded(
+	void)
+{
+	return mods_globals.map_loaded;
+}
+
+/* (scenario_tags_load, once a map's tags are loaded) */
+void mods_tags_loaded(
+	char const *map_name)
+{
+	/* (a map whose tags loaded, but not the rest of it, is not unloaded
+	before the next map's tags load over its own: what the mods made for it
+	goes, and nothing of it is written over the new map's tags) */
+	if (mods_globals.map_loaded)
+		mods_let_go(FALSE);
+	mods_globals.map_loaded = TRUE;
+	mods_globals.enabled = TRUE;
+	csstrncpy(mods_globals.map_name, map_name ? map_name : "", sizeof(mods_globals.map_name) - 1);
+	mods_globals.map_name[sizeof(mods_globals.map_name) - 1] = 0;
+	/* (found again, unless the menus of this map just found them: the
+	first map's, menu_tags.c) */
+	if (port_mods_scans() == mods_globals.scans)
+		port_mods_scan();
+	mods_globals.scans = port_mods_scans();
+	if (port_mods_played())
+	{
+		mods_update(FALSE, TRUE);
+	}
 
 	return;
 }
 
-/* as draw_quad (cutscene/cinematics.c), a shape of four corners, clockwise,
-between the screen's units: the screen is drawn with several of the display's
-pixels to a unit, so thin shapes can be as sharp as the display */
-static void halo_mod_draw_corners(
-	float const x[4],
-	float const y[4],
-	unsigned long argb)
+/* Every group lets go of what it made for the map; the map's models get
+their own definitions back if `give_back` (their tags are still there). */
+static void mods_let_go(
+	boolean give_back)
 {
-	struct game_globals *game_globals = scenario_get_game_globals();
-	struct rasterizer_dynamic_screen_geometry_parameters parameters;
-	struct dynamic_screen_vertex vertices[4];
-	short vertex_index;
+	mod_sounds_tags_unloaded();
+	mod_bitmaps_tags_unloaded();
+	mod_models_tags_unloaded(give_back);
+	mod_strings_tags_unloaded();
+	mods_globals.map_loaded = FALSE;
+	mods_globals.enabled = FALSE;
+	mods_globals.map_name[0] = 0;
+	mods_globals.kept_bytes = 0;
+	mods_globals.string_count = 0;
+	mods_globals.bitmap_count = 0;
+	mods_globals.sound_count = 0;
+	mods_globals.model_count = 0;
 
-	if (game_globals->rasterizer_data.count <= 0)
+	return;
+}
+
+/* (scenario_tags_unload, once the sound and texture caches are closed: no
+cache block holds a mod's permutation or bitmap; nothing draws a model) */
+void mods_tags_unloaded(
+	void)
+{
+	mods_let_go(TRUE);
+
+	return;
+}
+
+boolean mods_say(
+	void)
+{
+	return mods_globals.say;
+}
+
+/* (the script function mods_reload) */
+void mods_reload(
+	void)
+{
+	if (!mods_globals.map_loaded)
+	{
 		return;
-
-	for (vertex_index = 0; vertex_index < NUMBEROF(vertices); vertex_index++)
+	}
+	if (!mods_globals.enabled)
 	{
-		vertices[vertex_index].position.x = x[vertex_index];
-		vertices[vertex_index].position.y = y[vertex_index];
-		vertices[vertex_index].color = (pixel32)argb;
-		vertices[vertex_index].texture_coordinates.x = 0.f;
-		vertices[vertex_index].texture_coordinates.y = 0.f;
+		console_warning("the mods are off until mods_enable true, or the map changes");
+		return;
+	}
+	console_printf(FALSE, "mods: %ld played", port_mods_scan());
+	mods_globals.scans = port_mods_scans();
+	mods_globals.say = TRUE;
+	mods_update(FALSE, FALSE);
+	mods_globals.say = FALSE;
+
+	return;
+}
+
+/* (the Mods menu's OK, menu_functions.c) The mods found again and played
+on the map in their new order, quietly. */
+void mods_apply(
+	void)
+{
+	if (!mods_globals.map_loaded)
+	{
+		port_mods_scan();
+		return;
+	}
+	port_mods_scan();
+	mods_globals.scans = port_mods_scans();
+	if (mods_globals.enabled)
+	{
+		mods_update(FALSE, FALSE);
 	}
 
-	csmemset(&parameters, 0, sizeof(parameters));
-	parameters.framebuffer_blend_function = 0;
-	parameters.map_texture_scale[0].i = 1.f;
-	parameters.map_texture_scale[0].j = 1.f;
-	parameters.map_scale[0].i = 1.f;
-	parameters.map_scale[0].j = 1.f;
-	parameters.meter_parameters = NULL;
-	parameters.point_sampled = FALSE;
-	parameters.map[0] = TAG_BLOCK_GET_ELEMENT(
-		&bitmap_group_get(TAG_BLOCK_GET_ELEMENT(&game_globals->rasterizer_data, 0,
-			struct game_globals_rasterizer_data)->default_textures[0].index)->bitmaps,
-		1,
-		struct bitmap_data);
+	return;
+}
 
-	rasterizer_globals.current_lock_operation = _rasterizer_lock_cinematics;
-	rasterizer_psuedo_dynamic_screen_quad_draw(&parameters, vertices);
-	rasterizer_globals.current_lock_operation = _rasterizer_lock_none;
+/* (the script function mods_enable) Plays the mods' tags, or gives the
+map's back, until the map changes. */
+void mods_enable(
+	boolean enabled)
+{
+	if (!mods_globals.map_loaded || enabled == mods_globals.enabled)
+	{
+		return;
+	}
+	mods_globals.enabled = enabled;
+	if (enabled)
+	{
+		port_mods_scan();
+		mods_globals.scans = port_mods_scans();
+	}
+	mods_globals.say = TRUE;
+	mods_update(!enabled, FALSE);
+	mods_globals.say = FALSE;
 
 	return;
 }
 
-void halo_mod_draw_box_real(
-	float x0,
-	float y0,
-	float x1,
-	float y1,
-	unsigned long argb)
+/* (the script function mods_list) */
+void mods_list(
+	void)
 {
-	float x[4];
-	float y[4];
+	long count = port_mods_count();
+	long index;
 
-	/* clockwise from the top left */
-	x[0] = x0;
-	x[1] = x1;
-	x[2] = x1;
-	x[3] = x0;
-	y[0] = y0;
-	y[1] = y0;
-	y[2] = y1;
-	y[3] = y1;
-	halo_mod_draw_corners(x, y, argb);
+	if (!count)
+	{
+		console_printf(FALSE, "mods: none in the mods folder");
+	}
+	/* (in their load order) */
+	for (index = 0; index < count; index++)
+	{
+		char text[512];
 
-	return;
-}
-
-/* a quad whose last two corners are one */
-void halo_mod_draw_triangle_real(
-	float x0,
-	float y0,
-	float x1,
-	float y1,
-	float x2,
-	float y2,
-	unsigned long argb)
-{
-	float x[4];
-	float y[4];
-
-	x[0] = x0;
-	x[1] = x1;
-	x[2] = x2;
-	x[3] = x2;
-	y[0] = y0;
-	y[1] = y1;
-	y[2] = y2;
-	y[3] = y2;
-	halo_mod_draw_corners(x, y, argb);
+		if (port_mods_describe(port_mods_at(index), text, sizeof(text), mods_globals.map_name))
+		{
+			console_printf(FALSE, "%s", text);
+		}
+	}
+	if (mods_globals.map_loaded)
+	{
+		if (mods_globals.enabled)
+		{
+			console_printf(FALSE, "mods: on %s, %ld string lists, %ld bitmaps, %ld sounds and %ld models are theirs (%lu KB kept)",
+				mods_globals.map_name, mods_globals.string_count, mods_globals.bitmap_count, mods_globals.sound_count,
+				mods_globals.model_count, mods_globals.kept_bytes / 1024);
+		}
+		else
+		{
+			console_printf(FALSE, "mods: off on %s until mods_enable true", mods_globals.map_name);
+		}
+	}
 
 	return;
 }

@@ -52,11 +52,12 @@
 	<widget name="main_menu/main_menu_select_list" type="column_list" width="640" height="480" flags="pass_unhandled_to_focused_child up_down_tabs_items" description="main_menu/main_menu_list_ext_desc">
 		<data input="main menu fake animate"/>
 		<on event="down"/>
-		<child widget="main_menu/main_menu_item_load_camp" x="194" y="247"/>
-		<child widget="main_menu/main_menu_item_multiplayer" x="192" y="283"/>
-		<child widget="main_menu/main_menu_item_forge" x="192" y="319"/>
-		<child widget="main_menu/main_menu_item_profile" x="192" y="355"/>
-		<child widget="main_menu/main_menu_item_settings" x="192" y="391"/>
+		<child widget="main_menu/main_menu_item_load_camp" x="194" y="211"/>
+		<child widget="main_menu/main_menu_item_multiplayer" x="192" y="247"/>
+		<child widget="main_menu/main_menu_item_forge" x="192" y="283"/>
+		<child widget="main_menu/main_menu_item_profile" x="192" y="319"/>
+		<child widget="main_menu/main_menu_item_settings" x="192" y="355"/>
+		<child widget="main_menu/main_menu_item_mods" x="192" y="391"/>
 		<child widget="main_menu/main_menu_item_quit_game" x="192" y="427"/>
 	</widget>
 	<widget name="main_menu/new_campaign_creating_profile" width="640" height="480" flags="pass_unhandled_to_focused_child no_history" auto_close="1">

@@ -1,7 +1,7 @@
 /*
 FORGE_AI.C
 
-One of Forge's parts (halo_mod.h, mods.c): AI characters in any map, from the dev tools'
+One of Forge's parts (halo_mod.h, halo_mods.c): AI characters in any map, from the dev tools'
 menu (in forge mode: 1, D-pad right or X), on the "AI" tab. A keyboard and
 a controller work alike.
 

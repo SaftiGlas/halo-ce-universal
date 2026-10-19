@@ -1,7 +1,7 @@
 /*
 SKY.C
 
-One of Forge's parts (halo_mod.h, mods.c): the look of the sky and of the fog.
+One of Forge's parts (halo_mod.h, halo_mods.c): the look of the sky and of the fog.
 
 The dev tools' menu (1 / D-pad right) has a "Sky" tab with one row, the
 look: left and right change it, so it works on a controller as it does on a

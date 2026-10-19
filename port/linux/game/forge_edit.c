@@ -1,7 +1,7 @@
 /*
 FORGE_EDIT.C
 
-One of Forge's parts (halo_mod.h, mods.c): an object's popup, with the dev tools'
+One of Forge's parts (halo_mod.h, halo_mods.c): an object's popup, with the dev tools'
 crosshair (port/linux/game/forge.c): move it, copy it, change its size,
 turn and height, remove it.
 

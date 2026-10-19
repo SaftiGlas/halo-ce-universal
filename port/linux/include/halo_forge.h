@@ -229,7 +229,7 @@ int forge_monitor_import_wanted(void);
 /* the monitor's biped in this map, or -1 (NONE): Forge then flies its
 camera free of the player (camera/director_forge.c) */
 long forge_monitor_definition(void);
-/* the monitor's biped is looked for again (game/mods.c, a new map) */
+/* the monitor's biped is looked for again (game/halo_mods.c, a new map) */
 void forge_monitor_new_map(void);
 int forge_unit_is_monitor(long unit_index);
 int forge_player_is_monitor(long player_index);

@@ -3177,7 +3177,7 @@ void forge_update(
 	if (!forge_globals.active)
 		csmemset(&keys, 0, sizeof(keys));
 
-	/* source mods first (game/mods.c), whether or not the tools are on */
+	/* source mods first (game/halo_mods.c), whether or not the tools are on */
 	halo_mods_update();
 
 	forge_globals.milliseconds = milliseconds;

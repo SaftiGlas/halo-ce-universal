@@ -2,16 +2,16 @@
 HALO_MOD.H
 
 What the ports offer Forge's parts (port/linux/game/forge_ai.c and the
-files beside it, listed in mods.c) and source mods (tools/mod_overlay.py),
+files beside it, listed in halo_mods.c) and source mods (tools/mod_overlay.py),
 so that they need not change the game's files to run or to read keys: each
 is a struct halo_mod of its own file, and reads the keyboard with
-halo_mod_key_down. Forge's parts are in mods.c's list, in every build; a
+halo_mod_key_down. Forge's parts are in halo_mods.c's list, in every build; a
 source mod of a native Linux build registers its own with
 HALO_MOD_REGISTER, after them.
 
 Shared by the game, through halo_linux_source_fixups.h, and the platform
 layer (port/linux/src/xinput_sdl.c). The hooks are called by
-port/linux/game/mods.c.
+port/linux/game/halo_mods.c.
 */
 
 #ifndef __HALO_MOD_H
@@ -140,7 +140,7 @@ short halo_mods_properties_page(struct halo_mod_menu const **popup);
 struct halo_mod_menu const *halo_mods_menu_page(short index);
 
 /* registers a source mod's struct halo_mod before the game starts, after
-Forge's own parts (mods.c) */
+Forge's own parts (halo_mods.c) */
 #define HALO_MOD_REGISTER(mod) \
 	static void __attribute__((constructor)) halo_mod_register_##mod(void) \
 	{ \
