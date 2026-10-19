@@ -135,6 +135,7 @@ how far one must be moved (or turned) to be saved as moved */
 #define FORGE_LAYOUT_MATCH_DISTANCE 0.05f
 #define FORGE_LAYOUT_MOVED_DISTANCE 0.005f
 #define FORGE_LAYOUT_TURNED_DOT 0.9999f
+#define FORGE_LAYOUT_SCALED_DIFFERENCE 0.001f
 /* how near the place a client names an object that the host has no index
 for (scenery, devices) must be */
 #define FORGE_LAYOUT_EDIT_DISTANCE 0.5f
@@ -172,6 +173,8 @@ struct forge_layout_map_object
 	real_point3d position;
 	real_vector3d forward;
 	real_vector3d up;
+	/* its scale as the map has it (1 for the tag's own) */
+	real scale;
 	/* found by the layout being loaded */
 	boolean matched;
 	/* the tools placed it or removed it (a vehicle settling, a weapon
@@ -715,6 +718,7 @@ static void forge_layout_note_map_objects(
 		entry->position = object->object.position;
 		entry->forward = object->object.forward;
 		entry->up = object->object.up;
+		entry->scale = object->object.scale > 0.f ? object->object.scale : 1.f;
 		entry->matched = FALSE;
 		entry->placed = FALSE;
 		entry->removed = FALSE;
@@ -803,6 +807,8 @@ static void forge_layout_reset(
 		{
 			if (object->object.parent_object_index == NONE)
 				forge_layout_place(entry->object_index, &entry->position, &entry->forward, &entry->up);
+			if (object->object.scale != entry->scale)
+				objects_scripting_set_scale(entry->object_index, entry->scale, 0);
 		}
 		else if (entry->removed && (!object || object->definition_index != entry->definition_index))
 		{
@@ -1238,6 +1244,7 @@ static void forge_layout_collect_records(
 		struct forge_layout_map_object *entry = &forge_layout_globals.map_objects[index];
 		boolean changed = forge_layout_properties_changed(&entry->properties);
 		struct object_datum *object;
+		real scale = 0.f;
 
 		/* (most are as the map has them) */
 		if ((!entry->removed && !entry->placed && !changed) ||
@@ -1255,18 +1262,25 @@ static void forge_layout_collect_records(
 				&entry->position, &entry->properties);
 		}
 		else if (object && object->definition_index == entry->definition_index &&
-			object->object.parent_object_index == NONE &&
-			(changed ||
+			object->object.parent_object_index == NONE)
+		{
+			real object_scale = object->object.scale > 0.f ? object->object.scale : 1.f;
+
+			/* (a scale the tools changed is saved; the map's own is 0) */
+			if (entry->placed && (real)fabs(object_scale - entry->scale) > FORGE_LAYOUT_SCALED_DIFFERENCE)
+				scale = object_scale;
+			if (changed || scale > 0.f ||
 				(entry->placed &&
 					(distance3d(&object->object.position, &entry->position) > FORGE_LAYOUT_MOVED_DISTANCE ||
 						dot_product3d(&object->object.forward, &entry->forward) < FORGE_LAYOUT_TURNED_DOT ||
-						dot_product3d(&object->object.up, &entry->up) < FORGE_LAYOUT_TURNED_DOT))))
-		{
-			if (!entry->properties.id && !for_client)
-				entry->properties.id = forge_layout_new_id();
-			forge_layout_add_record(_forge_mvar_object_moved, entry->definition_index, NULL,
-				tag_get_group_tag(entry->definition_index), &object->object.position, &object->object.forward,
-				&object->object.up, 0.f, &entry->position, &entry->properties);
+						dot_product3d(&object->object.up, &entry->up) < FORGE_LAYOUT_TURNED_DOT)))
+			{
+				if (!entry->properties.id && !for_client)
+					entry->properties.id = forge_layout_new_id();
+				forge_layout_add_record(_forge_mvar_object_moved, entry->definition_index, NULL,
+					tag_get_group_tag(entry->definition_index), &object->object.position, &object->object.forward,
+					&object->object.up, scale, &entry->position, &entry->properties);
+			}
 		}
 	}
 
@@ -1678,7 +1692,12 @@ static void forge_layout_apply_record(
 			return;
 		if (object->kind == _forge_mvar_object_moved)
 		{
+			real scale = object->scale;
+
 			forge_layout_place(entry->object_index, &position, &forward, &up);
+			/* (0, or out of bounds: the map's own) */
+			if (scale >= FORGE_LAYOUT_MINIMUM_SCALE && scale <= FORGE_LAYOUT_MAXIMUM_SCALE)
+				objects_scripting_set_scale(entry->object_index, scale, 0);
 			entry->placed = TRUE;
 			entry->properties = properties;
 		}

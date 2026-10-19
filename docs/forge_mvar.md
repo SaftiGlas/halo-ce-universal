@@ -101,7 +101,7 @@ object.
 | 18 | u16 | 0 |
 | 20 | 3 × f32 | **position**: world x, y, z |
 | 32 | 4 × f32 | **rotation**: a unit quaternion x, y, z, w (below) |
-| 48 | f32 | **scale**: 0 for the tag's own; 0.01 to 100 |
+| 48 | f32 | **scale**: 0 for the tag's own (a moved object's: the map's own); 0.01 to 100 |
 | 52 | 3 × f32 | original: for moved and removed objects, where the map places them; the object is found again by its tag and this place (within 0.05 world units) |
 
 When a variant loads:
@@ -110,7 +110,8 @@ When a variant loads:
   and scale. While Forge is off, an object with "placed at start" off, or
   whose game types do not include the current game type, is not created.
   Saving the variant again keeps it as it was.
-- **Moved** objects (the map's own) are put at the variant's place and turn.
+- **Moved** objects (the map's own) are put at the variant's place and turn,
+  and given its scale when it is not 0.
 - **Removed** objects (the map's own) are deleted. A game type's flag or
   ball is never deleted.
 

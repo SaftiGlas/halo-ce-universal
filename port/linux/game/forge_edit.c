@@ -62,10 +62,9 @@ hold an object (their own delete then removes the held object). In a system
 link game a client's popup moves the object (the host is asked, as for the
 tools' pick up key); the other rows are the host's.
 
-A changed turn, tilt, roll or height is kept by the tools' layout as a moved object is
-(port/linux/game/forge_layout.c); a changed size is kept for the objects
-the tools made, which a layout saves with their scale, not for the map's
-own. Team, Placed at start, Game types, Respawn, Group and Comment are the
+A changed turn, tilt, roll, height or size is kept by the tools' layout as a moved object is
+(port/linux/game/forge_layout.c), for the objects the tools made and the
+map's own alike. Team, Placed at start, Game types, Respawn, Group and Comment are the
 object's properties in the map variant (forge_layout_set_properties): the
 host's in a system link game, kept for the objects the tools made and the
 map's own alike; a copy and an object brought back have them too.

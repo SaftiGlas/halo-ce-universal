@@ -203,7 +203,8 @@ the host to make (`port/linux/game/forge_layout.c`); version 30 gives a Forge
 zone a shape, square or circle, in the layout, which gravity zones need on
 every machine; version 31 sends the layout as a map variant (the binary
 `.mvar` of `docs/forge_mvar.md`, at most 256 KB) in place of its text, with
-each object's id, team, spawn flags and game types.
+each object's id, team, spawn flags and game types; version 32 gives the
+map's own objects that Forge moved the scale Forge gave them.
 
 `port/linux/network_format.txt` records the wire format of the current
 version (`tools/network_format.py`): `test_linux_port.py` fails when the
