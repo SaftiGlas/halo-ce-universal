@@ -789,6 +789,12 @@ static const struct config_setting config_settings[] =
 		"in, once, select this many of the map's objects, save them as a prefab and\n"
 		"place it beside them; how many were selected, read back and made is logged.\n"
 		"0 never." },
+	{ "debug.forge_test_ai", _config_integer, "0", "HALO_FORGE_TEST_AI", _environment_value, _platform_desktop,
+		"For automated tests of Forge's AI factions and squads: in a local game, a few\n"
+		"seconds in, once, two squads of this many characters (at most 8) stand in\n"
+		"front of the player facing each other, the map's first two characters whose\n"
+		"teams differ (import them); every two seconds for thirty, how many of each\n"
+		"live, fight and follow is logged. 0 never." },
 	{ "debug.fixed_step", _config_boolean, "false", "HALO_FIXED_STEP", _environment_set_is_true, _platform_all,
 		"A game of this machine alone runs one tick a frame, whatever time has\n"
 		"passed, so that it plays the same every time (tests); game_speed has no\n"

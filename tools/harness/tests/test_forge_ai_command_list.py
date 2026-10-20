@@ -1,6 +1,6 @@
-"""The AI's command list of a map (forge_ai.c, forge_ai_install_command_list): the scenario's lists with Forge's at
-the end; a map reset, which keeps the map's tags, keeps that list rather than adding another, and a map's block is
-freed when the map after the next is made."""
+"""The AI's command lists of a map (forge_ai.c, forge_ai_install_command_list): the scenario's lists with Forge's at
+the end (its patrol and the squad followers' lists); a map reset, which keeps the map's tags, keeps those lists rather
+than adding more, and a map's block is freed when the map after the next is made."""
 
 import sys
 from pathlib import Path
@@ -24,6 +24,8 @@ NEGATIVE_CONTROLS = {
                       "forge_ai_retire_command_lists", "new-maps"),
     "keeps-index": (("\tforge_ai_globals.command_list_index = NONE;\n", ""), "forge_ai_retire_command_lists",
                     "retire"),
+    "shares-follow-list": (("&forge_ai_globals.follow_commands[index - 1]", "forge_ai_globals.follow_commands"),
+                           "forge_ai_install_command_list", "copies"),
 }
 
 

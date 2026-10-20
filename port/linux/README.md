@@ -223,7 +223,10 @@ They use the same hooks:
 `forge_ai` (an AI tab in the dev tools' menu: add characters, such as the
 grunts and hunters that the launcher brings in from campaign maps, at the
 crosshair, and waypoints for them to patrol, with the game's own AI and
-pathfinding, which multiplayer maps have),
+pathfinding, which multiplayer maps have; each is of a faction, their own
+or the player's side, human, Covenant, Flood or sentinel, which fight each
+other, and cautious, normal or berserk; several are added at once as a
+squad that follows its first and fights what any of it fights),
 `forge_edit` (an object's popup: X with the crosshair on an object, flying, shows
 its rows beside the crosshair, to move it, duplicate it, change its size,
 turn, tilt, roll and height, select it for a prefab, remove it and undo a removal),
@@ -829,6 +832,7 @@ the setting for one start of the game. It has priority over the file.
 | `debug.forge_test_edit` | `0` | `HALO_FORGE_TEST_EDIT` | For automated tests of Forge in system link (with `debug.network_test` and the `forge` variant): `1`, the host spawns a scenery object a few seconds in, and a client asks it to spawn one, then to move it and to remove it; both log what they send and take. |
 | `debug.forge_test_monitor` | `0` | `HALO_FORGE_TEST_MONITOR` | For automated tests of Forge's monitor (`game.forge_monitor`): `1`, each machine's player becomes the monitor ten seconds into a game, rises, and lands ten seconds later; what the player's unit is and where is logged every two seconds. |
 | `debug.forge_test_prefab` | `0` | `HALO_FORGE_TEST_PREFAB` | For automated tests of Forge's prefabs: in a local Forge game, a few seconds in, once, select this many of the map's objects, save them as a prefab and place it beside them; how many were selected, read back and made is logged. `0` never. |
+| `debug.forge_test_ai` | `0` | `HALO_FORGE_TEST_AI` | For automated tests of Forge's AI factions and squads: in a local game, a few seconds in, once, two squads of this many characters (at most 8), the map's first two characters whose teams differ (import them), stand in front of the player facing each other; every two seconds for thirty, how many of each live, fight and follow is logged. `0` never. |
 | `debug.fixed_step` | `false` | `HALO_FIXED_STEP` | `true`: a game of this computer alone runs one tick a frame, whatever time has passed, so that it plays the same every time (tests). |
 | `debug.exit_after` | `0.0` | `HALO_EXIT_AFTER` | The game stops after this number of seconds (from when its window opens; with `debug.null_renderer`, or no display, from its first frame). `0`: never. |
 | `debug.screenshot_directory`, `debug.screenshot_every` | `""`, `0` | `HALO_SCREENSHOT_DIR`, `HALO_SCREENSHOT_EVERY` | The game writes each Nth frame to this folder as a BMP file. |

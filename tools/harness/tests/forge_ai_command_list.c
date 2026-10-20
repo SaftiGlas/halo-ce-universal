@@ -2,16 +2,20 @@
 FORGE_AI_COMMAND_LIST.C (test)
 
 The AI's command list of a map (port/linux/game/forge_ai.c,
-forge_ai_install_command_list): the scenario's lists are copied with one more,
-Forge's, at the end. A map reset starts the map again without loading its
-tags, so the scenario has Forge's list already: it is kept, not copied with
-another at the end. The previous map's copy is freed when the next map's is
+forge_ai_install_command_list): the scenario's lists are copied with Forge's
+at the end: its patrol, then one for each character a squad's follower can
+be. A map reset starts the map again without loading its tags, so the
+scenario has Forge's lists already: they are kept, not copied with more at
+the end. The previous map's copy is freed when the next map's is
 made. test_forge_ai_command_list.py takes the code (under_test.inc).
 */
 
 #include "harness.h"
 
 #define MAXIMUM_COMMANDS 8
+#define FORGE_AI_MAXIMUM_UNITS 4
+/* Forge's lists: the patrol and the followers' */
+#define FORGE_LISTS (1 + FORGE_AI_MAXIMUM_UNITS)
 
 struct tag_block_fake
 {
@@ -68,6 +72,8 @@ static struct
 	struct ai_command_definition commands[MAXIMUM_COMMANDS];
 	struct ai_command_point_definition points[MAXIMUM_COMMANDS];
 	short command_list_index;
+	struct ai_command_definition follow_commands[FORGE_AI_MAXIMUM_UNITS];
+	struct ai_command_point_definition follow_points[FORGE_AI_MAXIMUM_UNITS];
 } forge_ai_globals = { NULL, NULL, { { 0 } }, { { { 0 } } }, NONE };
 
 #include "under_test.inc"
@@ -89,18 +95,31 @@ int main(int argc, char **argv)
 {
 	char const *case_name = argc > 1 ? argv[1] : "";
 
-	/* the map's lists, then Forge's */
+	/* the map's lists, then Forge's: the patrol, then a follower's for each
+	character, each with its own command and point */
 	CASE("copies")
 	{
 		struct ai_command_list_definition *lists;
+		int follower;
 
 		load_map(0, 2);
 		forge_ai_install_command_list();
 		lists = (struct ai_command_list_definition *)the_scenario.ai_command_lists.address;
-		CHECK(the_scenario.ai_command_lists.count == 3, "the map's 2 lists became %ld", the_scenario.ai_command_lists.count);
+		CHECK(the_scenario.ai_command_lists.count == 2 + FORGE_LISTS, "the map's 2 lists became %ld",
+			the_scenario.ai_command_lists.count);
 		CHECK(!strcmp(lists[0].name, "map0_list0") && !strcmp(lists[1].name, "map0_list1"), "the map's lists changed");
 		CHECK(!strcmp(lists[2].name, "forge_ai_patrol") && forge_ai_globals.command_list_index == 2,
-			"Forge's list is not last (index %d)", forge_ai_globals.command_list_index);
+			"Forge's patrol is not after the map's (index %d)", forge_ai_globals.command_list_index);
+		CHECK(lists[2].commands.address == forge_ai_globals.commands, "the patrol's commands are not Forge's");
+		for (follower = 0; follower < FORGE_AI_MAXIMUM_UNITS; follower++)
+		{
+			struct ai_command_list_definition *list = &lists[3 + follower];
+
+			CHECK(!strcmp(list->name, "forge_ai_follow") &&
+				list->commands.address == &forge_ai_globals.follow_commands[follower] &&
+				list->points.address == &forge_ai_globals.follow_points[follower],
+				"follower list %d is not its own (%s)", follower, list->name);
+		}
 		return 0;
 	}
 	/* a map reset, again and again: one list of Forge's, one block */
@@ -112,8 +131,8 @@ int main(int argc, char **argv)
 		forge_ai_install_command_list();
 		for (reset = 0; reset < 5; reset++)
 			forge_ai_install_command_list();
-		CHECK(the_scenario.ai_command_lists.count == 3, "5 resets left %ld lists (the map's 2 and Forge's 1)",
-			the_scenario.ai_command_lists.count);
+		CHECK(the_scenario.ai_command_lists.count == 2 + FORGE_LISTS, "5 resets left %ld lists (the map's 2 and Forge's %d)",
+			the_scenario.ai_command_lists.count, FORGE_LISTS);
 		CHECK(allocations == 1 && frees == 0, "5 resets made %d blocks and freed %d", allocations, frees);
 		CHECK(forge_ai_globals.command_list_index == 2, "Forge's list is %d", forge_ai_globals.command_list_index);
 		return 0;
@@ -129,7 +148,8 @@ int main(int argc, char **argv)
 			forge_ai_install_command_list();
 		}
 		CHECK(allocations == 3 && frees == 1, "3 maps made %d blocks and freed %d (the first only)", allocations, frees);
-		CHECK(the_scenario.ai_command_lists.count == 2, "the third map has %ld lists", the_scenario.ai_command_lists.count);
+		CHECK(the_scenario.ai_command_lists.count == 1 + FORGE_LISTS, "the third map has %ld lists",
+			the_scenario.ai_command_lists.count);
 		CHECK(forge_ai_globals.previous_command_lists != NULL &&
 			forge_ai_globals.previous_command_lists != forge_ai_globals.command_lists,
 			"the second map's block is not the one kept");
@@ -140,12 +160,12 @@ int main(int argc, char **argv)
 	{
 		load_map(0, 0);
 		forge_ai_install_command_list();
-		CHECK(the_scenario.ai_command_lists.count == 1 && forge_ai_globals.command_list_index == 0,
+		CHECK(the_scenario.ai_command_lists.count == FORGE_LISTS && forge_ai_globals.command_list_index == 0,
 			"a map without lists has %ld, Forge's at %d", the_scenario.ai_command_lists.count,
 			forge_ai_globals.command_list_index);
 		forge_ai_install_command_list();
-		CHECK(the_scenario.ai_command_lists.count == 1 && allocations == 1, "a reset of it has %ld lists, %d blocks",
-			the_scenario.ai_command_lists.count, allocations);
+		CHECK(the_scenario.ai_command_lists.count == FORGE_LISTS && allocations == 1,
+			"a reset of it has %ld lists, %d blocks", the_scenario.ai_command_lists.count, allocations);
 		return 0;
 	}
 	/* retired (a client, whose AI is the host's): nothing of Forge's is used */
