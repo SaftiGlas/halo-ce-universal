@@ -230,6 +230,10 @@ up by their bounding sphere, at least this big */
 blue highlight of Halo's own menus, laid out as Halo: Reach's forge menu */
 #define FORGE_MENU_CAP_COLOR 0xe00a1628UL
 #define FORGE_MENU_CAP_TEXT_COLOR 0xffb8d8ffUL
+/* a name across the White button's face */
+#define FORGE_MENU_CAP_DARK_TEXT_COLOR 0xff10141cUL
+/* the edge around the Black button's face */
+#define FORGE_MENU_CAP_EDGE_COLOR 0xff8a94a3UL
 #define FORGE_MENU_BAR_LEFT_COLOR 0xe82896ffUL
 #define FORGE_MENU_BAR_RIGHT_COLOR 0x901a5aa0UL
 #define FORGE_MENU_RULE_COLOR 0x602896ffUL
@@ -253,8 +257,9 @@ this many texels wide and high */
 /* a popup is shaped as the pause menu's box is (port/assets/menus/port_svg/pause,
 pausebox_*.svg), a blue border and round corners (screen units), but filled
 black three quarters opaque. The menu's header and buttons are as black, its
-rows the pause box's navy, as opaque. */
+rows the pause box's navy, as opaque; the header is opaque black. */
 #define FORGE_POPUP_FILL_COLOR 0xbf000000UL
+#define FORGE_MENU_HEADER_FILL_COLOR 0xff000000UL
 #define FORGE_MENU_FILL_COLOR 0xbf0a2649UL
 #define FORGE_POPUP_BORDER_COLOR 0xff2896ffUL
 #define FORGE_POPUP_RADIUS 8.5f
@@ -2255,13 +2260,25 @@ static char const *forge_tab_name(
 
 /* ---------- the menu's look (forge_ui) */
 
-/* one hint of the buttons along the bottom: the button's icon, as the pause
-menu draws it (or, in a map without it, its letter on a disc of its colour),
-then what it does */
+/* the controller buttons' faces the HUD draws, in its button style
+(display.hud_button_style; port/linux/game/hud_hires_tags.c) */
+enum
+{
+	_forge_menu_face_a = 0,
+	_forge_menu_face_b = 1,
+	_forge_menu_face_black = 4,
+	_forge_menu_face_white = 5
+};
+struct bitmap_data *hud_hires_button_face(short index, rectangle2d *art);
+
+/* one hint of the buttons along the bottom: the button's face, as the HUD
+draws it (or the pause menu's icon, or, in a map without it, its letter on a
+disc of its colour), then what it does */
 struct forge_menu_hint
 {
 	char const *button;
 	unsigned long argb;
+	short face;
 	char const *bitmap;
 	char const *action;
 };
@@ -2437,7 +2454,7 @@ static void forge_menu_corner(
 
 /* a panel as the pause menu's box: filled, round cornered, with a border
 along its edge; band_y0 to band_y1 (below the top corners and above the
-bottom ones) is filled with band_fill */
+bottom ones) is filled with band_fill, and above it with header_fill */
 static void forge_menu_banded_panel(
 	short x0,
 	short y0,
@@ -2445,6 +2462,7 @@ static void forge_menu_banded_panel(
 	short y1,
 	short band_y0,
 	short band_y1,
+	unsigned long header_fill,
 	unsigned long fill,
 	unsigned long band_fill,
 	unsigned long border)
@@ -2472,7 +2490,7 @@ static void forge_menu_banded_panel(
 	in each corner (none overlap, so the fill is as see-through everywhere) */
 	for (span_index = 0; span_index < 3; span_index++)
 	{
-		unsigned long argb = span_index == 1 ? band_fill : fill;
+		unsigned long argb = span_index == 0 ? header_fill : span_index == 1 ? band_fill : fill;
 		real span_top = span_tops[span_index];
 		real span_bottom = span_bottoms[span_index];
 		real side_top = MAX(span_top, top + radius);
@@ -2487,8 +2505,8 @@ static void forge_menu_banded_panel(
 			halo_mod_draw_box_real(right - radius, side_top, right, side_bottom, forge_menu_color(argb));
 		}
 	}
-	forge_menu_corner(left + radius, top + radius, radius, 0.f, _pi, fill);
-	forge_menu_corner(right - radius, top + radius, radius, 0.f, 1.5f * _pi, fill);
+	forge_menu_corner(left + radius, top + radius, radius, 0.f, _pi, header_fill);
+	forge_menu_corner(right - radius, top + radius, radius, 0.f, 1.5f * _pi, header_fill);
 	forge_menu_corner(right - radius, bottom - radius, radius, 0.f, 0.f, fill);
 	forge_menu_corner(left + radius, bottom - radius, radius, 0.f, 0.5f * _pi, fill);
 
@@ -2514,7 +2532,7 @@ static void forge_menu_rounded_panel(
 	unsigned long fill,
 	unsigned long border)
 {
-	forge_menu_banded_panel(x0, y0, x1, y1, y0, y0, fill, fill, border);
+	forge_menu_banded_panel(x0, y0, x1, y1, y0, y0, fill, fill, fill, border);
 
 	return;
 }
@@ -2622,19 +2640,57 @@ static real forge_menu_glide(
 	return snap ? to : from + (to - from) * MIN(seconds * FORGE_MENU_GLIDE_SPEED, 1.f);
 }
 
-/* a shoulder button's name on a dark cap, its middle at y; returns its width */
+/* a shoulder button: its face (White for LB, Black for RB) as the HUD draws
+it, with its name across it, or its name on a dark cap; its middle at y;
+returns its width */
 static short forge_menu_cap(
 	long font,
 	short x,
 	short y,
 	boolean right,
+	short face,
 	char const *name)
 {
 	short height = (short)(forge_menu_line_height(font) + 2);
 	short width = (short)(forge_menu_text_width(font, name) * 106 / 100 + 10);
-	short x0 = right ? (short)(x - width) : x;
-	short top = (short)(y - height / 2);
+	rectangle2d art;
+	struct bitmap_data *bitmap = hud_hires_button_face(face, &art);
+	short x0;
+	short top;
 
+	if (bitmap)
+	{
+		short face_height = (short)(height + 6);
+		short face_width = (short)(face_height * (art.x1 - art.x0) / MAX(art.y1 - art.y0, 1));
+		rectangle2d bounds;
+
+		width = MAX(width, face_width);
+		x0 = right ? (short)(x - width) : x;
+		top = (short)(y - face_height / 2);
+		set_rectangle2d(&bounds, (short)(x0 + (width - face_width) / 2), top,
+			(short)(x0 + (width - face_width) / 2 + face_width), (short)(top + face_height));
+		/* (Black's face on the black header: a grey edge around it, the White
+		face a little larger behind it) */
+		if (face == _forge_menu_face_black)
+		{
+			rectangle2d edge_art;
+			struct bitmap_data *edge = hud_hires_button_face(_forge_menu_face_white, &edge_art);
+			rectangle2d edge_bounds = bounds;
+
+			if (edge)
+			{
+				inset_rectangle2d(&edge_bounds, -1, -1);
+				draw_bitmap_in_rect(edge, &edge_bounds, &edge_art, NULL,
+					(pixel32)forge_menu_color(FORGE_MENU_CAP_EDGE_COLOR), NULL, TRUE);
+			}
+		}
+		draw_bitmap_in_rect(bitmap, &bounds, &art, NULL, (pixel32)forge_menu_color(0xffffffffUL), NULL, TRUE);
+		forge_menu_text(font, x0, (short)(y - height / 2 + 1), (short)(x0 + width), HALO_MOD_TEXT_CENTER,
+			face == _forge_menu_face_white ? FORGE_MENU_CAP_DARK_TEXT_COLOR : FORGE_MENU_BUTTON_TEXT_COLOR, name);
+		return width;
+	}
+	x0 = right ? (short)(x - width) : x;
+	top = (short)(y - height / 2);
 	forge_menu_box(x0, top, (short)(x0 + width), (short)(top + height), FORGE_MENU_CAP_COLOR);
 	forge_menu_text(font, x0, (short)(top + 1), (short)(x0 + width), HALO_MOD_TEXT_CENTER,
 		FORGE_MENU_CAP_TEXT_COLOR, name);
@@ -2659,20 +2715,26 @@ static void forge_menu_hints(
 	for (hint_index = 0; hint_index < hint_count && x < x1; hint_index++)
 	{
 		struct forge_menu_hint const *hint = &hints[hint_index];
-		long bitmap_index = tag_loaded(BITMAP_GROUP_TAG, hint->bitmap);
-		struct bitmap_data *bitmap = bitmap_index != NONE ? bitmap_group_try_and_get_bitmap(bitmap_index, 0) : NULL;
+		rectangle2d art;
+		struct bitmap_data *bitmap = hud_hires_button_face(hint->face, &art);
 		short disc_width = (short)(2.f * radius + 0.999f);
 
+		/* (the HUD's face, else the pause menu's icon) */
+		if (!bitmap)
+		{
+			long bitmap_index = tag_loaded(BITMAP_GROUP_TAG, hint->bitmap);
+
+			bitmap = bitmap_index != NONE ? bitmap_group_try_and_get_bitmap(bitmap_index, 0) : NULL;
+			set_rectangle2d(&art, 0, 0, FORGE_MENU_BUTTON_ART_WIDTH, FORGE_MENU_BUTTON_ART_HEIGHT);
+		}
 		if (bitmap)
 		{
 			short icon_height = (short)(line_height + 4);
-			short icon_width = (short)(icon_height * FORGE_MENU_BUTTON_ART_WIDTH / FORGE_MENU_BUTTON_ART_HEIGHT);
+			short icon_width = (short)(icon_height * (art.x1 - art.x0) / MAX(art.y1 - art.y0, 1));
 			rectangle2d bounds;
-			rectangle2d art;
 
 			set_rectangle2d(&bounds, x, (short)(y + line_height / 2 - icon_height / 2), (short)(x + icon_width),
 				(short)(y + line_height / 2 - icon_height / 2 + icon_height));
-			set_rectangle2d(&art, 0, 0, FORGE_MENU_BUTTON_ART_WIDTH, FORGE_MENU_BUTTON_ART_HEIGHT);
 			draw_bitmap_in_rect(bitmap, &bounds, &art, NULL, (pixel32)forge_menu_color(0xffffffffUL), NULL, TRUE);
 			disc_width = icon_width;
 		}
@@ -2729,13 +2791,13 @@ static void forge_render_menu(
 {
 	static struct forge_menu_hint const object_hints[] =
 	{
-		{ "A", FORGE_MENU_BUTTON_A_COLOR, FORGE_MENU_BUTTON_A_BITMAP, "Place" },
-		{ "B", FORGE_MENU_BUTTON_B_COLOR, FORGE_MENU_BUTTON_B_BITMAP, "Done" },
+		{ "A", FORGE_MENU_BUTTON_A_COLOR, _forge_menu_face_a, FORGE_MENU_BUTTON_A_BITMAP, "Place" },
+		{ "B", FORGE_MENU_BUTTON_B_COLOR, _forge_menu_face_b, FORGE_MENU_BUTTON_B_BITMAP, "Done" },
 	};
 	static struct forge_menu_hint const page_hints[] =
 	{
-		{ "A", FORGE_MENU_BUTTON_A_COLOR, FORGE_MENU_BUTTON_A_BITMAP, "Select" },
-		{ "B", FORGE_MENU_BUTTON_B_COLOR, FORGE_MENU_BUTTON_B_BITMAP, "Done" },
+		{ "A", FORGE_MENU_BUTTON_A_COLOR, _forge_menu_face_a, FORGE_MENU_BUTTON_A_BITMAP, "Select" },
+		{ "B", FORGE_MENU_BUTTON_B_COLOR, _forge_menu_face_b, FORGE_MENU_BUTTON_B_BITMAP, "Done" },
 	};
 	unsigned long milliseconds = system_milliseconds();
 	real seconds = MIN((real)(milliseconds - forge_menu_look.milliseconds) / MILLISECONDS_PER_SECOND, 0.1f);
@@ -2780,8 +2842,8 @@ static void forge_render_menu(
 	/* the panel, as the pause menu's box: the header, the columns and rows,
 	the buttons, with a rule between the header and the rest, and above the
 	buttons; the header and the buttons on black, the rows on navy */
-	forge_menu_banded_panel(x0, y0, x1, y1, columns_y, footer_y, FORGE_POPUP_FILL_COLOR, FORGE_MENU_FILL_COLOR,
-		FORGE_POPUP_BORDER_COLOR);
+	forge_menu_banded_panel(x0, y0, x1, y1, columns_y, footer_y, FORGE_MENU_HEADER_FILL_COLOR, FORGE_POPUP_FILL_COLOR,
+		FORGE_MENU_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
 	forge_menu_box(text_x0, (short)(columns_y - 1), (short)(inner_x1 - FORGE_MENU_PADDING), columns_y,
 		FORGE_MENU_RULE_COLOR);
 	forge_menu_box(text_x0, footer_y, (short)(inner_x1 - FORGE_MENU_PADDING), (short)(footer_y + 1),
@@ -2791,8 +2853,10 @@ static void forge_render_menu(
 	tabs it is */
 	{
 		short middle_y = (short)(y0 + inset + header_height / 2);
-		short left = (short)(inner_x0 + 4 + forge_menu_cap(small_font, (short)(inner_x0 + 4), middle_y, FALSE, "LB") + 4);
-		short right = (short)(inner_x1 - 4 - forge_menu_cap(small_font, (short)(inner_x1 - 4), middle_y, TRUE, "RB") - 4);
+		short left = (short)(inner_x0 + 4 + forge_menu_cap(small_font, (short)(inner_x0 + 4), middle_y, FALSE,
+			_forge_menu_face_white, "LB") + 4);
+		short right = (short)(inner_x1 - 4 - forge_menu_cap(small_font, (short)(inner_x1 - 4), middle_y, TRUE,
+			_forge_menu_face_black, "RB") - 4);
 		short title_y = (short)(middle_y - line_height / 2);
 		short title_width;
 		short place_width;
@@ -2944,11 +3008,16 @@ static void forge_render_menu(
 
 /* a mod's popup (forge_popup_open): a small panel beside the crosshair, as
 the pause menu's box is (round cornered, with a blue border), with the
-popup's title and its rows (the buttons are the
-menu's, and are not shown again) */
+popup's title, its rows and the buttons, the title and the buttons on black
+and the rows on navy, as the menu's */
 static void forge_render_popup(
 	rectangle2d const *window)
 {
+	static struct forge_menu_hint const popup_hints[] =
+	{
+		{ "A", FORGE_MENU_BUTTON_A_COLOR, _forge_menu_face_a, FORGE_MENU_BUTTON_A_BITMAP, "Select" },
+		{ "B", FORGE_MENU_BUTTON_B_COLOR, _forge_menu_face_b, FORGE_MENU_BUTTON_B_BITMAP, "Close" },
+	};
 	struct halo_mod_menu const *page = forge_globals.popup;
 	unsigned long milliseconds = system_milliseconds();
 	real seconds = MIN((real)(milliseconds - forge_menu_look.milliseconds) / MILLISECONDS_PER_SECOND, 0.1f);
@@ -2959,13 +3028,14 @@ static void forge_render_popup(
 	short small_height = forge_menu_line_height(small_font);
 	short row_height = (short)(line_height + 2);
 	short title_height = (short)(line_height + 8);
+	short footer_height = (short)(line_height + 8);
 	short row_count = (short)MIN(forge_globals.entry_count, FORGE_POPUP_VISIBLE_ENTRIES);
 	short window_width = (short)(window->x1 - window->x0);
 	short width = (short)MIN(window_width - 2 * FORGE_MENU_MARGIN, FORGE_POPUP_WIDTH);
 	/* (the border and the corners' round inside the edge) */
 	short inset = (short)(FORGE_POPUP_BORDER + 2.f);
 	short height = (short)(inset + title_height + FORGE_MENU_PADDING + MAX(row_count, 1) * row_height +
-		FORGE_MENU_PADDING + inset);
+		FORGE_MENU_PADDING + footer_height + inset);
 	/* at the right of the crosshair, which stays in sight, and in the window */
 	short x0 = (short)PIN((window->x0 + window->x1) / 2 + FORGE_POPUP_OFFSET, window->x0 + FORGE_MENU_MARGIN,
 		MAX(window->x1 - FORGE_MENU_MARGIN - width, window->x0 + FORGE_MENU_MARGIN));
@@ -2975,6 +3045,7 @@ static void forge_render_popup(
 	short y1 = (short)(y0 + height);
 	short title_y = (short)(y0 + inset);
 	short rows_y = (short)(title_y + title_height + FORGE_MENU_PADDING);
+	short footer_y = (short)(y1 - inset - footer_height);
 	short text_x0 = (short)(x0 + inset + FORGE_MENU_PADDING + 2);
 	short text_x1 = (short)(x1 - inset - FORGE_MENU_PADDING);
 	char title[128];
@@ -2986,7 +3057,8 @@ static void forge_render_popup(
 	forge_menu_look.fade = fresh ? 0.f : MIN(forge_menu_look.fade + seconds * FORGE_MENU_FADE_SPEED, 1.f);
 	forge_menu_fade = forge_menu_look.fade;
 
-	forge_menu_rounded_panel(x0, y0, x1, y1, FORGE_POPUP_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
+	forge_menu_banded_panel(x0, y0, x1, y1, (short)(title_y + title_height), footer_y, FORGE_MENU_HEADER_FILL_COLOR,
+		FORGE_POPUP_FILL_COLOR, FORGE_MENU_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
 	forge_menu_display_name(page->title, title, sizeof(title));
 	forge_menu_fit(font, (short)(width - 2 * (inset + FORGE_MENU_PADDING)), title, fitted, sizeof(fitted));
 	forge_menu_text(font, x0, (short)(title_y + (title_height - line_height) / 2), x1, HALO_MOD_TEXT_CENTER,
@@ -3045,6 +3117,11 @@ static void forge_render_popup(
 		forge_menu_text(row_font, text_x0, text_y, text_x1, HALO_MOD_TEXT_LEFT,
 			selected ? FORGE_MENU_SELECTED_TEXT_COLOR : FORGE_MENU_TEXT_COLOR, fitted);
 	}
+
+	/* the buttons, under a rule */
+	forge_menu_box(text_x0, footer_y, text_x1, (short)(footer_y + 1), FORGE_MENU_RULE_COLOR);
+	forge_menu_hints(font, text_x0, text_x1, (short)(footer_y + (footer_height - line_height) / 2), popup_hints,
+		NUMBEROF(popup_hints));
 
 	forge_menu_fade = 1.f;
 
