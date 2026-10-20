@@ -321,6 +321,17 @@ static void forge_spawns_remove(
 	return;
 }
 
+/* every spawn of the kind */
+static void forge_spawns_remove_all(
+	short kind)
+{
+	forge_spawns_take_over(kind);
+	forge_spawns_block(kind)->count = 0;
+	forge_spawns_globals.selected[kind] = NONE;
+
+	return;
+}
+
 static boolean forge_spawns_editable(
 	void)
 {
@@ -921,6 +932,7 @@ enum forge_spawns_row
 	_forge_spawns_row_move,
 	_forge_spawns_row_remove,
 	_forge_spawns_row_remove_all,
+	_forge_spawns_row_remove_every_kind,
 	_forge_spawns_row_restore,
 	NUMBER_OF_FORGE_SPAWNS_ROWS
 };
@@ -939,6 +951,8 @@ static short forge_spawns_row_kind(
 			(id == _forge_spawns_row_team && kind != _forge_spawn_player) ||
 			((id == _forge_spawns_row_collection || id == _forge_spawns_row_time) && kind != _forge_spawn_item) ||
 			(id == _forge_spawns_row_remove_all && forge_spawns_count(kind) == 0) ||
+			(id == _forge_spawns_row_remove_every_kind &&
+				forge_spawns_count(_forge_spawn_player) + forge_spawns_count(_forge_spawn_item) == 0) ||
 			(id == _forge_spawns_row_restore && !forge_spawns_globals.replaced[kind]))
 		{
 			continue;
@@ -1030,6 +1044,9 @@ static void forge_spawns_menu_row_text(
 		break;
 	case _forge_spawns_row_remove_all:
 		_snprintf(label, label_size, "Remove all %ss", forge_spawn_kinds[kind].name);
+		break;
+	case _forge_spawns_row_remove_every_kind:
+		_snprintf(label, label_size, "Remove all spawns (player and item)");
 		break;
 	case _forge_spawns_row_restore:
 		_snprintf(label, label_size, "Restore the map's own");
@@ -1155,15 +1172,24 @@ static int forge_spawns_menu_row_change(
 	case _forge_spawns_row_remove_all:
 		if (direction == 0 && forge_spawns_editable())
 		{
-			forge_spawns_take_over(kind);
-			forge_spawns_block(kind)->count = 0;
-			forge_spawns_globals.selected[kind] = NONE;
+			forge_spawns_remove_all(kind);
 			terminal_printf(global_real_argb_green, "forge_spawns: every %s removed", forge_spawn_kinds[kind].name);
 			if (kind == _forge_spawn_player)
 			{
 				terminal_printf(global_real_argb_orange,
 					"forge_spawns: nobody can start until a player spawn is placed");
 			}
+		}
+		break;
+	case _forge_spawns_row_remove_every_kind:
+		if (direction == 0 && forge_spawns_editable())
+		{
+			short every_kind;
+
+			for (every_kind = 0; every_kind < NUMBER_OF_FORGE_SPAWN_KINDS; every_kind++)
+				forge_spawns_remove_all(every_kind);
+			terminal_printf(global_real_argb_green, "forge_spawns: every spawn removed");
+			terminal_printf(global_real_argb_orange, "forge_spawns: nobody can start until a player spawn is placed");
 		}
 		break;
 	case _forge_spawns_row_restore:

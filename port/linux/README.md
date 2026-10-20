@@ -527,7 +527,8 @@ a map variant, as Halo 3's Forge does: choose one with left and right (or a new 
 Reset the map, Remove all objects (choose it twice: every
 vehicle, weapon, piece of equipment, scenery and device goes, the players
 stay; Reset the map brings back the map's own, not what Forge placed; items
-still return at their spawns until those are removed on the Spawns tab),
+still return at their spawns until those are removed on the Spawns tab,
+whose Remove all spawns takes the player and item spawns together),
 Delete it. A variant is a file of its own, `forge_maps/<map>_<name>.mvar`
 beside the `custom_maps` folder (in the data root), named for the variant's
 name when it is first saved; the Map tab lists up to 64 of a map, in the

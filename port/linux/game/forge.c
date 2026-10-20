@@ -365,6 +365,9 @@ struct forge_globals
 	/* a mod's own thing held (halo_forge.h), and when it was last updated */
 	struct halo_forge_hold const *mod_hold;
 	unsigned long mod_hold_milliseconds;
+	/* how far the mouse turned it (forge_camera_turn_held) since its last
+	update: yaw, pitch */
+	real mod_hold_mouse_turn[2];
 
 	/* where the flying camera is and looks, after its last update */
 	boolean camera_valid;
@@ -1961,8 +1964,26 @@ static void forge_update_keys(
 			input.axis_pressed = rotation_axis;
 			input.snap_pressed = rotation_snap || pad_menu;
 			input.place = select;
-			input.cancel = close || mouse_right;
+			input.cancel = close || (mouse_right && !forge_globals.mod_hold->turns_with_look);
 			input.delete_pressed = remove_object || pad_remove;
+			if (forge_globals.mod_hold->turns_with_look)
+			{
+				/* the right stick and the mouse, as forge_hold turns an object */
+				boolean mouse_turn = keys->mouse_right && !forge_globals.held_mouse_blocked;
+
+				forge_globals.held_turning = flying && (keys->pad_turn || mouse_turn);
+				forge_globals.held_mouse_turning = flying && mouse_turn;
+				input.mouse_turning = forge_globals.held_mouse_turning;
+				input.turn_yaw = forge_globals.mod_hold_mouse_turn[0];
+				input.turn_pitch = forge_globals.mod_hold_mouse_turn[1];
+				if (flying && keys->pad_turn)
+				{
+					input.turn_yaw -= keys->pad_look_x * FORGE_TURN_SPEED * seconds;
+					input.turn_pitch += keys->pad_look_y * FORGE_TURN_SPEED * seconds;
+				}
+			}
+			forge_globals.mod_hold_mouse_turn[0] = 0.f;
+			forge_globals.mod_hold_mouse_turn[1] = 0.f;
 			if (forge_globals.mod_hold->update(&input))
 				forge_globals.mod_hold = NULL;
 		}
@@ -2105,7 +2126,8 @@ static void forge_update_keys(
 	if (forge_globals.held_object_index == NONE)
 		forge_globals.held_anchored = FALSE;
 	/* (nor while a popup is shown about it: the look is then the camera's) */
-	if (forge_globals.held_object_index == NONE || (forge_globals.menu_open && forge_globals.popup))
+	if ((forge_globals.held_object_index == NONE && !forge_globals.mod_hold) ||
+		(forge_globals.menu_open && forge_globals.popup))
 	{
 		forge_globals.held_turning = FALSE;
 		forge_globals.held_mouse_turning = FALSE;
@@ -3409,7 +3431,7 @@ int forge_menu_is_open(
 int forge_camera_turning(
 	void)
 {
-	return forge_globals.held_object_index != NONE && forge_globals.held_turning;
+	return (forge_globals.held_object_index != NONE || forge_globals.mod_hold) && forge_globals.held_turning;
 }
 
 /* left and right about the yaw, up and down about the pitch, as the right
@@ -3418,7 +3440,13 @@ void forge_camera_turn_held(
 	float yaw,
 	float pitch)
 {
-	if (forge_camera_turning() && forge_globals.held_mouse_turning)
+	if (forge_camera_turning() && forge_globals.held_mouse_turning && forge_globals.mod_hold)
+	{
+		/* a mod's hold takes it at its next update */
+		forge_globals.mod_hold_mouse_turn[0] += yaw;
+		forge_globals.mod_hold_mouse_turn[1] += pitch;
+	}
+	else if (forge_camera_turning() && forge_globals.held_mouse_turning)
 	{
 		real step = forge_snaps[forge_globals.held_snap_index].step;
 		real deltas[NUMBER_OF_FORGE_AXES] = { 0.f };

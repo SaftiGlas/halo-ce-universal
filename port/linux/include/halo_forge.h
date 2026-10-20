@@ -301,8 +301,15 @@ struct halo_forge_hold_input
 	int left_pressed, right_pressed, up_pressed, down_pressed;
 	/* T, and V or X */
 	int axis_pressed, snap_pressed;
-	/* enter, click or A; escape, right click or B; delete, Back or Y */
+	/* enter, click or A; escape, right click or B (not a right click when it
+	turns the thing, below); delete, Back or Y */
 	int place, cancel, delete_pressed;
+	/* flying, with turns_with_look: how far the right stick (RT held) and the
+	mouse (its right button held) turned it since the last update, radians,
+	as they turn an object (left and up are more); mouse_turning while the
+	mouse's button turns it, whose turn goes by the chosen step */
+	int mouse_turning;
+	float turn_yaw, turn_pitch;
 };
 
 struct halo_forge_hold
@@ -315,6 +322,9 @@ struct halo_forge_hold
 	down, cancelled or removed). With a NULL input the hold has been cut
 	short (a new map, a checkpoint): put things back and return TRUE. */
 	int (*update)(struct halo_forge_hold_input const *input);
+	/* TRUE when it is turned as an object is, by the right stick and the
+	mouse (turn_yaw and turn_pitch) */
+	int turns_with_look;
 };
 
 /* starts holding; FALSE when another hold is going or an

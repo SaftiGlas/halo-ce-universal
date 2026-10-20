@@ -29,7 +29,9 @@ keyboard, and needs no other key. The rows:
 	                hold the zone as the tools hold an object: aim to move
 	                it, left/right turn it about the chosen axis (T: yaw,
 	                pitch or roll; V / X: free, or in steps of 15, 45, 90 or
-	                180 degrees), up/down raise and lower it, enter or A put
+	                180 degrees), and flying, as an object, the right stick
+	                with RT held and the mouse with its right button held
+	                turn its yaw and pitch; up/down raise and lower it, enter or A put
 	                it down, escape or B put it back, delete, Back or Y
 	                remove it. A new zone is held the same way until it is
 	                put down (escape or B: no zone after all).
@@ -1411,6 +1413,11 @@ static struct
 	real height;
 	short axis;
 	short snap_index;
+	/* the mouse turns it (its right button, flying): the yaw and pitch it
+	has turned to, before the steps */
+	boolean mouse_turning;
+	real mouse_yaw;
+	real mouse_pitch;
 	/* a new zone, not yet put down: cancelling removes it */
 	boolean spawned;
 } forge_zones_hold_globals = { NONE };
@@ -1488,6 +1495,39 @@ static int forge_zones_hold_update(
 
 		*angle = (real)floor(*angle / step + 0.5f) * step + (input->left_pressed ? step : -step);
 	}
+
+	/* the right stick turns it freely, the mouse by the step, as an object
+	(forge_camera_turn_held, port/linux/game/forge.c) */
+	if (input->mouse_turning)
+	{
+		real step = DEGREES_TO_RADIANS(forge_zones_hold_snaps[forge_zones_hold_globals.snap_index]);
+
+		if (!forge_zones_hold_globals.mouse_turning)
+		{
+			forge_zones_hold_globals.mouse_yaw = zone->yaw;
+			forge_zones_hold_globals.mouse_pitch = zone->pitch;
+		}
+		forge_zones_hold_globals.mouse_yaw += input->turn_yaw;
+		forge_zones_hold_globals.mouse_pitch += input->turn_pitch;
+		if (input->turn_yaw != 0.f)
+		{
+			zone->yaw = step == 0.f
+				? forge_zones_hold_globals.mouse_yaw
+				: (real)floor(forge_zones_hold_globals.mouse_yaw / step + 0.5f) * step;
+		}
+		if (input->turn_pitch != 0.f)
+		{
+			zone->pitch = step == 0.f
+				? forge_zones_hold_globals.mouse_pitch
+				: (real)floor(forge_zones_hold_globals.mouse_pitch / step + 0.5f) * step;
+		}
+	}
+	else
+	{
+		zone->yaw += input->turn_yaw;
+		zone->pitch += input->turn_pitch;
+	}
+	forge_zones_hold_globals.mouse_turning = input->mouse_turning;
 	forge_zones_hold_globals.height += ((input->up ? 1.f : 0.f) - (input->down ? 1.f : 0.f)) * input->seconds *
 		FORGE_ZONES_HOLD_RAISE_SPEED;
 
@@ -1506,7 +1546,8 @@ static struct halo_forge_hold const forge_zones_hold =
 {
 	"a zone",
 	forge_zones_hold_describe,
-	forge_zones_hold_update
+	forge_zones_hold_update,
+	TRUE
 };
 
 /* holds the zone (spawned: a new one, gone when it is not put down); FALSE
@@ -1524,6 +1565,7 @@ static boolean forge_zones_pick_up(
 		forge_zones_hold_globals.height = 0.f;
 		forge_zones_hold_globals.axis = _forge_zones_hold_axis_yaw;
 		forge_zones_hold_globals.spawned = spawned;
+		forge_zones_hold_globals.mouse_turning = FALSE;
 		picked_up = forge_mod_hold_begin(&forge_zones_hold);
 		if (picked_up)
 		{
