@@ -99,8 +99,12 @@ the client alone until it is put down, which the host then does; a removed
 one the host removes. The mods' pages and the Map tab are the host's.
 
 A page may ask for a line of text (forge_text_entry_begin, the Map tab's
-names and descriptions): it is typed on the keyboard, which until enter or
-escape belongs to it alone.
+names and descriptions, a prefab's name, an object's comment): it is typed on
+the keyboard, which until enter or escape belongs to it alone, or on an
+on-screen keyboard laid out and worked as the one a profile's name is typed
+on (virtual_keyboard.c, whose tags only ui.map has): the D-pad chooses a key,
+A presses it, X deletes, the triggers move the cursor, start takes the line
+and B leaves it. As there, the first key replaces the line it began with.
 */
 
 #include "cseries.h"
@@ -158,7 +162,7 @@ enum
 	/* debug.forge_menu_tab: an object's popup rather than a tab */
 	FORGE_DEBUG_POPUP_TAB = 100,
 	FORGE_DEBUG_HELD_POPUP_TAB = 101,
-	/* ... and a line being typed, with its character grid */
+	/* ... and a line being typed, with its on-screen keyboard */
 	FORGE_DEBUG_TEXT_ENTRY_TAB = 102,
 	/* the menu's font fits this many lines on the screen: smaller than the
 	mods' large font, so the menu leaves most of the view free */
@@ -260,6 +264,11 @@ black three quarters opaque. The menu's header and buttons are as black, its
 rows the pause box's navy, as opaque; the header is opaque black. */
 #define FORGE_POPUP_FILL_COLOR 0xbf000000UL
 #define FORGE_MENU_HEADER_FILL_COLOR 0xff000000UL
+/* the on-screen keyboard's (as the profile's name's): its panels, its chosen
+key, and the line it began with until the first key replaces it */
+#define FORGE_TEXT_KEYBOARD_FILL_COLOR 0xe8020814UL
+#define FORGE_TEXT_KEYBOARD_CHOSEN_FILL_COLOR 0x40102a4aUL
+#define FORGE_TEXT_KEYBOARD_REPLACED_FILL_COLOR 0xc0808080UL
 #define FORGE_MENU_FILL_COLOR 0xbf0a2649UL
 #define FORGE_POPUP_BORDER_COLOR 0xff2896ffUL
 #define FORGE_POPUP_RADIUS 8.5f
@@ -413,20 +422,28 @@ enum
 	FORGE_TEXT_KEY_RIGHT_SHIFT = 229,
 	/* the keys read each frame: all up to the right shift */
 	FORGE_TEXT_KEYS_READ = 230,
-	/* the character grid (forge_text_grid_rows): its columns, and its rows
-	with the last, its keys (forge_text_grid_keys) */
-	FORGE_TEXT_GRID_COLUMNS = 10,
-	FORGE_TEXT_GRID_ROWS = 5
+	/* the on-screen keyboard (forge_text_keyboard_layout): its rows and
+	columns, and how many columns wide the first column is drawn */
+	FORGE_TEXT_KEYBOARD_ROWS = 5,
+	FORGE_TEXT_KEYBOARD_COLUMNS = 11,
+	FORGE_TEXT_KEYBOARD_FIRST_COLUMN_WIDTH = 3,
+	FORGE_TEXT_KEYBOARD_WIDTH = FORGE_TEXT_KEYBOARD_COLUMNS - 1 + FORGE_TEXT_KEYBOARD_FIRST_COLUMN_WIDTH
 };
 
-/* the keys of the character grid's last row */
+/* the on-screen keyboard's keys: first those that type, a character each
+of forge_text_keyboard_characters, then the others */
 enum
 {
-	_forge_text_grid_shift = 0,
-	_forge_text_grid_space,
-	_forge_text_grid_delete,
-	_forge_text_grid_done,
-	NUMBER_OF_FORGE_TEXT_GRID_KEYS
+	FORGE_TEXT_KEYBOARD_CHARACTER_KEYS = 36,
+	_forge_text_keyboard_done = FORGE_TEXT_KEYBOARD_CHARACTER_KEYS,
+	_forge_text_keyboard_shift,
+	_forge_text_keyboard_caps,
+	_forge_text_keyboard_symbols,
+	_forge_text_keyboard_backspace,
+	_forge_text_keyboard_left,
+	_forge_text_keyboard_right,
+	_forge_text_keyboard_space,
+	NUMBER_OF_FORGE_TEXT_KEYBOARD_KEYS
 };
 
 /* what the keys from 1 on type, plain and with shift (a US keyboard); a
@@ -435,17 +452,29 @@ percent sign would be taken for a format by the menus' strings) */
 static char const forge_text_plain[] = "1234567890     -=[]  ;'`,./";
 static char const forge_text_shifted[] = "!@#$ ^&*()     _+()  :\"~<>?";
 
-/* the character grid, for a line typed without a keyboard (a controller, the
-touch controls): the D-pad chooses a key and A types it, in capitals while
-shift is on */
-static char const *const forge_text_grid_rows[FORGE_TEXT_GRID_ROWS - 1] =
+/* the on-screen keyboard, for a line typed without a keyboard (a controller,
+the touch controls), laid out as the one a profile's name is typed on
+(virtual_keyboard.c): the D-pad chooses a key and A presses it. Shift makes
+the next letter a capital, caps all of them, and symbols puts the second
+characters on the keys (none the menus' strings would take for a code) */
+static char const forge_text_keyboard_characters[FORGE_TEXT_KEYBOARD_CHARACTER_KEYS + 1] =
+	"1234567890abcdefghijklmnopqrstuvwxyz";
+static char const forge_text_keyboard_symbols[FORGE_TEXT_KEYBOARD_CHARACTER_KEYS + 1] =
+	"!@#$~^&*()-_=+[]();:'\",.<>/?`~!@#$&*";
+static char const *const forge_text_keyboard_labels[NUMBER_OF_FORGE_TEXT_KEYBOARD_KEYS - FORGE_TEXT_KEYBOARD_CHARACTER_KEYS] =
+	{ "Done", "Shift", "Caps Lock", "Symbols", "Backspace", "<-", "->", "Space" };
+static char const forge_text_keyboard_layout[FORGE_TEXT_KEYBOARD_ROWS][FORGE_TEXT_KEYBOARD_COLUMNS] =
 {
-	"abcdefghij",
-	"klmnopqrst",
-	"uvwxyz-_.'",
-	"0123456789"
+	{ _forge_text_keyboard_done, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 },
+	{ _forge_text_keyboard_shift, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19 },
+	{ _forge_text_keyboard_caps, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29 },
+	{ _forge_text_keyboard_symbols, 30, 31, 32, 33, 34, 35, _forge_text_keyboard_backspace,
+		_forge_text_keyboard_backspace, _forge_text_keyboard_backspace, _forge_text_keyboard_backspace },
+	{ _forge_text_keyboard_space, _forge_text_keyboard_space, _forge_text_keyboard_space,
+		_forge_text_keyboard_space, _forge_text_keyboard_space, _forge_text_keyboard_space,
+		_forge_text_keyboard_space, _forge_text_keyboard_left, _forge_text_keyboard_left,
+		_forge_text_keyboard_right, _forge_text_keyboard_right }
 };
-static char const *const forge_text_grid_keys[NUMBER_OF_FORGE_TEXT_GRID_KEYS] = { "SHIFT", "SPACE", "DELETE", "DONE" };
 
 static struct
 {
@@ -457,14 +486,22 @@ static struct
 	unsigned long maximum_length;
 	unsigned long length;
 	char text[FORGE_TEXT_MAXIMUM_LENGTH + 1];
+	/* where the next character goes, and whether the first replaces the
+	line it began with (as the profile's keyboard's does) */
+	unsigned long cursor;
+	boolean replaces;
 	struct forge_key keys[FORGE_TEXT_KEY_COUNT];
-	/* the character grid's chosen key, and its shift */
-	short grid_row;
-	short grid_column;
-	boolean grid_shift;
+	/* the on-screen keyboard's chosen key, and its shift, caps and symbols */
+	short keyboard_row;
+	short keyboard_column;
+	boolean keyboard_shift;
+	boolean keyboard_caps;
+	boolean keyboard_symbols;
 	struct forge_key pad_select_key;
 	struct forge_key pad_cancel_key;
 	struct forge_key pad_start_key;
+	struct forge_key pad_cursor_left_key;
+	struct forge_key pad_cursor_right_key;
 } forge_text_entry_globals;
 
 /* ---------- private code */
@@ -1618,24 +1655,73 @@ static boolean forge_debug_monitor_rises(
 	return forge_debug_monitor_enabled();
 }
 
-/* a character at the end of the line, while it has room */
-static void forge_text_entry_type(
-	char character)
+/* the line it began with let go, if the first key replaces it */
+static void forge_text_entry_replace(
+	void)
 {
-	if (forge_text_entry_globals.length < forge_text_entry_globals.maximum_length)
+	if (forge_text_entry_globals.replaces)
 	{
-		forge_text_entry_globals.text[forge_text_entry_globals.length++] = character;
-		forge_text_entry_globals.text[forge_text_entry_globals.length] = 0;
+		forge_text_entry_globals.replaces = FALSE;
+		forge_text_entry_globals.length = 0;
+		forge_text_entry_globals.cursor = 0;
+		forge_text_entry_globals.text[0] = 0;
 	}
 
 	return;
 }
 
+/* a character at the cursor, while the line has room */
+static void forge_text_entry_type(
+	char character)
+{
+	unsigned long cursor;
+
+	forge_text_entry_replace();
+	cursor = forge_text_entry_globals.cursor;
+	if (forge_text_entry_globals.length < forge_text_entry_globals.maximum_length)
+	{
+		/* (the characters after it move along, with the terminator) */
+		memmove(&forge_text_entry_globals.text[cursor + 1], &forge_text_entry_globals.text[cursor],
+			forge_text_entry_globals.length - cursor + 1);
+		forge_text_entry_globals.text[cursor] = character;
+		forge_text_entry_globals.length++;
+		forge_text_entry_globals.cursor++;
+	}
+
+	return;
+}
+
+/* the character before the cursor deleted (all of the line it began with,
+the first time) */
 static void forge_text_entry_delete(
 	void)
 {
-	if (forge_text_entry_globals.length > 0)
-		forge_text_entry_globals.text[--forge_text_entry_globals.length] = 0;
+	unsigned long cursor = forge_text_entry_globals.cursor;
+
+	if (forge_text_entry_globals.replaces)
+	{
+		forge_text_entry_replace();
+	}
+	else if (cursor > 0)
+	{
+		memmove(&forge_text_entry_globals.text[cursor - 1], &forge_text_entry_globals.text[cursor],
+			forge_text_entry_globals.length - cursor + 1);
+		forge_text_entry_globals.length--;
+		forge_text_entry_globals.cursor--;
+	}
+
+	return;
+}
+
+/* the cursor a character left or right, within the line */
+static void forge_text_entry_move_cursor(
+	boolean right)
+{
+	forge_text_entry_globals.replaces = FALSE;
+	if (right && forge_text_entry_globals.cursor < forge_text_entry_globals.length)
+		forge_text_entry_globals.cursor++;
+	else if (!right && forge_text_entry_globals.cursor > 0)
+		forge_text_entry_globals.cursor--;
 
 	return;
 }
@@ -1650,53 +1736,104 @@ static void forge_text_entry_take(
 	return;
 }
 
-/* the key of the character grid's last row over a column */
-static short forge_text_grid_key(
-	short column)
-{
-	return (short)(column * NUMBER_OF_FORGE_TEXT_GRID_KEYS / FORGE_TEXT_GRID_COLUMNS);
-}
-
-/* the grid's chosen key is pressed: its character typed, or its key's doing */
-static void forge_text_grid_press(
+/* the on-screen keyboard's chosen key */
+static short forge_text_keyboard_key(
 	void)
 {
-	short row = forge_text_entry_globals.grid_row;
+	return forge_text_keyboard_layout[forge_text_entry_globals.keyboard_row][forge_text_entry_globals.keyboard_column];
+}
 
-	if (row < FORGE_TEXT_GRID_ROWS - 1)
+/* what a key of the on-screen keyboard that types types, with its shift,
+caps and symbols as they are */
+static char forge_text_keyboard_character(
+	short key)
+{
+	char character = (forge_text_entry_globals.keyboard_symbols
+		? forge_text_keyboard_symbols
+		: forge_text_keyboard_characters)[key];
+
+	if ((forge_text_entry_globals.keyboard_shift || forge_text_entry_globals.keyboard_caps) &&
+		character >= 'a' && character <= 'z')
 	{
-		char character = forge_text_grid_rows[row][forge_text_entry_globals.grid_column];
+		character = (char)(character - 'a' + 'A');
+	}
 
-		if (forge_text_entry_globals.grid_shift && character >= 'a' && character <= 'z')
-			character = (char)(character - 'a' + 'A');
-		forge_text_entry_type(character);
+	return character;
+}
+
+/* the chosen key moved by a row down or up, or a column right or left, to
+the next key that is not the same (the wide keys are a key), round the
+edges */
+static void forge_text_keyboard_move(
+	short rows_down,
+	short columns_right)
+{
+	short key = forge_text_keyboard_key();
+
+	do
+	{
+		forge_text_entry_globals.keyboard_row = (short)((forge_text_entry_globals.keyboard_row + rows_down +
+			FORGE_TEXT_KEYBOARD_ROWS) % FORGE_TEXT_KEYBOARD_ROWS);
+		forge_text_entry_globals.keyboard_column = (short)((forge_text_entry_globals.keyboard_column +
+			columns_right + FORGE_TEXT_KEYBOARD_COLUMNS) % FORGE_TEXT_KEYBOARD_COLUMNS);
+	}
+	while (forge_text_keyboard_key() == key);
+
+	return;
+}
+
+/* the on-screen keyboard's chosen key is pressed: its character typed, or
+its key's doing; shift lasts until another key is pressed */
+static void forge_text_keyboard_press(
+	void)
+{
+	short key = forge_text_keyboard_key();
+
+	if (key < FORGE_TEXT_KEYBOARD_CHARACTER_KEYS)
+	{
+		forge_text_entry_type(forge_text_keyboard_character(key));
 	}
 	else
 	{
-		switch (forge_text_grid_key(forge_text_entry_globals.grid_column))
+		switch (key)
 		{
-		case _forge_text_grid_shift:
-			forge_text_entry_globals.grid_shift = !forge_text_entry_globals.grid_shift;
+		case _forge_text_keyboard_done:
+			forge_text_entry_take();
 			break;
-		case _forge_text_grid_space:
-			forge_text_entry_type(' ');
+		case _forge_text_keyboard_shift:
+			forge_text_entry_globals.keyboard_shift = !forge_text_entry_globals.keyboard_shift;
 			break;
-		case _forge_text_grid_delete:
+		case _forge_text_keyboard_caps:
+			forge_text_entry_globals.keyboard_caps = !forge_text_entry_globals.keyboard_caps;
+			break;
+		case _forge_text_keyboard_symbols:
+			forge_text_entry_globals.keyboard_symbols = !forge_text_entry_globals.keyboard_symbols;
+			break;
+		case _forge_text_keyboard_backspace:
 			forge_text_entry_delete();
 			break;
-		case _forge_text_grid_done:
-			forge_text_entry_take();
+		case _forge_text_keyboard_left:
+			forge_text_entry_move_cursor(FALSE);
+			break;
+		case _forge_text_keyboard_right:
+			forge_text_entry_move_cursor(TRUE);
+			break;
+		case _forge_text_keyboard_space:
+			forge_text_entry_type(' ');
 			break;
 		}
 	}
+	if (key != _forge_text_keyboard_shift)
+		forge_text_entry_globals.keyboard_shift = FALSE;
 
 	return;
 }
 
 /* the line being typed: the keys that went down (and those held, again and
 again) type, backspace deletes, enter takes the line, escape leaves it; and
-the character grid, with the D-pad and A, X deleting, Y the shift, start
-taking the line and B leaving it */
+the on-screen keyboard, as the profile's name's: the D-pad chooses a key and
+A presses it, X deletes, the triggers move the cursor, start takes the line
+and B leaves it */
 static void forge_text_entry_update(
 	struct halo_linux_forge_keys const *keys,
 	boolean up,
@@ -1705,7 +1842,6 @@ static void forge_text_entry_update(
 	boolean right,
 	boolean take,
 	boolean pad_delete,
-	boolean pad_shift,
 	unsigned long milliseconds)
 {
 	unsigned char held[FORGE_TEXT_KEYS_READ];
@@ -1717,6 +1853,10 @@ static void forge_text_entry_update(
 		milliseconds);
 	boolean pad_start = forge_key_pressed(&forge_text_entry_globals.pad_start_key, keys->pad_start, FALSE,
 		milliseconds);
+	boolean pad_cursor_left = forge_key_pressed(&forge_text_entry_globals.pad_cursor_left_key,
+		keys->pad_left_trigger, TRUE, milliseconds);
+	boolean pad_cursor_right = forge_key_pressed(&forge_text_entry_globals.pad_cursor_right_key, keys->pad_turn,
+		TRUE, milliseconds);
 	short key;
 
 	halo_linux_forge_read_text_keys(held, sizeof(held));
@@ -1771,34 +1911,16 @@ static void forge_text_entry_update(
 		forge_text_entry_globals.active = FALSE;
 		return;
 	}
-	if (up || down)
-	{
-		forge_text_entry_globals.grid_row = (short)((forge_text_entry_globals.grid_row +
-			(down ? 1 : FORGE_TEXT_GRID_ROWS - 1)) % FORGE_TEXT_GRID_ROWS);
-	}
+	if (up != down)
+		forge_text_keyboard_move(down ? 1 : -1, 0);
 	if (left != right)
-	{
-		if (forge_text_entry_globals.grid_row == FORGE_TEXT_GRID_ROWS - 1)
-		{
-			/* a key at a time, to a column under its middle */
-			short grid_key = (short)((forge_text_grid_key(forge_text_entry_globals.grid_column) +
-				(right ? 1 : NUMBER_OF_FORGE_TEXT_GRID_KEYS - 1)) % NUMBER_OF_FORGE_TEXT_GRID_KEYS);
-
-			forge_text_entry_globals.grid_column =
-				(short)(grid_key * FORGE_TEXT_GRID_COLUMNS / NUMBER_OF_FORGE_TEXT_GRID_KEYS + 1);
-		}
-		else
-		{
-			forge_text_entry_globals.grid_column = (short)((forge_text_entry_globals.grid_column +
-				(right ? 1 : FORGE_TEXT_GRID_COLUMNS - 1)) % FORGE_TEXT_GRID_COLUMNS);
-		}
-	}
+		forge_text_keyboard_move(0, right ? 1 : -1);
+	if (pad_cursor_left != pad_cursor_right)
+		forge_text_entry_move_cursor(pad_cursor_right);
 	if (pad_delete)
 		forge_text_entry_delete();
-	if (pad_shift)
-		forge_text_entry_globals.grid_shift = !forge_text_entry_globals.grid_shift;
 	if (pad_select)
-		forge_text_grid_press();
+		forge_text_keyboard_press();
 	/* (enter takes the line; the A that is also menu_select typed a key) */
 	if (forge_text_entry_globals.active && (pad_start || (take && !keys->pad_select)))
 		forge_text_entry_take();
@@ -1890,7 +2012,7 @@ static void forge_update_keys(
 	{
 		/* the keyboard is the line's until it is taken or left */
 		if (flying)
-			forge_text_entry_update(keys, up, down, left, right, select, pad_menu, pad_remove, milliseconds);
+			forge_text_entry_update(keys, up, down, left, right, select, pad_menu, milliseconds);
 		else
 			forge_text_entry_globals.active = FALSE;
 	}
@@ -2158,19 +2280,6 @@ static void forge_update_keys(
 	return;
 }
 
-static void forge_draw_line(
-	long font_tag_index,
-	rectangle2d const *bounds,
-	short justification,
-	real_argb_color const *color,
-	char const *string)
-{
-	draw_string_set_draw_mode(font_tag_index, _text_style_plain, justification, 0, color);
-	rasterizer_draw_string(bounds, NULL, NULL, 0, string);
-
-	return;
-}
-
 /* ---------- the menu's fonts (forge_ui) */
 
 /* the menu's two fonts, as its drawing names them */
@@ -2333,56 +2442,6 @@ static void forge_menu_box(
 {
 	if (x1 > x0 && y1 > y0)
 		halo_mod_draw_box(x0, y0, x1, y1, forge_menu_color(argb));
-
-	return;
-}
-
-/* each channel of a colour a share (0 to 1) of the way from one to another */
-static unsigned long forge_menu_blend(
-	unsigned long from,
-	unsigned long to,
-	real share)
-{
-	unsigned long argb = 0;
-	short shift;
-
-	for (shift = 0; shift < 32; shift += 8)
-	{
-		real a = (real)((from >> shift) & 0xff);
-		real b = (real)((to >> shift) & 0xff);
-
-		argb |= (unsigned long)(a + (b - a) * share + 0.5f) << shift;
-	}
-
-	return argb;
-}
-
-/* a box shaded from one colour to the other, left to right or top to bottom
-(in strips: the drawing has no gradients) */
-static void forge_menu_gradient(
-	short x0,
-	short y0,
-	short x1,
-	short y1,
-	unsigned long from,
-	unsigned long to,
-	boolean vertical)
-{
-	short length = vertical ? (short)(y1 - y0) : (short)(x1 - x0);
-	short strips = (short)PIN(length / 4, 1, 32);
-	short strip;
-
-	for (strip = 0; strip < strips; strip++)
-	{
-		short a = (short)(length * strip / strips);
-		short b = (short)(length * (strip + 1) / strips);
-		unsigned long argb = forge_menu_blend(from, to, strips > 1 ? (real)strip / (real)(strips - 1) : 0.f);
-
-		if (vertical)
-			forge_menu_box(x0, (short)(y0 + a), x1, (short)(y0 + b), argb);
-		else
-			forge_menu_box((short)(x0 + a), y0, (short)(x0 + b), y1, argb);
-	}
 
 	return;
 }
@@ -3150,109 +3209,167 @@ static void forge_render_popup(
 	return;
 }
 
-/* the character grid, in the menu's look, its bottom at y: a cell a key, the
-chosen one highlighted, the last row's four keys each across a quarter */
-static void forge_render_text_grid(
+/* the on-screen keyboard's width of a cell, and its panel's left and right
+(the box of the line being typed is as wide) */
+static short forge_text_keyboard_cell_width(
 	rectangle2d const *window,
-	short bottom)
+	short *x0,
+	short *x1)
 {
-	long font = _forge_menu_font_large;
-	short line_height = forge_menu_line_height(font);
-	short cell_height = (short)(line_height + 6);
+	short line_height = forge_menu_line_height(_forge_menu_font_large);
 	short window_width = (short)(window->x1 - window->x0);
 	short cell_width = (short)PIN((window_width - 2 * FORGE_MENU_MARGIN - 2 * FORGE_MENU_PADDING) /
-		FORGE_TEXT_GRID_COLUMNS, 12, 2 * line_height + 8);
-	short grid_width = (short)(cell_width * FORGE_TEXT_GRID_COLUMNS);
-	short x0 = (short)((window->x0 + window->x1 - grid_width) / 2 - FORGE_MENU_PADDING);
-	short x1 = (short)(x0 + grid_width + 2 * FORGE_MENU_PADDING);
-	short y1 = bottom;
-	short y0 = (short)(y1 - FORGE_TEXT_GRID_ROWS * cell_height - 2 * FORGE_MENU_PADDING);
+		FORGE_TEXT_KEYBOARD_WIDTH, 12, 2 * line_height + 8);
+	short keyboard_width = (short)(cell_width * FORGE_TEXT_KEYBOARD_WIDTH);
+
+	*x0 = (short)((window->x0 + window->x1 - keyboard_width) / 2 - FORGE_MENU_PADDING);
+	*x1 = (short)(*x0 + keyboard_width + 2 * FORGE_MENU_PADDING);
+
+	return cell_width;
+}
+
+/* the on-screen keyboard's height, its keys' rows and the buttons' line */
+static short forge_text_keyboard_height(
+	void)
+{
+	return (short)(FORGE_TEXT_KEYBOARD_ROWS * (forge_menu_line_height(_forge_menu_font_large) + 12) +
+		forge_menu_line_height(_forge_menu_font_small) + 2 * FORGE_MENU_PADDING + 6);
+}
+
+/* the on-screen keyboard, drawn as the one a profile's name is typed on
+(virtual_keyboard.c): its keys' names over a dark panel, the first column's
+three times as wide, space under the letters, the chosen key outlined; shift,
+caps lock and symbols lit while they are on; and under them the buttons */
+static void forge_render_text_keyboard(
+	rectangle2d const *window,
+	short y0)
+{
+	long font = _forge_menu_font_large;
+	long small_font = _forge_menu_font_small;
+	short line_height = forge_menu_line_height(font);
+	short small_height = forge_menu_line_height(small_font);
+	short cell_height = (short)(line_height + 12);
+	short x0;
+	short x1;
+	short cell_width = forge_text_keyboard_cell_width(window, &x0, &x1);
+	short y1 = (short)(y0 + forge_text_keyboard_height());
 	short cells_x0 = (short)(x0 + FORGE_MENU_PADDING);
+	short chosen = forge_text_keyboard_key();
 	short row;
 
 	forge_menu_fade = 1.f;
-	/* (the padding is wider than the border and the corners' round) */
-	forge_menu_rounded_panel(x0, y0, x1, y1, FORGE_POPUP_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
-	for (row = 0; row < FORGE_TEXT_GRID_ROWS; row++)
+	forge_menu_rounded_panel(x0, y0, x1, y1, FORGE_TEXT_KEYBOARD_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
+	for (row = 0; row < FORGE_TEXT_KEYBOARD_ROWS; row++)
 	{
 		short top = (short)(y0 + FORGE_MENU_PADDING + row * cell_height);
-		short text_y = (short)(top + (cell_height - line_height) / 2);
-		boolean keys_row = row == FORGE_TEXT_GRID_ROWS - 1;
-		short count = keys_row ? NUMBER_OF_FORGE_TEXT_GRID_KEYS : FORGE_TEXT_GRID_COLUMNS;
-		short index;
+		short column = 0;
 
-		for (index = 0; index < count; index++)
+		while (column < FORGE_TEXT_KEYBOARD_COLUMNS)
 		{
-			short left = (short)(cells_x0 + grid_width * index / count);
-			short right = (short)(cells_x0 + grid_width * (index + 1) / count);
-			boolean selected = row == forge_text_entry_globals.grid_row && (keys_row
-				? index == forge_text_grid_key(forge_text_entry_globals.grid_column)
-				: index == forge_text_entry_globals.grid_column);
-			unsigned long text_color = selected ? FORGE_MENU_SELECTED_TEXT_COLOR : FORGE_MENU_TEXT_COLOR;
-			char label[8];
+			short key = forge_text_keyboard_layout[row][column];
+			short first = column;
+			short last = column;
+			short left;
+			short right;
+			boolean lit = (key == _forge_text_keyboard_shift && forge_text_entry_globals.keyboard_shift) ||
+				(key == _forge_text_keyboard_caps && forge_text_entry_globals.keyboard_caps) ||
+				(key == _forge_text_keyboard_symbols && forge_text_entry_globals.keyboard_symbols);
+			char label[16];
 
-			if (selected)
+			/* (a wide key is the cells it is in along the row; space, which
+			the first column also chooses, is drawn under the letters) */
+			while (last + 1 < FORGE_TEXT_KEYBOARD_COLUMNS && forge_text_keyboard_layout[row][last + 1] == key)
+				last++;
+			if (key == _forge_text_keyboard_space && first == 0 && last > 0)
+				first = 1;
+			left = (short)(cells_x0 + cell_width * (first ? first - 1 + FORGE_TEXT_KEYBOARD_FIRST_COLUMN_WIDTH : 0));
+			right = (short)(cells_x0 + cell_width * (last + FORGE_TEXT_KEYBOARD_FIRST_COLUMN_WIDTH));
+			if (key == chosen)
 			{
-				forge_menu_gradient(left, top, right, (short)(top + cell_height), FORGE_MENU_BAR_LEFT_COLOR,
-					FORGE_MENU_BAR_RIGHT_COLOR, FALSE);
+				forge_menu_rounded_panel((short)(left + 1), (short)(top + 1), (short)(right - 1),
+					(short)(top + cell_height - 1), FORGE_TEXT_KEYBOARD_CHOSEN_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
 			}
-			if (keys_row)
+			if (key < FORGE_TEXT_KEYBOARD_CHARACTER_KEYS)
 			{
-				_snprintf(label, sizeof(label), "%s", forge_text_grid_keys[index]);
-				/* (shift is lit while it is on) */
-				if (index == _forge_text_grid_shift && forge_text_entry_globals.grid_shift && !selected)
-					text_color = FORGE_MENU_PLACE_TEXT_COLOR;
+				label[0] = forge_text_keyboard_character(key);
+				label[1] = 0;
 			}
 			else
 			{
-				char character = forge_text_grid_rows[row][index];
-
-				if (forge_text_entry_globals.grid_shift && character >= 'a' && character <= 'z')
-					character = (char)(character - 'a' + 'A');
-				label[0] = character;
-				label[1] = 0;
+				forge_menu_fit(font, (short)(right - left),
+					forge_text_keyboard_labels[key - FORGE_TEXT_KEYBOARD_CHARACTER_KEYS], label, sizeof(label));
 			}
-			label[sizeof(label) - 1] = 0;
-			forge_menu_text(keys_row ? _forge_menu_font_small : font, left, keys_row
-				? (short)(top + (cell_height - forge_menu_line_height(_forge_menu_font_small)) / 2)
-				: text_y, right, HALO_MOD_TEXT_CENTER, text_color, label);
+			forge_menu_text(font, left, (short)(top + (cell_height - line_height) / 2), right, HALO_MOD_TEXT_CENTER,
+				lit ? FORGE_MENU_PLACE_TEXT_COLOR : FORGE_MENU_SELECTED_TEXT_COLOR, label);
+			column = (short)(last + 1);
 		}
 	}
+	forge_menu_text(small_font, x0, (short)(y1 - FORGE_MENU_PADDING - 3 - small_height), x1, HALO_MOD_TEXT_CENTER,
+		FORGE_MENU_DIM_TEXT_COLOR, "A type    X delete    LT RT move the cursor    START done    B leave");
 
 	return;
 }
 
-/* the line being typed, low in the window, over the menu, with the
-character grid above it */
+/* the line being typed, near the window's bottom over the menu: as the
+profile's name's, in a box of its own over the keyboard and as wide, the
+line centred (its end, if it is wider than the box), the line it began with
+highlighted until the first key replaces it, else the cursor blinking where
+it is; what it is for and how long it may be above it */
 static void forge_render_text_entry(
-	long font_tag_index,
-	rectangle2d const *window,
-	short line_height)
+	rectangle2d const *window)
 {
+	long font = _forge_menu_font_large;
+	long small_font = _forge_menu_font_small;
+	short line_height = forge_menu_line_height(font);
+	short small_height = forge_menu_line_height(small_font);
+	short box_height = (short)(small_height + line_height + 2 * FORGE_MENU_PADDING + 12);
+	short keyboard_y0 = (short)(window->y1 - FORGE_MENU_MARGIN / 2 - forge_text_keyboard_height());
+	short y0 = (short)(keyboard_y0 - 8 - box_height);
+	short text_y = (short)(y0 + FORGE_MENU_PADDING + small_height + 6);
+	short x0;
+	short x1;
+	short available;
+	short width;
+	short text_x0;
+	char const *shown = forge_text_entry_globals.text;
 	char line[256];
-	rectangle2d bounds = *window;
 
-	bounds.x0 = (short)(window->x0 + FORGE_MENU_MARGIN);
-	bounds.x1 = (short)(window->x1 - FORGE_MENU_MARGIN);
-	bounds.y0 = (short)(window->y1 - FORGE_MENU_MARGIN - 4 * line_height);
-	bounds.y1 = (short)(bounds.y0 + line_height);
-	forge_render_text_grid(window, (short)(bounds.y0 - 6 - FORGE_MENU_PADDING));
-	forge_menu_rounded_panel((short)(bounds.x0 - 8), (short)(bounds.y0 - 6), (short)(bounds.x1 + 8),
-		(short)(bounds.y0 + 3 * line_height + 6), FORGE_POPUP_FILL_COLOR, FORGE_POPUP_BORDER_COLOR);
-
-	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_yellow,
-		forge_text_entry_globals.prompt);
-	offset_rectangle2d(&bounds, 0, line_height);
-	/* (the cursor blinks) */
-	_snprintf(line, NUMBEROF(line), "> %s%s", forge_text_entry_globals.text,
-		(forge_globals.milliseconds / 400) % 2 ? "_" : "");
-	line[NUMBEROF(line) - 1] = 0;
-	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_white, line);
-	offset_rectangle2d(&bounds, 0, line_height);
-	_snprintf(line, NUMBEROF(line), "%lu of %lu   A type  X delete  Y shift  start done  B leave",
+	forge_text_keyboard_cell_width(window, &x0, &x1);
+	available = (short)(x1 - x0 - 4 * FORGE_MENU_PADDING);
+	forge_render_text_keyboard(window, keyboard_y0);
+	forge_menu_fade = 1.f;
+	forge_menu_rounded_panel(x0, y0, x1, (short)(y0 + box_height), FORGE_TEXT_KEYBOARD_FILL_COLOR,
+		FORGE_POPUP_BORDER_COLOR);
+	_snprintf(line, NUMBEROF(line), "%s  (%lu of %lu)", forge_text_entry_globals.prompt,
 		forge_text_entry_globals.length, forge_text_entry_globals.maximum_length);
 	line[NUMBEROF(line) - 1] = 0;
-	forge_draw_line(font_tag_index, &bounds, _text_justification_left, global_real_argb_grey, line);
+	forge_menu_text(small_font, x0, (short)(y0 + FORGE_MENU_PADDING + 2), x1, HALO_MOD_TEXT_CENTER,
+		FORGE_MENU_PLACE_TEXT_COLOR, line);
+
+	/* (a line wider than the box shows its end, up to the cursor) */
+	while (*shown && shown < forge_text_entry_globals.text + forge_text_entry_globals.cursor &&
+		forge_menu_text_width(font, shown) > available)
+	{
+		shown++;
+	}
+	width = forge_menu_text_width(font, shown);
+	text_x0 = (short)((x0 + x1 - width) / 2);
+	if (forge_text_entry_globals.replaces && *shown)
+		forge_menu_box((short)(text_x0 - 4), text_y, (short)(text_x0 + width + 4), (short)(text_y + line_height),
+			FORGE_TEXT_KEYBOARD_REPLACED_FILL_COLOR);
+	forge_menu_text(font, text_x0, text_y, (short)(text_x0 + width + 2), HALO_MOD_TEXT_LEFT,
+		FORGE_MENU_SELECTED_TEXT_COLOR, shown);
+	if (!forge_text_entry_globals.replaces && (forge_globals.milliseconds / 400) % 2)
+	{
+		short caret_x;
+
+		_snprintf(line, NUMBEROF(line), "%.*s",
+			(int)(forge_text_entry_globals.text + forge_text_entry_globals.cursor - shown), shown);
+		line[NUMBEROF(line) - 1] = 0;
+		caret_x = (short)(text_x0 + (*line ? forge_menu_text_width(font, line) : 0));
+		forge_menu_box(caret_x, text_y, (short)(caret_x + 2), (short)(text_y + line_height),
+			FORGE_MENU_SELECTED_TEXT_COLOR);
+	}
 
 	return;
 }
@@ -3295,8 +3412,6 @@ void forge_render(
 
 	if (forge_globals.active && font_tag_index != NONE)
 	{
-		struct font_header *font = font_definition_get(font_tag_index);
-		short line_height = font->ascending_height + font->descending_height + font->leading_height;
 		rectangle2d window = render.camera.window_bounds;
 
 		offset_rectangle2d(&window, -render.camera.viewport_bounds.x0, -render.camera.viewport_bounds.y0);
@@ -3321,7 +3436,7 @@ void forge_render(
 			forge_render_menu(&window);
 		}
 		if (forge_text_entry_globals.active)
-			forge_render_text_entry(font_tag_index, &window, line_height);
+			forge_render_text_entry(&window);
 	}
 
 	/* drawn only after an update: nothing is left over when the game stops
@@ -3416,6 +3531,8 @@ int forge_text_entry_begin(
 		(int)forge_text_entry_globals.maximum_length, initial ? initial : "");
 	forge_text_entry_globals.text[FORGE_TEXT_MAXIMUM_LENGTH] = 0;
 	forge_text_entry_globals.length = (unsigned long)strlen(forge_text_entry_globals.text);
+	forge_text_entry_globals.cursor = forge_text_entry_globals.length;
+	forge_text_entry_globals.replaces = TRUE;
 
 	return TRUE;
 }

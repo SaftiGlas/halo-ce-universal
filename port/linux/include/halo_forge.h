@@ -49,9 +49,13 @@ struct halo_linux_forge_keys
 	int pad_menu; /* X: the menu while flying; holding, the object's popup, else the step */
 	int pad_remove; /* Y: remove the object under the crosshair or held */
 	int pad_turn; /* right trigger (RT) held: the right stick turns what is held */
+	/* the left trigger (LT) alone (fast is shift too): while a line is typed,
+	it moves the cursor left, as RT (pad_turn) moves it right */
+	int pad_left_trigger;
 	/* A, B and start of a gamepad or the touch controls alone (menu_select is
 	enter too, menu_close escape and backspace): while a line is typed, A
-	types the character grid's chosen key, B leaves the line and start takes it */
+	presses the on-screen keyboard's chosen key, B leaves the line and start
+	takes it */
 	int pad_select;
 	int pad_cancel;
 	int pad_start;
