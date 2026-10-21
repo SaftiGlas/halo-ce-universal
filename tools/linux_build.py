@@ -10,9 +10,8 @@ import os
 import re
 import subprocess
 import sys
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .embed_assets import hud_assets_build, hud_configure_inputs
 from .ninja_syntax import Writer
@@ -422,81 +421,12 @@ def _quote(path: Any) -> str:
     return f'"{text}"' if " " in text else text
 
 
-SOURCE_ROOT = Path("source")
-
-
-@dataclass
-class LinuxLayout:
-    """Where one native Linux build reads the game's sources and writes its
-    outputs. The default is `ninja linux` itself; a source mod build
-    (tools/mod_overlay.py) compiles the same units from a tree under its own
-    build directory in which mod files stand in for the originals."""
-
-    # the build directory; None is build/linux
-    build_dir: Optional[Path] = None
-    # the directory that stands in for the repository root when resolving
-    # source/...; None compiles source/ itself
-    tree: Optional[Path] = None
-    # the directories the tree mirrors (source/, and for a mod build also
-    # port/linux/game/)
-    mirrored: Tuple[Path, ...] = (Path("source"),)
-    # directories in which the tree differs from the repository: their
-    # units are compiled from the tree, so that `#include "x.h"` (which looks
-    # next to the including file first) finds the tree's x.h. Every other
-    # unit is compiled from its own path, as `ninja linux` does: full LTO
-    # keys static symbols on the unit's file name, which no prefix map
-    # changes. (Their other includes find the tree through -I.)
-    changed_dirs: Set[Path] = field(default_factory=set)
-    # game units compiled besides config.json's (paths under source/)
-    extra_game_sources: List[Path] = field(default_factory=list)
-    # order-only inputs of every compile (e.g. patched copies)
-    order_only: List[Path] = field(default_factory=list)
-    # False leaves out the --pgo=train instrumented build and its training
-    pgo_training: bool = True
-
-    def source(self, path: Any) -> Path:
-        """source/... (or another mirrored path) as this build sees it"""
-        path = Path(path)
-        if self.tree is None:
-            return path
-        for root in self.mirrored:
-            if path.parts[: len(root.parts)] == root.parts:
-                return self.tree / path
-        return path
-
-    def unit(self, path: Path) -> Path:
-        """the path a unit is compiled from"""
-        return self.source(path) if path.parent in self.changed_dirs else path
-
-    def cflags(self, linux_build_dir: Path) -> List[str]:
-        """compiler flags that make the tree invisible in the output: file
-        names in assertions (__FILE__) and debug information are those of
-        `ninja linux` (source/..., build/linux/...). Of several matching maps
-        clang uses the last."""
-        if self.tree is None:
-            return []
-        maps = []
-        if self.build_dir is not None:
-            for prefix in ("", "./"):
-                maps.append(f"-ffile-prefix-map={prefix}{_quote(self.build_dir)}/={prefix}{_quote(linux_build_dir)}/")
-        return [*maps, f"-ffile-prefix-map={_quote(self.tree)}/="]
-
-    def unit_cflags(self, path: Path) -> List[str]:
-        """flags of a unit compiled from the tree: the names its static
-        functions have in the PGO profile stay source/... (-ffile-prefix-map
-        does not change them)"""
-        if self.tree is None or self.unit(path) == path:
-            return []
-        return [f"-mllvm -static-func-strip-dirname-prefix={len(self.tree.parts)}"]
-
-
-def generate_linux_build(n: Writer, sln: Any, layout: Optional[LinuxLayout] = None) -> None:
+def generate_linux_build(n: Writer, sln: Any) -> None:
     if not PORT_CONFIG.is_file():
         # a checkout without the port (or a test fixture): nothing to emit
         return
-    layout = layout or LinuxLayout()
     config = _load_port_config()
-    build_dir: Path = layout.build_dir or sln.build_dir / "linux"
+    build_dir: Path = sln.build_dir / "linux"
     obj_dir = build_dir / "obj"
     output = build_dir / "halo"
     cc = sln.linux_cc or "clang"
@@ -512,10 +442,8 @@ def generate_linux_build(n: Writer, sln: Any, layout: Optional[LinuxLayout] = No
         description="LINUX MSVC SEMANTICS $out",
         restat=True,
     )
-    source_dir = layout.source(SOURCE_ROOT)
     game_headers = sorted(
-        # (a mod tree's links to files that no longer exist are not headers)
-        p for p in source_dir.rglob("*") if p.suffix in (".c", ".h") and p.is_file()
+        p for p in Path("source").rglob("*") if p.suffix in (".c", ".h")
     )
     # The game sees its own tags and inline functions and those of the SDK
     # declarations (port/include/xdk); the platform layer only includes the
@@ -524,9 +452,8 @@ def generate_linux_build(n: Writer, sln: Any, layout: Optional[LinuxLayout] = No
         outputs=semantics_header,
         rule="linux_msvc_semantics",
         implicit=[Path("tools/linux_msvc_semantics.py"), *xdk_headers(), *game_headers],
-        order_only=layout.order_only,
         variables={
-            "scan": f"--all-inlines --tags {_quote(source_dir)} --inlines {_quote(source_dir)} --inlines {XDK_INCLUDE}"
+            "scan": f"--all-inlines --tags source --inlines source --inlines {XDK_INCLUDE}"
         },
     )
     n.build(
@@ -608,30 +535,24 @@ def generate_linux_build(n: Writer, sln: Any, layout: Optional[LinuxLayout] = No
             n.build(
                 outputs=obj,
                 rule="linux_cc",
-                inputs=layout.unit(source),
+                inputs=source,
                 # (the SDK declarations are system headers, which the depfile
                 # leaves out)
                 implicit=[*xdk_headers(), prefix_header, semantics_header, platform_semantics_header,
                           *sysroot_inputs, *implicit_inputs],
-                order_only=layout.order_only,
-                variables={"cflags": " ".join(
-                    [cflags, posix_extra if posix else extra, *layout.unit_cflags(source)]
-                )},
+                variables={"cflags": f"{cflags} {posix_extra if posix else extra}"},
             )
 
-        game = config["game"]
         game_cflags = " ".join([
             abi,
             " ".join(GAME_FLAGS),
             f"-include {prefix_header}",
             f"-include {semantics_header}",
             f"-I{port_include}",
-            " ".join(f"-D{define}" for define in game.get("defines", [])),
-            # (a source mod build's include directories are in its tree)
-            " ".join(f"-I{_quote(layout.source(Path(directory)))}" for directory in game.get("include_dirs", [])),
             # the headers of the port's own game units (port/linux/game), for
             # the game sources that call them
-            f"-iquote {_quote(layout.source(Path(config['game_sources'])))}",
+            f"-iquote {Path(config['game_sources'])}",
+            game_defines_and_includes(config),
             sdk_flags,
         ])
         for source in game_sources(config):
@@ -640,9 +561,6 @@ def generate_linux_build(n: Writer, sln: Any, layout: Optional[LinuxLayout] = No
             if source.as_posix() == "source/main/main.c":
                 flags += " " + updater_defines(getattr(sln, "port_release", False))
             add_object(source, flags)
-        # units a source mod adds
-        for source in layout.extra_game_sources:
-            add_object(source, game_cflags)
         # Port-specific units that must see the game exactly as its own
         # sources do (port/linux/game).
         for source in sorted(Path(config["game_sources"]).glob("*.c")):
@@ -661,8 +579,8 @@ def generate_linux_build(n: Writer, sln: Any, layout: Optional[LinuxLayout] = No
             f"-I{EXPAT_DIR}",
             f"-I{KCP_DIR}",
             f"-I{MONOCYPHER_DIR}",
-            f"-I{_quote(source_dir)} -I{_quote(layout.source(SOURCE_ROOT / 'cseries'))}",
             f"-I{ZLIB_DIR}",
+            "-Isource -Isource/cseries",
             sdk_flags,
         ])
         posix_cflags = " ".join(POSIX_FLAGS + target + [f"-I{platform_dir}"])
@@ -777,10 +695,7 @@ def generate_linux_build(n: Writer, sln: Any, layout: Optional[LinuxLayout] = No
     # (tools/pgo_train.py). A profile is trained once: code changed since
     # simply goes without, and deleting it trains a new one.
     profile = pgo_profile(sln, LINUX_PROFILE, [], cc)
-    if not layout.pgo_training and profile is not None and not Path(profile).is_file():
-        # a profile only a training run would make: this build does without
-        profile = None
-    if layout.pgo_training and pgo_mode(sln) == "train" and profile == LINUX_PROFILE:
+    if pgo_mode(sln) == "train" and profile == LINUX_PROFILE:
         instrumented = build_dir / "pgo-generate" / "halo"
         emit(build_dir / "pgo-generate" / "obj", instrumented, ["-fprofile-generate"], ["-fprofile-generate"], [])
         n.build(
@@ -795,10 +710,6 @@ def generate_linux_build(n: Writer, sln: Any, layout: Optional[LinuxLayout] = No
     # compiled together when lld links them.
     cflags, ldflags = lto_flags(sln, build_dir / "thinlto-cache")
     cflags += profile_use_flags(profile)
-    cflags += layout.cflags(sln.build_dir / "linux")
-    if layout.tree is not None:
-        emit(obj_dir, output, cflags, ldflags, [profile] if profile else [])
-        return
     validator = build_dir / "map_validate"
     emit(obj_dir, output, cflags, ldflags, [profile] if profile else [], validator)
     # internet play's MQTT brokers, a file beside the game (network.brokers_file)

@@ -1,9 +1,8 @@
 /*
 TAG_IMPORT.C
 
-Brings tags from another map's cache file into the map that is loading
-(game.import and game.import_into in config.toml; the mod launcher's import
-list sets them). It does what the game does not: the game has one cache
+Brings tags from another map's cache file into the map that is loading:
+Forge's monitor, from The Maw (port/linux/game/forge_monitor.c). It does what the game does not: the game has one cache
 file at a time, and tag_load() refuses.
 
 The donor map's tag data is read (the DVD's maps are the 0x800 byte header
@@ -61,7 +60,6 @@ only its own blocks; this file's memory is the C library's */
 #undef realloc
 
 /* the platform layer's (port/linux/src/port_config.c) */
-const char *config_string(char const *name);
 void platform_log(char const *format, ...);
 
 /* ---------- constants */
@@ -260,27 +258,6 @@ static short import_parse_requests(
 	}
 
 	return count;
-}
-
-static boolean import_map_listed(
-	char const *list,
-	char const *map_name)
-{
-	size_t length = strlen(map_name);
-
-	if (!*list)
-		return _stricmp(map_name, "ui") != 0;
-	while (*list)
-	{
-		char const *end = strchr(list, ',');
-		size_t item = end ? (size_t)(end - list) : strlen(list);
-
-		if (item == length && !_strnicmp(list, map_name, length))
-			return TRUE;
-		list = end ? end + 1 : list + item;
-	}
-
-	return FALSE;
 }
 
 /* reads size bytes of the donor's file at offset (after the header for a
@@ -974,45 +951,15 @@ void halo_tag_import(
 	void **instances,
 	char const *map_name)
 {
-	char const *setting = config_string("game.import");
 	struct import_request requests[IMPORT_MAXIMUM_REQUESTS];
-	short request_count;
-	short donor_index;
-	char done[IMPORT_MAXIMUM_DONORS][64];
-	short done_count = 0;
 
-	/* Forge's monitor (port/linux/game/forge_monitor.c), before any other
-	and alone, so that its tags have the same indices on every machine of a
-	system link game whatever else each brings in */
+	/* Forge's monitor (port/linux/game/forge_monitor.c) */
 	if (forge_monitor_import_wanted() && _stricmp(map_name, "ui") != 0 &&
 		_stricmp(map_name, IMPORT_MONITOR_DONOR) != 0 &&
 		import_parse_requests(IMPORT_MONITOR_REQUEST, requests) == 1)
 	{
 		import_from_donor((struct import_tag_header *)tag_header, (struct import_instance **)instances,
 			map_name, requests[0].donor, requests, 1);
-	}
-	if (!*setting || !import_map_listed(config_string("game.import_into"), map_name))
-		return;
-	request_count = import_parse_requests(setting, requests);
-	for (donor_index = 0; donor_index < request_count; donor_index++)
-	{
-		struct import_request donor_requests[IMPORT_MAXIMUM_REQUESTS];
-		short count = 0;
-		short other;
-		boolean seen = FALSE;
-
-		for (other = 0; other < done_count; other++)
-			seen = seen || !_stricmp(done[other], requests[donor_index].donor);
-		if (seen || done_count >= IMPORT_MAXIMUM_DONORS || !_stricmp(requests[donor_index].donor, map_name))
-			continue;
-		strcpy(done[done_count++], requests[donor_index].donor);
-		for (other = donor_index; other < request_count; other++)
-		{
-			if (!_stricmp(requests[other].donor, requests[donor_index].donor))
-				donor_requests[count++] = requests[other];
-		}
-		import_from_donor((struct import_tag_header *)tag_header, (struct import_instance **)instances,
-			map_name, requests[donor_index].donor, donor_requests, count);
 	}
 
 	return;

@@ -148,31 +148,21 @@ The game retains the original look and feel as it did on the Xbox by default. Th
 
 ## Forge
 
-The `forge` branch adds Forge: a game type in which the players build on
+Forge is a game type in which the players build on
 the map. They fly the camera, spawn, move and remove objects, place kill,
 gravity and teleport zones and AI characters, change the gravity and the
 sky, and save the result as a layout. A layout can show in the multiplayer
 map list as a map of its own. Forge operates in local games and in system
 link games, where all the players build together.
 
-The builds on the Download page do not include the Forge mods. Build the
-game from this branch. Only Linux is tested.
+Forge is in the builds of this fork, on its
+[Releases](https://github.com/SaftiGlas/halo-ce-universal/releases/latest)
+page (the downloads above are the main project's, without Forge). It is
+tested most on Linux. The builder flies as the monitor, 343 Guilty Spark,
+whose model comes from The Maw: keep `c40.map` in the `maps` folder.
 
-To run it:
-
-1. Install the tools for Linux. Refer to "Requirements" in
-   [port/linux/README.md](port/linux/README.md#requirements).
-2. Get the branch:
-   `git clone -b forge https://github.com/SaftiGlas/halo-ce-universal.git`
-3. Put the `maps/` folder of the game data in the `assets/` folder of the
-   repository. If the game finds no data, it asks for the disc image at the
-   first start. Refer to "Start the game" in
-   [port/linux/README.md](port/linux/README.md#start-the-game).
-4. In the root folder of the repository, enter
-   `python -m tools.mod_launcher run`. The launcher builds the game with the
-   Forge mods, then starts it. The first build takes some minutes.
-5. In the game, select **Forge** in the main menu (above Profiles), select
-   a map, then Start Game in Server Setup.
+To play it, select **Forge** in the main menu (above Profiles), select a
+map, then Start Game in Server Setup.
 
 In a Forge game:
 
@@ -187,14 +177,10 @@ In a Forge game:
 To play with other players, the host selects Forge in the main menu and
 sends the invite link from Server Setup to them (with internet play off, the
 game is a LAN game, which the others join from Multiplayer's LAN list). All the machines must have a
-build of the same commit with the same mods.
+build of the same release.
 
-- To test Forge with other players, refer to
-  [mods/PLAYTEST.md](mods/PLAYTEST.md).
 - For all the controls and the layouts, refer to "Dev tools" in
   [port/linux/README.md](port/linux/README.md#dev-tools).
-- `python -m tools.mod_launcher` without `run` shows the mods. There you can
-  set each mod to on or off.
 
 ## How to build the game
 

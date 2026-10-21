@@ -2,8 +2,7 @@
 HALO_MOD.H
 
 What the ports offer Forge's parts (port/linux/game/forge_ai.c and the
-files beside it, listed in halo_mods.c) and source mods (tools/mod_overlay.py),
-so that they need not change the game's files to run or to read keys: each
+files beside it, listed in halo_mods.c) and source mods, so that they need not change the game's files to run or to read keys: each
 is a struct halo_mod of its own file, and reads the keyboard with
 halo_mod_key_down. Forge's parts are in halo_mods.c's list, in every build; a
 source mod of a native Linux build registers its own with

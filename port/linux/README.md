@@ -92,165 +92,6 @@ To see the glibc version that a build needs, enter
 2. Enter `python configure.py`.
 3. Enter `ninja linux`.
 
-## Source mods
-
-A source mod changes the game's code without touching `source/`. It is a
-directory `mods/<name>/` with:
-
-- `mod.json` (required): `{"name": ..., "version": ..., "description": ...}`,
-  and optionally `"env"`, environment variables the launcher sets when it
-  runs the game (for example `{"HALO_FORGE": "1"}`)
-- `source/...` and `port/linux/game/...`: a file at the same path as one of
-  the game's sources or of the ports' game units (such as the dev tools'
-  `forge.c`) replaces it; a file at a new path is added (a new `.c` is
-  compiled in)
-- `patches/*.patch`: unified diffs (`git diff`, `diff -u`) against the
-  original files, `-p1` paths `a/source/...` or `a/port/linux/game/...`,
-  applied in name order
-
-The launcher turns mods on and off (kept in `mods/mods.json`), builds
-with them and runs the game:
-
-```sh
-python -m tools.mod_launcher                     # interactive: fzf screen (below), else a numbered menu
-python -m tools.mod_launcher enable a b          # or: disable, list
-python -m tools.mod_launcher build               # "Build with mods"
-python -m tools.mod_launcher run                 # build, then run (SDL_VIDEODRIVER=x11)
-python -m tools.mod_launcher maps                # the maps of the game data
-python -m tools.mod_launcher map bloodgulch      # the game opens at this map from now on
-python -m tools.mod_launcher run --map b30 --difficulty hard   # once
-```
-
-With [fzf](https://github.com/junegunn/fzf) installed, the interactive
-launcher is a list of the mods with a preview of what the chosen one
-changes: Space or Tab turns a mod on or off (saved at once), Enter builds
-and runs, Ctrl-L chooses the map, Ctrl-T the tags from other maps, Ctrl-B builds,
-Ctrl-A and Ctrl-X turn all mods on and off, Esc quits.
-Without fzf, or when the output is not a terminal, the numbered menu is
-used.
-
-**Start at a map.** The game can open at a map without the menus: a
-campaign level (`a10`, `b30`... with a difficulty) or a multiplayer map
-(`bloodgulch`, `hangemhigh`... with a game variant: `slayer` by default,
-also `team_slayer`, `ctf`, `king`, `oddball`, `race`...), both as a local
-game, which is where the dev tools and the mods work. The launcher lists
-the maps of the game data (the `.map` files in `maps/`, told apart by their
-header; `HALO_DATA_ROOT` names the folder if it is not the current one or
-`assets/`), keeps the choice in `mods/mods.json` (`"launch"`) and gives it
-to the game with the settings `game.start_map`, `game.start_variant` and
-`game.start_difficulty` (below), which do what the console does with
-`game_difficulty_set`, `game_variant` and `map_name` after `init.txt`
-(`game/start_map.c`). `map none` (or `run --menu` for one run) opens the
-main menu again. The same works without the launcher:
-`HALO_START_MAP=bloodgulch HALO_START_VARIANT=ctf build/linux/halo`.
-
-**Tags from other maps.** The game holds one cache file at a time, so a
-multiplayer map has no rocks of the first level, and no way to load them.
-The launcher's import list (`mods/mods.json` `"import"`; Ctrl-T in the fzf
-screen, or `python -m tools.mod_launcher import add a30 boulder_granite_large`,
-`import list a30 rock`, `import remove`, `import into bloodgulch`) names tags
-of other maps; the game brings each, with everything it refers to, into the
-multiplayer maps (or `"import_into"`) as it loads them, and they appear in
-the forge menu's Scenery list, to place, with model, textures and collision.
-Characters work too: an `actv` tag (an actor variant, such as
-`characters\grunt\grunt minor plasma pistol` of a30 or `characters\hunter\hunter`
-of b30) brings its body, animations, sounds, weapon and actor, and the
-`forge_ai` mod (below) adds them as AI. Vehicles, weapons of their own and
-skies are not tried. Each map load reads the
-donor map, which takes a second or two, and the tags exist on this machine
-only, so use it in local games. It works through `game.import` and
-`game.import_into` (below), `game/tag_import.c`: the donor's tag data is
-copied into contiguous memory with its pointers moved, the references
-pointed at this map's tags, the tag table made longer, the vertex and index
-buffers registered, and the bitmaps' pixels read from a store by
-`cache_file_read`. `python -m tools.map_tags` reads a map's tags and
-reports what a tag needs.
-
-Underneath, it runs:
-
-```sh
-python configure.py --mods first second    # enabled mods
-ninja -f build/mods/<key>/build.ninja      # the path configure.py prints
-```
-
-This builds `build/mods/<key>/halo`, with `<key>` a hash of the ordered mod
-list, using the same rules as `ninja linux`, including `linux_link_check`.
-The root `build.ninja` is not changed, and the matching build never sees
-mods. Only units affected by a change recompile. With no mods the binary is
-byte-identical to `build/linux/halo`. `python -m tools.mod_overlay describe
-first second` lists what each mod replaces, adds and patches.
-
-- Each file may be changed by one enabled mod only: two mods replacing,
-  adding or patching the same file is an error naming both and how each
-  changes it. Enabled mods therefore never depend on each other's order.
-- Within one mod, a whole replacement file wins over the mod's own patch of
-  it; the patch is skipped with a warning.
-- A patch that does not apply exactly (no fuzz) fails the build, naming the
-  mod, patch and file.
-- Replacing a `.c` the Linux build does not compile (`MISSING` in
-  `config/config.json`) warns that it changes nothing.
-
-Mods share code through the ports rather than through a file they all
-patch. `include/halo_mod.h` gives every mod, without changing any game
-file:
-
-- hooks: a mod adds its own unit (for example
-  `mods/x/source/mods/x/x.c`) and registers an update and a render function
-  with `HALO_MOD_REGISTER`; they run once a frame, before the dev tools'
-  own (`game/halo_mods.c`), whether or not `HALO_FORGE` is set. Optionally also
-  a tick function, run at the start of every game tick (30 a second, before
-  units and physics) in local games only, for changes to the game state,
-  and a new map function, run in every game once a map's objects are
-  placed, to undo what the last map changed, and a world drawing function,
-  run in each player's view, where the game's debug geometry
-  (`rasterizer_debug_triangle`, `rasterizer_debug_line_shaded`) draws in
-  the world with depth
-- the keyboard: `halo_mod_key_down`, `halo_mod_key_pressed` (once per
-  press, optionally with Ctrl), `halo_mod_key_name`, and
-  `halo_mod_ctrl_shortcut`, which keeps a key from the game and the dev
-  tools while Ctrl is held (so Ctrl+C does not also crouch). Keys never
-  reach mods while the console is open
-- drawing on the screen: text in the terminal font or a large font of the
-  map, and filled, blended boxes
-- the dev tools' crosshair (`include/halo_forge.h`): the object under it,
-  the surface point it points at, where an object would be placed there,
-  and whether the tools' menu is open or they hold an object
-
-Forge's own parts are not source mods: they are built into the game on
-every platform (`game/forge_ai.c` and the files beside it, listed in
-`game/halo_mods.c`, which gives the menu's tabs the same order in every build).
-They use the same hooks:
-`forge_ai` (an AI tab in the dev tools' menu: add characters, such as the
-grunts and hunters that the launcher brings in from campaign maps, at the
-crosshair, and waypoints for them to patrol, with the game's own AI and
-pathfinding, which multiplayer maps have; each is of a faction, their own
-or the player's side, human, Covenant, Flood or sentinel, which fight each
-other, and cautious, normal or berserk; several are added at once as a
-squad that follows its first and fights what any of it fights),
-`forge_edit` (an object's popup: X with the crosshair on an object, flying, shows
-its rows beside the crosshair, to move it, duplicate it, change its size,
-turn, tilt, roll and height, select it for a prefab, remove it and undo a removal),
-`forge_prefabs` (several objects selected with the crosshair and saved together
-as a prefab of the map, `forge/<map>/prefab_NN.txt` in the save root beside
-its layouts, then placed again as often as wanted: its objects are made and
-held together at the crosshair, turned, raised and orbited by the camera as
-one held object is, until they are put down),
-`gravity` (the map's gravity, with the tick and new map hooks),
-`forge_zones` (kill, gravity and teleport zones, square or round, placed at the crosshair; a
-teleport zone's arrow is the way what comes out of it faces) and
-`forge_spawns` (the map's player spawns and item spawns: shown as posts,
-moved, removed, added and given a team, game types, an item collection and
-a respawn time; a changed kind replaces the map's own list, and "Restore
-the map's own" gives it back).
-`forge_ai`, `forge_prefabs`, `gravity`, `forge_zones` and `forge_spawns` are tabs of the dev tools'
-menu (1, D-pad right or, flying, X; LB / RB, Page Up / Page Down or T / V change tab) that work with a
-controller alone: a mod adds a tab with `struct halo_mod_menu` in
-`halo_mod.h`, rows of a label and a value that left and right change and
-that enter or A act on.
-
-Source mods are native code that runs with your rights: only build mods from
-sources you trust. Removing `build/mods/` cleans every mod build.
-
 ## Start the game
 
 Enter `build/linux/halo`.
@@ -442,8 +283,7 @@ you push it again.
 
 The in-game dev tools (`game/forge.c`), a first step towards modding, are
 on in local and system link games of the **Forge** game type (a slayer
-variant with no score to reach, marked with `GAME_VARIANT_FORGE_FLAG`), or
-`game.start_variant = "forge"` / `--variant forge`. **Forge** in the main
+variant with no score to reach, marked with `GAME_VARIANT_FORGE_FLAG`). **Forge** in the main
 menu, above Profiles, plays it: it makes a game as Multiplayer's Create
 Game does (an internet game, with its invite, when internet play is on,
 else a LAN game), then the map list has the multiplayer
@@ -451,8 +291,7 @@ maps, the Custom Edition multiplayer maps and the Forge maps (layouts), and
 the map chosen goes straight to Server Setup, whose GAME TYPE stays Forge
 (its options' rows still change it). Forge is not one of the gametypes in
 Multiplayer's game setup; gametypes saved from it before stay Forge. In every other game the
-game plays as usual. `game.forge = "all"` (`HALO_FORGE=all`) turns the tools on in
-every game, for development.
+game plays as usual.
 
 | Keyboard and mouse | Controller | Effect |
 | --- | --- | --- |
@@ -552,9 +391,7 @@ where they are (`u/forge/<map>/converted.txt` notes which were made). The
 called and what the map list says about it: select the row and type on the
 keyboard (letters, digits, spaces and the usual marks; backspace deletes,
 enter takes the line, escape leaves it as it was). For a new variant they
-are kept until it is saved. Without a keyboard, `python -m
-tools.mod_launcher layouts rename MAP N NAME` and `layouts describe MAP N
-TEXT` do the same (`layouts` lists them). A saved variant loads only when
+are kept until it is saved. A saved variant loads only when
 it is asked for (Load it, or chosen in the map list, below): the map chosen
 by its own name is the map as the game has it.
 
@@ -568,10 +405,7 @@ the host loads the variant and sends it to each machine that joins (the
 other machines need not have it, and do not save it). The host's objects reach them as all its
 objects do; each machine makes the layout's scenery itself and takes its
 zones, gravity and sky. Kill and teleport zones act on the host, gravity
-zones and gravity on every machine. The tags the layout uses from other
-maps must be imported on every machine alike (the launcher's import list). `game.start_layout` (`HALO_START_LAYOUT`,
-`mod_launcher run --map bloodgulch --layout 3`) starts one without the
-menus.
+zones and gravity on every machine.
 
 The tools act on local player 0. In a **system link** game of the Forge
 game type every player builds, on one map. The game is the host's: what its
@@ -772,12 +606,6 @@ the setting for one start of the game. It has priority over the file.
 | `game.downloaded_maps` | `""` | `HALO_DOWNLOADED_MAPS` | Maps to play as downloaded maps, besides the maps that map sharing downloaded (it names them in `downloaded_maps.txt` in `custom_maps`): their names (`bloodgulch`, `hugeass`), separated by commas, or `"*"` for all the maps. The scripts of a downloaded map cannot change the settings of the player or the games of other players. `debug.txt` names what the game refused. |
 | `game.console_log` | `"important"` | `HALO_CONSOLE_LOG` | What the console shows on the screen. `"important"`: bans, players that the host drops for cheating, the reasons that the game refuses a command, and the asserts that stop the game. `"all"`: all the lines. `"none"`: only the asserts that stop the game. The output of a command always shows. `debug.txt` gets all the lines. |
 | `game.language` | `""` | `HALO_LANGUAGE` | The language of the menus: `ja`, `de`, `fr`, `es` or `it`. Empty: English. |
-| `game.start_map` | `""` | `HALO_START_MAP` | A map to open at start-up without the menus: `"a10"`, `"bloodgulch"`, or a scenario path. Empty: the main menu. Refer to "Source mods". |
-| `game.start_variant` | `""` | `HALO_START_VARIANT` | With a multiplayer `start_map`: the game variant (`"slayer"`, `"team_slayer"`, `"ctf"`, `"king"`, `"oddball"`, `"race"`...). |
-| `game.start_difficulty` | `""` | `HALO_START_DIFFICULTY` | With a campaign `start_map`: `"easy"`, `"normal"`, `"hard"` or `"impossible"`. Empty: normal. |
-| `game.import` | `""` | `HALO_IMPORT` | Tags to bring into the maps from other maps: `"donor:group:tag name"` with `\|` between them, for example `"a30:scen:scenery\rocks\boulder_granite_large\boulder_granite_large"`. The launcher sets it from `mods.json`. |
-| `game.import_into` | `""` | `HALO_IMPORT_INTO` | The maps `game.import` applies to, `"bloodgulch,wizard"`. Empty: every map but the menu's. |
-| `game.forge` | `"forge"` | `HALO_FORGE` | Where the dev tools (Forge) are on. `"forge"`: in local and system link games of the Forge game type. `"all"`: in every game, for development. Every machine of a system link game needs the same. Refer to "Dev tools". |
 | `game.forge_monitor` | `true` | `HALO_FORGE_MONITOR` | In a Forge game, the builder flies as the monitor, whose tags come from The Maw (`c40.map`) as the map loads; `false`, or without that map, flies the camera free of the player. Refer to "Dev tools". |
 | `game.enhanced_animations` | `true` | `HALO_ENHANCED_ANIMATIONS` | `true`: the player bipeds' grenade throws keep their legs moving, blended by speed and direction (crouched throws stay crouched, throws in the air use the jump's legs), Warthog and Scorpion riders stay seated to throw and let go of the grips to throw and reload, and a player turns with the aim while throwing, as while meleeing. `false`: the original animations, which freeze the legs during a throw and stand a rider up. Only in config.toml, not in the menus. |
 | `game.unlock_all_levels` | `false` | `HALO_UNLOCK_ALL_LEVELS` | `true`: a profile created afterward starts with all the campaign levels finished on all the difficulties. `false`: a new profile starts at The Pillar of Autumn, and each level opens when you finish the level before it, as on the Xbox. Existing profiles keep their progress. To start a profile over, type `profile_reset_campaign` in the console. |
@@ -827,12 +655,6 @@ the setting for one start of the game. It has priority over the file.
 | `streamer.insults` | `"off"` | `HALO_STREAMER_INSULTS` | With `streamer.enabled`, the insults that are not slurs hidden: `"off"`, `"severe"`, `"strong"` or `"mild"`. CENSOR INSULTS in Settings > Network Setup > Streamer Mode. |
 | `crash_reports.upload` | `"ask"` | `HALO_CRASH_REPORTS` | Windows only. `"yes"`: the game sends a report of each crash to the developers. `"no"`: the game sends no reports. `"ask"`: the game asks at the next crash and writes the answer here. Refer to "Crash reports" in [port/windows/README.md](../windows/README.md#crash-reports). |
 | `debug.update_answer` | `""` | `HALO_UPDATE_ANSWER` | The answer to the update question, for automatic tests: `yes`, `no` or `never`. Empty: the game asks. |
-| `debug.forge_menu_tab` | `-1` | `HALO_FORGE_MENU_TAB` | With the dev tools on (a Forge game), a few seconds into a game: open their menu on this tab (0 is the first), for screenshots of it (`debug.screenshot_directory`); `100` opens an object's popup instead, on the first object of the map, `101` the popup of a held object, and `102` a line being typed, with its on-screen keyboard. `-1`: never. |
-| `debug.forge_layout_save` | `0` | `HALO_FORGE_LAYOUT_SAVE` | For automated tests: in a local game, save the Forge layout as this map variant of the map (`1` to `64`, as its Map tab lists them; one past those there are is a new one) a few seconds in, once, and log where the player is; `0` never. |
-| `debug.forge_test_edit` | `0` | `HALO_FORGE_TEST_EDIT` | For automated tests of Forge in system link (with `debug.network_test` and the `forge` variant): `1`, the host spawns a scenery object a few seconds in, and a client asks it to spawn one, then to move it and to remove it; both log what they send and take. |
-| `debug.forge_test_monitor` | `0` | `HALO_FORGE_TEST_MONITOR` | For automated tests of Forge's monitor (`game.forge_monitor`): `1`, each machine's player becomes the monitor ten seconds into a game, rises, and lands ten seconds later; what the player's unit is and where is logged every two seconds. |
-| `debug.forge_test_prefab` | `0` | `HALO_FORGE_TEST_PREFAB` | For automated tests of Forge's prefabs: in a local Forge game, a few seconds in, once, select this many of the map's objects, save them as a prefab and place it beside them; how many were selected, read back and made is logged. `0` never. |
-| `debug.forge_test_ai` | `0` | `HALO_FORGE_TEST_AI` | For automated tests of Forge's AI factions and squads: in a local game, a few seconds in, once, two squads of this many characters (at most 8), the map's first two characters whose teams differ (import them), stand in front of the player facing each other; every two seconds for thirty, how many of each live, fight and follow is logged. `0` never. |
 | `debug.fixed_step` | `false` | `HALO_FIXED_STEP` | `true`: a game of this computer alone runs one tick a frame, whatever time has passed, so that it plays the same every time (tests). |
 | `debug.exit_after` | `0.0` | `HALO_EXIT_AFTER` | The game stops after this number of seconds (from when its window opens; with `debug.null_renderer`, or no display, from its first frame). `0`: never. |
 | `debug.screenshot_directory`, `debug.screenshot_every` | `""`, `0` | `HALO_SCREENSHOT_DIR`, `HALO_SCREENSHOT_EVERY` | The game writes each Nth frame to this folder as a BMP file. |
@@ -850,10 +672,6 @@ the setting for one start of the game. It has priority over the file.
 | `debug.telnet_console`, `debug.telnet_console_port` | `false`, `2323` | `HALO_TELNET_CONSOLE`, `HALO_TELNET_CONSOLE_PORT` | The game listens on 127.0.0.1, on this port, for a script console (connect with telnet). The console has no password, so only this computer can reach it. |
 | `debug.profile_record`, `debug.profile_record_when`, `debug.profile_memory` | `false`, `"start"`, `256` | `HALO_PROFILE_RECORD`, `HALO_PROFILE_RECORD_WHEN`, `HALO_PROFILE_MEMORY` | Profiling builds only (`configure.py --profile`). Record without a command; `"start"` records from the first frame until the first map change, `"game"` records each game outside the main menu. Memory is 4–1024 MB. Numbered `profile_<stamp>_<role>.part<n>.json` files remain in `profiles/` after recording. Refer to "Profiling builds" in the main README. |
 
-
-The environment variable `HALO_FORGE=all` turns on the dev tools in every
-game, not only Forge games (refer to "Dev tools"). It has no setting in
-`config.toml`.
 
 With Mesa drivers, the game sends its GL calls through the GL thread of
 Mesa. To stop this, set the environment variable `mesa_glthread=false`.

@@ -67,7 +67,6 @@ is turned, and how much faster with the fast key: the free camera's
 extern struct cache_file_tag_instance *global_tag_instances;
 /* the platform layer's (port/linux/src/port_config.c) */
 int config_boolean(const char *name);
-char const *config_string(const char *name);
 
 /* ---------- globals */
 
@@ -86,12 +85,11 @@ static struct
 /* ---------- public code */
 
 /* whether the map that is loading gets the monitor's tags
-(port/linux/game/tag_import.c): a Forge game's, or with HALO_FORGE=all any */
+(port/linux/game/tag_import.c): a Forge game's */
 int forge_monitor_import_wanted(
 	void)
 {
-	return config_boolean("game.forge_monitor") &&
-		(strcmp(config_string("game.forge"), "all") == 0 || game_variant_set_is_forge());
+	return config_boolean("game.forge_monitor") && game_variant_set_is_forge();
 }
 
 /* the monitor's biped in this map, or NONE */

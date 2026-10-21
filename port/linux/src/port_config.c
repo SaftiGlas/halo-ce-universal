@@ -429,34 +429,6 @@ static const struct config_setting config_settings[] =
 		"gray, yellow, green, pink, purple, cyan, cobalt, orange, teal, sage,\n"
 		"brown, tan, maroon or salmon." },
 
-	{ "game.start_map", _config_string, "\"\"", "HALO_START_MAP", _environment_value, _platform_desktop,
-		"A map to start when the game starts, without the menus: a campaign level\n"
-		"(\"a10\") or a multiplayer map (\"bloodgulch\"), or a scenario path\n"
-		"(\"levels\\test\\bloodgulch\\bloodgulch\"); empty shows the main menu. The mod\n"
-		"launcher's --map sets it." },
-	{ "game.start_variant", _config_string, "\"\"", "HALO_START_VARIANT", _environment_value, _platform_desktop,
-		"With a multiplayer start_map, the game variant it is played with:\n"
-		"\"slayer\", \"team_slayer\", \"ctf\", \"king\", \"oddball\", \"race\"..." },
-	{ "game.start_layout", _config_integer, "0", "HALO_START_LAYOUT", _environment_value, _platform_desktop,
-		"With a multiplayer start_map, play it with this Forge map variant of it\n"
-		"(forge_maps\\*.mvar), counted as its Map tab lists them (1 to 64, in the\n"
-		"order of their file names); 0 none. The mod launcher's --layout sets it." },
-	{ "game.start_difficulty", _config_string, "\"\"", "HALO_START_DIFFICULTY", _environment_value, _platform_desktop,
-		"With a campaign start_map: \"easy\", \"normal\", \"hard\" or \"impossible\";\n"
-		"empty for normal." },
-
-	{ "game.import", _config_string, "\"\"", "HALO_IMPORT", _environment_value, _platform_desktop,
-		"Tags to bring into every map from other maps, \"donor:group:tag name\"\n"
-		"separated by |, for example \"a30:scen:scenery\\rocks\\boulder_granite_large\\\n"
-		"boulder_granite_large\" (everything the tag refers to comes with it); the\n"
-		"mod launcher's import list sets it. Empty: none." },
-	{ "game.import_into", _config_string, "\"\"", "HALO_IMPORT_INTO", _environment_value, _platform_desktop,
-		"The maps game.import applies to, with commas between: \"bloodgulch,wizard\";\n"
-		"empty for every map but the menu's." },
-	{ "game.forge", _config_string, "\"forge\"", "HALO_FORGE", _environment_value, _platform_all,
-		"Where the dev tools (Forge) are on: \"forge\", in local and system link\n"
-		"games of the Forge game type; \"all\", in every game, for development.\n"
-		"Every machine of a system link game needs the same." },
 	{ "game.forge_monitor", _config_boolean, "true", "HALO_FORGE_MONITOR", _environment_value, _platform_all,
 		"In a Forge game, the builder flies as the monitor (343 Guilty Spark),\n"
 		"whose tags come from The Maw (c40.map) as the map loads; false, or\n"
@@ -763,38 +735,6 @@ static const struct config_setting config_settings[] =
 	{ "debug.update_answer", _config_string, "\"\"", "HALO_UPDATE_ANSWER", _environment_value, _platform_desktop,
 		"The answer to the new version question, for automated tests: \"yes\",\n"
 		"\"no\" or \"never\" (do not ask again, confirmed); empty asks." },
-	{ "debug.forge_menu_tab", _config_integer, "-1", "HALO_FORGE_MENU_TAB", _environment_value, _platform_desktop,
-		"With the dev tools on (a Forge game), a few seconds into a game, open their\n"
-		"menu on this tab (0 is the first), for screenshots of it; 100 opens an\n"
-		"object's popup instead, on the first object of the map, 101 the popup\n"
-		"of a held object, and 102 a line being typed (its character grid); -1\n"
-		"never." },
-	{ "debug.forge_layout_save", _config_integer, "0", "HALO_FORGE_LAYOUT_SAVE", _environment_value, _platform_desktop,
-		"For automated tests: in a local game, save the Forge layout as this map\n"
-		"variant of the map (1 to 64, as its Map tab lists them; one past those\n"
-		"there are is a new one) a few seconds in, once, and log where the player\n"
-		"is; 0 never." },
-	{ "debug.forge_test_edit", _config_integer, "0", "HALO_FORGE_TEST_EDIT", _environment_value, _platform_desktop,
-		"For automated tests of Forge in system link (with debug.network_test and the\n"
-		"forge variant): 1, the host spawns a scenery object a few seconds in, and a\n"
-		"client asks it to spawn one, then to move it and to remove it; both log what\n"
-		"they send and take. 0 never." },
-	{ "debug.forge_test_monitor", _config_integer, "0", "HALO_FORGE_TEST_MONITOR", _environment_value, _platform_desktop,
-		"For automated tests of Forge's monitor (game.forge_monitor): 1, each\n"
-		"machine's player becomes the monitor ten seconds into a game, rises, and\n"
-		"lands ten seconds later; what the player's unit is and where is logged\n"
-		"every two seconds. 0 never." },
-	{ "debug.forge_test_prefab", _config_integer, "0", "HALO_FORGE_TEST_PREFAB", _environment_value, _platform_desktop,
-		"For automated tests of Forge's prefabs: in a local Forge game, a few seconds\n"
-		"in, once, select this many of the map's objects, save them as a prefab and\n"
-		"place it beside them; how many were selected, read back and made is logged.\n"
-		"0 never." },
-	{ "debug.forge_test_ai", _config_integer, "0", "HALO_FORGE_TEST_AI", _environment_value, _platform_desktop,
-		"For automated tests of Forge's AI factions and squads: in a local game, a few\n"
-		"seconds in, once, two squads of this many characters (at most 8) stand in\n"
-		"front of the player facing each other, the map's first two characters whose\n"
-		"teams differ (import them); every two seconds for thirty, how many of each\n"
-		"live, fight and follow is logged. 0 never." },
 	{ "debug.fixed_step", _config_boolean, "false", "HALO_FIXED_STEP", _environment_set_is_true, _platform_all,
 		"A game of this machine alone runs one tick a frame, whatever time has\n"
 		"passed, so that it plays the same every time (tests); game_speed has no\n"

@@ -4,8 +4,7 @@ FORGE.C
 In-game dev tools for the native ports (port/linux, port/windows,
 port/android): on in local and system link games of the Forge game type,
 which the main menu's FORGE plays (a slayer variant with GAME_VARIANT_FORGE_FLAG,
-game/game_engine.c; it is not one of the gametypes to choose), or in every
-game with HALO_FORGE=all (see
+game/game_engine.c; it is not one of the gametypes to choose; see
 port/linux/README.md, "Dev tools"). The byte-matching build never compiles
 this file.
 
@@ -159,11 +158,6 @@ enum
 	FORGE_POPUP_OFFSET = 30,
 	/* (its rows are few: all of them are shown) */
 	FORGE_POPUP_VISIBLE_ENTRIES = 12,
-	/* debug.forge_menu_tab: an object's popup rather than a tab */
-	FORGE_DEBUG_POPUP_TAB = 100,
-	FORGE_DEBUG_HELD_POPUP_TAB = 101,
-	/* ... and a line being typed, with its on-screen keyboard */
-	FORGE_DEBUG_TEXT_ENTRY_TAB = 102,
 	/* the menu's font fits this many lines on the screen: smaller than the
 	mods' large font, so the menu leaves most of the view free */
 	FORGE_MENU_FONT_LINES = 26,
@@ -1572,89 +1566,6 @@ static void forge_hold_end(
 	return;
 }
 
-/* debug.forge_menu_tab (port_config.c): a few seconds into a game, opens
-the menu on that tab, once, for automated screenshots of it
-(HALO_SCREENSHOT_DIR); -1 never. Returns the tab, or -1 */
-long config_integer(char const *name);
-
-static long forge_debug_menu_tab(
-	void)
-{
-	static long tab = -2;
-	long result = -1;
-
-	if (tab == -2)
-		tab = config_integer("debug.forge_menu_tab");
-	if (tab >= 0 && game_time_get() >= 90)
-	{
-		result = tab;
-		tab = -1;
-	}
-
-	return result;
-}
-
-/* debug.forge_test_monitor (port_config.c), for automated tests of the
-builder as the monitor (forge_monitor.c): some seconds into a game the
-tools' flying key is pressed, and again later; TRUE at those moments. In
-between the monitor rises (forge_debug_monitor_rises), and what the player's
-unit is and where is logged every two seconds. */
-void platform_log(char const *format, ...);
-
-static boolean forge_debug_monitor_enabled(
-	void)
-{
-	static long enabled = -1;
-
-	if (enabled < 0)
-		enabled = config_integer("debug.forge_test_monitor");
-
-	return enabled > 0;
-}
-
-static boolean forge_debug_monitor_toggle(
-	void)
-{
-	static long last_time;
-	static short step;
-	static long logged_time;
-	long player_index = local_player_get_player_index(FORGE_LOCAL_PLAYER_INDEX);
-	long unit_index = player_index != NONE ? player_get(player_index)->unit_index : NONE;
-	boolean toggle = FALSE;
-
-	if (!forge_debug_monitor_enabled() || unit_index == NONE)
-		return FALSE;
-	/* (a new game starts over) */
-	if (game_time_get() < last_time)
-	{
-		step = 0;
-		logged_time = 0;
-	}
-	last_time = game_time_get();
-	if (step < 2 && game_time_get() >= 300 + step * 300)
-	{
-		step++;
-		toggle = TRUE;
-	}
-	if (game_time_get() - logged_time >= 60)
-	{
-		struct object_datum *object = object_get(unit_index);
-
-		logged_time = game_time_get();
-		platform_log("forge monitor test: the player is %s at %.2f %.2f %.2f%s",
-			tag_get_name(object->definition_index), object->object.position.x, object->object.position.y,
-			object->object.position.z, toggle ? ", and presses the flying key" : "");
-	}
-
-	return toggle;
-}
-
-static boolean forge_debug_monitor_rises(
-	void)
-{
-	return forge_debug_monitor_enabled();
-}
-
 /* the line it began with let go, if the first key replaces it */
 static void forge_text_entry_replace(
 	void)
@@ -1928,15 +1839,6 @@ static void forge_text_entry_update(
 	return;
 }
 
-/* debug.forge_menu_tab 102: the line typed is not kept */
-static void forge_debug_text_typed(
-	char const *text)
-{
-	platform_log("forge: typed \"%s\"", text);
-
-	return;
-}
-
 static void forge_update_keys(
 	struct halo_linux_forge_keys const *keys,
 	unsigned long milliseconds,
@@ -2018,56 +1920,8 @@ static void forge_update_keys(
 	}
 	else
 	{
-		if (toggle_flying || forge_debug_monitor_toggle())
+		if (toggle_flying)
 			forge_toggle_flying(FORGE_LOCAL_PLAYER_INDEX);
-
-		{
-			long debug_tab = forge_debug_menu_tab();
-
-			if (debug_tab >= 0 && debug_tab < (long)(NUMBEROF(forge_categories) + halo_mods_menu_page_count()))
-			{
-				/* the menu belongs to forge mode */
-				if (!flying)
-				{
-					director_forge_set_flying(FORGE_LOCAL_PLAYER_INDEX, TRUE);
-					flying = TRUE;
-				}
-				forge_globals.category_index = (short)debug_tab;
-				forge_menu_open();
-			}
-			else if (debug_tab == FORGE_DEBUG_POPUP_TAB || debug_tab == FORGE_DEBUG_HELD_POPUP_TAB)
-			{
-				/* the first mod's popup, which chooses an object itself:
-				the one the tools hold, here the map's first vehicle */
-				short mod_index;
-
-				director_forge_set_flying(FORGE_LOCAL_PLAYER_INDEX, TRUE);
-				flying = TRUE;
-				if (debug_tab == FORGE_DEBUG_HELD_POPUP_TAB && forge_globals.held_object_index == NONE)
-				{
-					struct object_iterator iterator;
-
-					object_iterator_new(&iterator, _object_mask_vehicle, 0);
-					if (object_iterator_next(&iterator))
-						forge_hold_begin(iterator.index, FALSE);
-				}
-				for (mod_index = 0; mod_index < halo_mods_count(); mod_index++)
-				{
-					if (halo_mods_get(mod_index)->popup)
-					{
-						forge_menu_open_popup(halo_mods_get(mod_index)->popup);
-						break;
-					}
-				}
-			}
-			else if (debug_tab == FORGE_DEBUG_TEXT_ENTRY_TAB)
-			{
-				director_forge_set_flying(FORGE_LOCAL_PLAYER_INDEX, TRUE);
-				flying = TRUE;
-				forge_menu_fonts_choose();
-				forge_text_entry_begin("Name of the layout", "Layout 1", 63, forge_debug_text_typed);
-			}
-		}
 
 		if (forge_globals.mod_hold)
 		{
@@ -2236,7 +2090,7 @@ static void forge_update_keys(
 	menu they are its tabs'), and what it holds is held in front of its view */
 	forge_monitor_set_keys(
 		monitor && !forge_globals.menu_open && !forge_text_entry_globals.active
-			? (forge_debug_monitor_rises() ? 1 : (keys->up != 0) - (keys->down != 0))
+			? (keys->up != 0) - (keys->down != 0)
 			: 0,
 		monitor && !forge_text_entry_globals.active && keys->fast);
 	if (monitor && !director_forge_flying(FORGE_LOCAL_PLAYER_INDEX))
@@ -2304,7 +2158,6 @@ static struct
 } forge_menu_fonts[NUMBER_OF_FORGE_MENU_FONTS];
 
 int config_boolean(char const *name);
-char const *config_string(char const *name);
 
 /* chooses the menu's fonts in this map: when the menu opens */
 static void forge_menu_fonts_choose(
@@ -3451,15 +3304,8 @@ void forge_render(
 int forge_mode_on(
 	void)
 {
-	static int every_game = -1;
-
-	/* game.forge (port_config.c) */
-	if (every_game < 0)
-		every_game = strcmp(config_string("game.forge"), "all") == 0;
-
 	/* (not in a saved film, which replays what was recorded) */
-	return every_game ||
-		(game_engine_variant_is_forge() && (forge_authoritative() || forge_client()));
+	return game_engine_variant_is_forge() && (forge_authoritative() || forge_client());
 }
 
 /* ---------- text in the menu's font (halo_forge.h) */

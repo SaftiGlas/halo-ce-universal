@@ -90,21 +90,6 @@ parser.add_argument(
     help="clang with the arm64_32 target for the Android guest (default: clang)",
 )
 parser.add_argument(
-    "--mods",
-    metavar="MOD",
-    nargs="*",
-    help="native Linux build with these source mods from mods/, in this order: writes only "
-    "build/mods/<key>/build.ninja (run it with `ninja -f`), which builds build/mods/<key>/halo; "
-    "build.ninja is left alone (see tools/mod_overlay.py)",
-)
-parser.add_argument(
-    "--mods-dir",
-    metavar="DIR",
-    type=Path,
-    default=Path("mods"),
-    help="where --mods finds the mods (default: mods)",
-)
-parser.add_argument(
     "--web-emcc",
     type=str,
     help="Emscripten's emcc for `ninja web` (default: emcc on the PATH, then EMSDK's or ~/emsdk's)",
@@ -168,19 +153,6 @@ if not is_windows():
     sln.windows_vctools_dir = args.windows_vctools_dir
     sln.windows_sdk_dir = args.windows_sdk_dir
 
-
-if args.mods is not None:
-    # Source mod build: its own ninja file, never the root build.ninja
-    from tools.mod_overlay import ModError, generate_mod_build
-
-    try:
-        plan = generate_mod_build(sln, args.mods, args.mods_dir)
-    except ModError as error:
-        sys.exit(f"error: {error}")
-    for warning in plan.warnings:
-        print(f"warning: {warning}", file=sys.stderr)
-    print(f"ninja -f {plan.ninja_file}  ->  {plan.output}")
-    sys.exit(0)
 
 # build.ninja
 out = io.StringIO()

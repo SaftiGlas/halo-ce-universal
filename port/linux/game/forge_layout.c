@@ -28,8 +28,7 @@ game types it is in), each mod's part and the editor's notes. The Map tab
 lists the variants of the map it is on, in the order of their file names
 (up to FORGE_LAYOUT_SLOT_COUNT); a new one is named for its name. Its name
 and description are changed by the Map tab's Name and Description rows
-(typed on the keyboard), and by the launcher (python -m tools.mod_launcher
-layouts). Only the game's machine writes them (a local game, a system link
+(typed on the keyboard). Only the game's machine writes them (a local game, a system link
 host): a client plays the host's variant and keeps none.
 
 The layouts of before, u:\forge\<map>\layout_NN.txt in the save root (text,
@@ -2546,13 +2545,13 @@ static struct halo_mod_menu const forge_layout_menu =
 	forge_layout_menu_opened
 };
 
-static void forge_layout_debug_update(
+static void forge_layout_update(
 	void);
 
 struct halo_mod const forge_layout_mod =
 {
 	"forge_layout",
-	forge_layout_debug_update,
+	forge_layout_update,
 	NULL,
 	NULL,
 	NULL,
@@ -2560,84 +2559,9 @@ struct halo_mod const forge_layout_mod =
 	&forge_layout_menu
 };
 
-/* debug.forge_layout_save (port_config.c): a few seconds into a local game,
-saves the layout to that slot, once, and logs where local player 0 is, for
-automated tests; 0 never */
-long config_integer(char const *name);
-
-/* debug.forge_test_edit (port_config.c): in a system link game, the host
-spawns a scenery object beside its player a few seconds in; a client asks
-the host to spawn one beside its own, then to move it, then to remove it */
-static void forge_layout_test_edit(
+static void forge_layout_update(
 	void)
 {
-	static long enabled = -1;
-	static long step_time;
-	static short step;
-	long player_index;
-	struct unit_datum *unit;
-	struct tag_iterator iterator;
-	long definition_index;
-	real_point3d position;
-	real_point3d moved;
-
-	if (enabled < 0)
-		enabled = config_integer("debug.forge_test_edit");
-	if (enabled <= 0)
-		return;
-	player_index = local_player_get_player_index(0);
-	unit = player_index != NONE ? unit_try_and_get(player_get(player_index)->unit_index) : NULL;
-	if (!unit || game_connection() == _game_connection_local || !forge_mode_on())
-		return;
-	/* (a new game starts over) */
-	if (game_time_get() < step_time)
-		step = 0;
-	if (step >= 3 || game_time_get() < 300 + step * 150)
-		return;
-	step_time = game_time_get();
-
-	tag_iterator_new(&iterator, OBJECT_DEFINITION_TAG);
-	while ((definition_index = tag_iterator_next(&iterator)) != NONE &&
-		object_definition_get(definition_index)->object.type != _object_type_scenery)
-	{
-	}
-	if (definition_index == NONE)
-		return;
-	/* (each machine's own a little apart) */
-	position = unit->object.position;
-	position.x += game_connection() == _game_connection_network_server ? 2.f : -2.f;
-	moved = position;
-	moved.z += 1.f;
-
-	if (game_connection() == _game_connection_network_server)
-	{
-		if (step == 0)
-		{
-			long object_index = forge_layout_new_object(definition_index, &position, global_forward3d, global_up3d, 0.f);
-
-			forge_layout_note_spawned(object_index);
-			platform_log("forge test: the host spawned %s (%s)", tag_get_name(definition_index),
-				object_index != NONE ? "made" : "not made");
-		}
-	}
-	else
-	{
-		forge_layout_client_edit(step == 0 ? _forge_edit_spawn : step == 1 ? _forge_edit_move : _forge_edit_remove,
-			NONE, definition_index, step == 2 ? &moved.x : &position.x, step == 0 ? &position.x : &moved.x,
-			&global_forward3d->i, &global_up3d->i);
-		platform_log("forge test: the client asked the host to %s %s",
-			step == 0 ? "spawn" : step == 1 ? "move" : "remove", tag_get_name(definition_index));
-	}
-	step++;
-
-	return;
-}
-
-static void forge_layout_debug_update(
-	void)
-{
-	static long slot = -1;
-
 	/* a system link host: what has changed, to its clients, now and then
 	(not while something is held: it changes every frame) */
 	if (game_connection() == _game_connection_network_server && forge_layout_globals.map_name[0] != 0 &&
@@ -2646,29 +2570,6 @@ static void forge_layout_debug_update(
 		forge_mode_on() && !forge_busy())
 	{
 		forge_layout_host_sync(TRUE);
-	}
-
-	forge_layout_test_edit();
-
-	if (slot < 0)
-		slot = config_integer("debug.forge_layout_save");
-	if (slot >= 1 && slot <= FORGE_LAYOUT_SLOT_COUNT && game_time_get() >= 150 && forge_layout_authoritative())
-	{
-		long player_index = local_player_get_player_index(0);
-		struct unit_datum *unit = player_index != NONE ? unit_try_and_get(player_get(player_index)->unit_index) : NULL;
-		short saved_slot;
-
-		/* (a slot past the variants there are: a new one) */
-		forge_layout_read_slots();
-		saved_slot = forge_layout_save_slot(slot <= forge_layout_globals.variant_count ? (short)slot : 0);
-		if (unit)
-		{
-			platform_log("forge layout: saved slot %d (%s), player at %.3f %.3f %.3f facing %.3f %.3f", (int)saved_slot,
-				saved_slot ? forge_layout_globals.variants[saved_slot].file : "not saved",
-				unit->object.position.x, unit->object.position.y, unit->object.position.z,
-				unit->object.forward.i, unit->object.forward.j);
-		}
-		slot = 0;
 	}
 
 	return;
@@ -2944,31 +2845,6 @@ short forge_custom_map_selected(
 	}
 
 	return NONE;
-}
-
-int forge_custom_map_select_by_name(
-	char const *map_name,
-	short slot)
-{
-	static struct forge_layout_variant variants[FORGE_LAYOUT_SLOT_COUNT];
-	short base_index;
-
-	forge_layout_globals.selected_base_index = -1;
-	forge_layout_globals.selected_file[0] = 0;
-	for (base_index = 0; base_index < FORGE_LAYOUT_MULTIPLAYER_MAP_COUNT; base_index++)
-	{
-		/* (the map's variants as its Map tab lists them) */
-		if (_stricmp(map_name, forge_layout_multiplayer_maps[base_index]) == 0 && slot >= 1 &&
-			slot <= forge_layout_list_variants(forge_layout_multiplayer_maps[base_index], variants, NULL,
-				NUMBEROF(variants)))
-		{
-			forge_layout_globals.selected_base_index = base_index;
-			csstrcpy(forge_layout_globals.selected_file, variants[slot - 1].file);
-			return TRUE;
-		}
-	}
-
-	return FALSE;
 }
 
 char const *forge_custom_map_base_title(

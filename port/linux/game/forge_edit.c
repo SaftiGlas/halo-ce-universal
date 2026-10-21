@@ -172,8 +172,6 @@ static struct
 	real_vector3d popup_up;
 } forge_edit_globals = { { 0 } };
 
-long config_integer(char const *name);
-
 /* the prefab an object is selected for (forge_prefabs.c) */
 int forge_prefabs_object_selected(long object_index);
 void forge_prefabs_object_toggle(long object_index);
@@ -563,20 +561,6 @@ static void forge_edit_popup_opened(
 	long object_index = local_player_get_player_index(FORGE_EDIT_LOCAL_PLAYER_INDEX) == NONE
 		? NONE
 		: forge_held_object() != NONE ? forge_held_object() : forge_edit_marked_object();
-
-	/* debug.forge_menu_tab 100 (port_config.c), for screenshots of the
-	popup: with nothing at the crosshair, the map's first object */
-	if (object_index == NONE && config_integer("debug.forge_menu_tab") == 100)
-	{
-		struct object_iterator iterator;
-
-		object_iterator_new(&iterator, _object_mask_unit | _object_mask_item | _object_mask_scenery | _object_mask_device, 0);
-		while (object_index == NONE && object_iterator_next(&iterator))
-		{
-			if (object_get(iterator.index)->object.parent_object_index == NONE && !forge_edit_holds_player(iterator.index))
-				object_index = iterator.index;
-		}
-	}
 
 	forge_edit_globals.popup_object_index = object_index;
 	/* (its angles are taken when first asked for) */

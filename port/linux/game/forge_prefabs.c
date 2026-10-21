@@ -863,91 +863,6 @@ static boolean forge_prefabs_place(
 	return held;
 }
 
-/* debug.forge_test_prefab (port_config.c): a few seconds into a local
-Forge game, once, selects that many of the map's objects, saves them as a
-prefab, and places it a little beside where they are, raised and turned a
-quarter as a held one is; logs how many were selected, read back and made,
-and where, for automated tests; 0 never */
-long config_integer(char const *name);
-void platform_log(char const *format, ...);
-
-static void forge_prefabs_test(
-	void)
-{
-	static long count = -1;
-	static boolean done = FALSE;
-	struct object_iterator iterator;
-	struct object_datum *object;
-	real_point3d origin;
-	short slot;
-	short slot_object;
-	boolean saved;
-	boolean loaded;
-	short created = 0;
-
-	if (count < 0)
-		count = config_integer("debug.forge_test_prefab");
-	if (count <= 0 || done || game_time_get() < 150 || !halo_mods_authoritative())
-		return;
-	done = TRUE;
-
-	forge_prefabs_globals.selected_count = 0;
-	object_iterator_new(&iterator, FORGE_PREFABS_OBJECT_MASK, 0);
-	while ((object = (struct object_datum *)object_iterator_next(&iterator)) != NULL &&
-		forge_prefabs_globals.selected_count < MIN(count, FORGE_PREFABS_MAXIMUM_OBJECTS))
-	{
-		if (object->object.parent_object_index == NONE && !forge_prefabs_holds_player(iterator.index))
-			forge_prefabs_globals.selected[forge_prefabs_globals.selected_count++] = iterator.index;
-	}
-	origin = *global_origin3d;
-	if (forge_prefabs_globals.selected_count > 0)
-		origin = object_get(forge_prefabs_globals.selected[0])->object.position;
-
-	forge_prefabs_read_slots();
-	slot = forge_prefabs_first_free_slot();
-	saved = slot && forge_prefabs_save(slot, "Test prefab");
-	forge_prefabs_read_slots();
-	loaded = saved && forge_prefabs_load(slot);
-	if (loaded && !forge_prefabs_globals.holding)
-	{
-		/* as held, the anchor moved and turned a quarter about its up, then
-		put down */
-		origin.x += 2.f;
-		if (forge_prefabs_create(&origin) > 0)
-		{
-			long anchor_object_index = forge_prefabs_globals.held_objects[forge_prefabs_globals.held_anchor];
-			struct object_datum *anchor_object = object_get(anchor_object_index);
-			real_point3d position = anchor_object->object.position;
-			real_vector3d forward;
-
-			position.z += 1.f;
-			cross_product3d(&anchor_object->object.up, &anchor_object->object.forward, &forward);
-			object_set_position(anchor_object_index, &position, &forward, &anchor_object->object.up);
-			forge_prefabs_hold_moved(anchor_object_index);
-			for (slot_object = 0; slot_object < forge_prefabs_globals.object_count; slot_object++)
-			{
-				struct object_datum *made = forge_prefabs_globals.held_objects[slot_object] != NONE
-					? object_try_and_get(forge_prefabs_globals.held_objects[slot_object])
-					: NULL;
-
-				if (made)
-				{
-					platform_log("forge prefab test: object %d at %.3f %.3f %.3f forward %.3f %.3f %.3f", slot_object,
-						made->object.position.x, made->object.position.y, made->object.position.z,
-						made->object.forward.i, made->object.forward.j, made->object.forward.k);
-				}
-			}
-			created = forge_prefabs_keep();
-		}
-	}
-	platform_log("forge prefab test: selected %d, saved to slot %d (%s) as \"%s\", read back %d, made %d",
-		forge_prefabs_globals.selected_count, slot, saved ? "written" : "not written",
-		slot ? forge_prefabs_globals.slot_names[slot] : "", loaded ? forge_prefabs_globals.object_count : 0, created);
-	forge_prefabs_globals.selected_count = 0;
-
-	return;
-}
-
 /* ---------- the mod's hooks */
 
 static void forge_prefabs_new_map(
@@ -976,7 +891,6 @@ static void forge_prefabs_update(
 	forge_prefabs_globals.marking = FALSE;
 	if (local_player_get_player_index(FORGE_PREFABS_LOCAL_PLAYER_INDEX) == NONE || !forge_mode_on())
 		return;
-	forge_prefabs_test();
 	forge_prefabs_selection_prune();
 	forge_prefabs_globals.marking = forge_flying(FORGE_PREFABS_LOCAL_PLAYER_INDEX) &&
 		forge_prefabs_globals.selected_count > 0;

@@ -30,3 +30,7 @@ original/
 
 # CI build outputs (tools/ci_build.py)
 dist/
+
+# local files: the settings the game writes, and objdiff's project
+/config.toml
+/objdiff.json

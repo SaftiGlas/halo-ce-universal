@@ -4,8 +4,7 @@ Forge (`port/linux/game/forge_layout.c`) saves what it changed in a map as a
 **map variant**, as Halo 3's Forge does: a file of its own in the
 `forge_maps` folder beside `custom_maps`, in the data root (`d:\forge_maps\`
 to the game). The format is written and read by
-`port/linux/game/forge_mvar.c` (`forge_mvar.h`) and by
-`tools/mod_layouts.py`.
+`port/linux/game/forge_mvar.c` (`forge_mvar.h`).
 
 Only the game's machine writes variants: a local game, or the host of a
 system link or internet game. The host sends the variant to each machine that
@@ -20,8 +19,7 @@ editor's notes). The other machines apply it and save nothing.
   is added when that file exists already. Renaming a variant changes its
   `mvhd`, not its file name.
 - A map's Map tab lists the variants whose `mvhd` names that map, up to 64, in
-  the order of their file names. `game.start_layout` and the launcher's
-  `--layout N` count them the same way.
+  the order of their file names.
 - The layouts of before, `u/forge/<map>/layout_NN.txt` in the save root, are
   converted to variants once, when the variants are first listed. The text
   files are left where they are, and `u/forge/<map>/converted.txt` records

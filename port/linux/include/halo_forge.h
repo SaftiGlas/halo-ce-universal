@@ -3,7 +3,7 @@ HALO_FORGE.H
 
 The in-game dev tools of the native ports, on in local and system link
 games of the Forge game type (a slayer variant among the default game
-types), or in every game with HALO_FORGE=all (port/linux/game/forge.c). Shared by the game, through
+types) (port/linux/game/forge.c). Shared by the game, through
 halo_linux_source_fixups.h, and the platform layer, which reads their keys
 (port/linux/src/xinput_sdl.c).
 */
@@ -63,8 +63,7 @@ struct halo_linux_forge_keys
 	float pad_look_y;
 };
 /* TRUE while the tools are on: a local or system link game of the Forge
-game type (GAME_VARIANT_FORGE_FLAG), or any game with HALO_FORGE=all; for
-the platform layer and for mods */
+game type (GAME_VARIANT_FORGE_FLAG); for the platform layer and for mods */
 int forge_mode_on(void);
 /* the keys as held now; FALSE, with nothing held, unless the tools are on
 and the console is closed */
@@ -181,9 +180,7 @@ picture of the map they are made on (its index in that list, 0 to 12) and
 the variant's name. forge_custom_maps_refresh reads them again and returns
 how many there are; forge_custom_map_select chooses the one to play the
 next game with (NONE: none, a map of the game), and forge_custom_map_selected
-is that one's index, or NONE. By name: the base map's short name
-("bloodgulch") and the variant's number in its Map tab (its variants in the
-order of their file names), for game.start_layout. */
+is that one's index, or NONE. */
 short forge_custom_maps_refresh(void);
 short forge_custom_map_base_index(short index);
 char const *forge_custom_map_base_name(short index);
@@ -192,7 +189,6 @@ wchar_t const *forge_custom_map_title(short index);
 wchar_t const *forge_custom_map_description(short index);
 void forge_custom_map_select(short index);
 short forge_custom_map_selected(void);
-int forge_custom_map_select_by_name(char const *map_name, short slot);
 /* system link (port/linux/game/network_distributed.c): the host sends the
 layout of the map, as a variant, to a client that has loaded it, and again
 to every client when the tools or a mod have changed it; the client applies
